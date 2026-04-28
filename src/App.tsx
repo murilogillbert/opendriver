@@ -6,7 +6,7 @@ import HeroSection from "./components/HeroSection";
 import HowItWorks from "./components/HowItWorks";
 import TrustSection from "./components/TrustSection";
 
-const WHATSAPP_URL = "https://wa.me/5599999999999";
+const WHATSAPP_URL = "https://wa.me/556182187476";
 
 function App() {
   const openWhatsApp = () => {
