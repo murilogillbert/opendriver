@@ -1,0 +1,16 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: opendriver-local-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SQLSERVER_PASSWORD:-Change_this_Strong_Password_123!}
+      MSSQL_PID: Express
+    ports:
+      - "1433:1433"
+    volumes:
+      - opendriver-local-sqlserver:/var/opt/mssql
+    restart: unless-stopped
+
+volumes:
+  opendriver-local-sqlserver:

@@ -7,6 +7,7 @@ import {
   createInitialAssistantState,
   getQuickRepliesForStep
 } from "../lib/localAssistantEngine";
+import { createLeadFromAssistant, recordBotInteraction } from "../lib/api";
 import { createWhatsAppLeadUrl } from "../lib/whatsapp";
 import MessageBubble, { AssistantMessage } from "./assistant/MessageBubble";
 import QuickReplies from "./assistant/QuickReplies";
@@ -20,6 +21,7 @@ type FloatingAssistantProps = {
 type StoredAssistantSession = {
   engineState: AssistantEngineState;
   messages: AssistantMessage[];
+  createdLeadId?: number;
 };
 
 const STORAGE_KEY = "open-driver-assistant-session-v1";
@@ -73,6 +75,33 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [session.messages, isTyping, isOpen]);
 
+  useEffect(() => {
+    if (session.engineState.step !== "ready" || session.createdLeadId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void createLeadFromAssistant(session.engineState.lead)
+      .then((lead) => {
+        if (!cancelled) {
+          setSession((currentSession) =>
+            currentSession.createdLeadId
+              ? currentSession
+              : {
+                  ...currentSession,
+                  createdLeadId: lead.id
+                }
+          );
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.createdLeadId, session.engineState.lead, session.engineState.step]);
+
   const resetSession = () => {
     const initialSession = createInitialSession();
     setSession(initialSession);
@@ -101,6 +130,15 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
         const assistantMessages = result.responses.map((response) =>
           createMessage("assistant", response)
         );
+        const respostaBot = result.responses.join("\n");
+
+        void recordBotInteraction({
+          mensagemUsuario: trimmedValue,
+          respostaBot,
+          etapaFluxo: currentSession.engineState.step,
+          leadId: currentSession.createdLeadId,
+          lead: result.lead
+        }).catch(() => undefined);
 
         return {
           engineState: {

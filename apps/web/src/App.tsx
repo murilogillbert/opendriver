@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import BenefitsSection from "./components/BenefitsSection";
+import AdminApp from "./components/admin/AdminApp";
 import BotSection from "./components/BotSection";
 import EarningsSection from "./components/EarningsSection";
 import FinalCTA from "./components/FinalCTA";
@@ -11,10 +12,15 @@ import TrustSection from "./components/TrustSection";
 
 function App() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const isAdmin = window.location.pathname.startsWith("/admin");
 
   const openAssistant = () => {
     setIsAssistantOpen(true);
   };
+
+  if (isAdmin) {
+    return <AdminApp />;
+  }
 
   return (
     <main className="min-h-screen overflow-hidden bg-brand-ink font-sans text-white antialiased">
