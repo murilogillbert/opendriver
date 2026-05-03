@@ -2,7 +2,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 
 import {
+  AdminMetrics,
   AdminProduct,
+  AdminOrder,
+  AdminUser,
   adminApi,
   BotInteraction,
   Commission,
@@ -13,10 +16,12 @@ import {
   ProductCategory
 } from "../../lib/adminApi";
 
-type AdminTab = "visao" | "bot" | "produtos" | "parceiros" | "leads" | "comissoes";
+type AdminTab = "visao" | "usuarios" | "pedidos" | "bot" | "produtos" | "parceiros" | "leads" | "comissoes";
 
 const tabs: { id: AdminTab; label: string }[] = [
   { id: "visao", label: "Visao geral" },
+  { id: "usuarios", label: "Usuarios" },
+  { id: "pedidos", label: "Pedidos" },
   { id: "bot", label: "Bot" },
   { id: "produtos", label: "Produtos" },
   { id: "parceiros", label: "Parceiros" },
@@ -34,6 +39,9 @@ function AdminApp() {
   const [activeTab, setActiveTab] = useState<AdminTab>("visao");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [services, setServices] = useState<PartnerService[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [botInteractions, setBotInteractions] = useState<BotInteraction[]>([]);
@@ -46,6 +54,7 @@ function AdminApp() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
 
   const reload = async () => {
     setIsLoading(true);
@@ -81,7 +90,16 @@ function AdminApp() {
 
       if (window.localStorage.getItem("opendriver-admin-token")) {
         try {
-          setProducts(await adminApi.adminProducts());
+          const [productData, metricsData, userData, orderData] = await Promise.all([
+            adminApi.adminProducts(),
+            adminApi.metrics(),
+            adminApi.users(),
+            adminApi.orders()
+          ]);
+          setProducts(productData);
+          setMetrics(metricsData);
+          setUsers(userData);
+          setOrders(orderData);
         } catch {
           window.localStorage.removeItem("opendriver-admin-token");
           setHasAdminToken(false);
@@ -141,18 +159,28 @@ function AdminApp() {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
 
-    await adminApi.loginAdmin(String(values.email), String(values.senha));
-    setHasAdminToken(true);
-    await reload();
+    try {
+      await adminApi.loginAdmin(String(values.email), String(values.senha));
+      setHasAdminToken(true);
+      setFormMessage(null);
+      await reload();
+    } catch (authError) {
+      setFormMessage(authError instanceof Error ? authError.message : "Nao foi possivel entrar.");
+    }
   };
 
   const bootstrapAdmin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
 
-    await adminApi.bootstrapAdmin(String(values.email), String(values.senha), String(values.nome));
-    setHasAdminToken(true);
-    await reload();
+    try {
+      await adminApi.bootstrapAdmin(String(values.email), String(values.senha), String(values.nome));
+      setHasAdminToken(true);
+      setFormMessage(null);
+      await reload();
+    } catch (authError) {
+      setFormMessage(authError instanceof Error ? authError.message : "Nao foi possivel criar admin.");
+    }
   };
 
   const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -192,14 +220,35 @@ function AdminApp() {
       status: String(formData.get("status"))
     };
 
-    if (editingProduct) {
-      await adminApi.updateProduct(editingProduct.id, payload);
-    } else {
-      await adminApi.createProduct(payload);
-    }
+    try {
+      if (editingProduct) {
+        await adminApi.updateProduct(editingProduct.id, payload);
+      } else {
+        await adminApi.createProduct(payload);
+      }
 
-    form.reset();
-    setEditingProduct(null);
+      setFormMessage("Produto salvo com sucesso.");
+      form.reset();
+      setEditingProduct(null);
+      await reload();
+    } catch (productError) {
+      setFormMessage(productError instanceof Error ? productError.message : "Nao foi possivel salvar produto.");
+    }
+  };
+
+  const setProductStatus = async (id: number, status: string) => {
+    await adminApi.updateProductStatus(id, status);
+    await reload();
+  };
+
+  const setOrderStatus = async (id: number, status: string) => {
+    await adminApi.updateOrderStatus(id, status);
+    await reload();
+  };
+
+  const activateAllProducts = async () => {
+    const result = await adminApi.activateAllProducts();
+    setFormMessage(`${result.data.affected} beneficios/produtos ativados.`);
     await reload();
   };
 
@@ -239,6 +288,12 @@ function AdminApp() {
           </div>
         )}
 
+        {formMessage && (
+          <div className="mb-5 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-4 py-3 text-sm font-bold text-brand-ink">
+            {formMessage}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="rounded-md border border-[#dfe5ef] bg-white px-5 py-4 text-sm font-bold">
             Carregando dados...
@@ -246,13 +301,72 @@ function AdminApp() {
         ) : (
           <>
             {activeTab === "visao" && overview && (
-              <div className="grid gap-4 md:grid-cols-5">
-                <Metric label="Leads" value={overview.total_leads} />
-                <Metric label="Convertidos" value={overview.leads_convertidos} />
-                <Metric label="Servicos" value={overview.servicos_confirmados} />
-                <Metric label="Receita estimada" value={money(overview.receita_estimada)} />
-                <Metric label="Recebido" value={money(overview.receita_recebida)} />
-              </div>
+              <>
+                <div className="grid gap-4 md:grid-cols-5">
+                  <Metric label="Usuarios" value={metrics?.total_usuarios ?? "-"} />
+                  <Metric label="Produtos ativos" value={metrics?.produtos_ativos ?? "-"} />
+                  <Metric label="Pedidos mes" value={metrics?.pedidos_mes ?? "-"} />
+                  <Metric label="Receita produtos" value={money(metrics?.receita_produtos)} />
+                  <Metric label="Economia gerada" value={money(metrics?.economia_gerada)} />
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-5">
+                  <Metric label="Leads" value={overview.total_leads} />
+                  <Metric label="Convertidos" value={overview.leads_convertidos} />
+                  <Metric label="Servicos" value={overview.servicos_confirmados} />
+                  <Metric label="Usuarios nivel" value={metrics?.usuarios_com_nivel ?? "-"} />
+                  <Metric label="Interacoes bot" value={metrics?.total_interacoes_bot ?? "-"} />
+                </div>
+              </>
+            )}
+
+            {activeTab === "usuarios" && (
+              hasAdminToken ? (
+                <DataTable
+                  headers={["Usuario", "Contato", "Tipo", "Cidade", "Nivel", "Mes", "Economia", "Status"]}
+                  rows={users.map((user) => [
+                    user.nome,
+                    user.email ?? user.telefone ?? "-",
+                    user.tipo_usuario,
+                    user.cidade ? `${user.cidade}/${user.estado ?? ""}` : "-",
+                    `${user.nivel_atual} (${user.nivel_status})`,
+                    `${user.monthly_acquisitions}/5`,
+                    money(user.total_savings),
+                    user.status
+                  ])}
+                />
+              ) : (
+                <AdminLoginPrompt onLogin={loginAdmin} onBootstrap={bootstrapAdmin} />
+              )
+            )}
+
+            {activeTab === "pedidos" && (
+              hasAdminToken ? (
+                <DataTable
+                  headers={["Pedido", "Usuario", "Produto", "Valor", "Economia", "Voucher", "Status"]}
+                  rows={orders.map((order) => [
+                    order.public_code,
+                    `${order.usuario_nome} (${order.usuario_email})`,
+                    order.produto_nome,
+                    money(order.valor_pago_total),
+                    money(order.economia_total),
+                    order.voucher_code ?? "-",
+                    <select
+                      key={order.id}
+                      value={order.status}
+                      onChange={(event) => setOrderStatus(order.id, event.target.value)}
+                      className="rounded-md border border-[#ccd5e2] px-2 py-1 text-xs font-bold"
+                    >
+                      <option value="pendente_pagamento">Pendente</option>
+                      <option value="confirmado">Confirmado</option>
+                      <option value="enviado">Enviado</option>
+                      <option value="entregue">Entregue</option>
+                      <option value="cancelado">Cancelado</option>
+                    </select>
+                  ])}
+                />
+              ) : (
+                <AdminLoginPrompt onLogin={loginAdmin} onBootstrap={bootstrapAdmin} />
+              )
             )}
 
             {activeTab === "bot" && (
@@ -340,6 +454,16 @@ function AdminApp() {
                     </form>
                   </section>
 
+                  <section className="space-y-4">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={activateAllProducts}
+                      className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white"
+                    >
+                      Ativar todos beneficios
+                    </button>
+                  </div>
                   <DataTable
                     headers={["Produto", "Categoria", "Preco", "Economia", "Status", "Acoes"]}
                     rows={products.map((product) => [
@@ -347,7 +471,17 @@ function AdminApp() {
                       product.categoria_nome ?? "-",
                       money(product.preco_desconto),
                       money(product.economia_mensal_estimada),
-                      product.status,
+                      <select
+                        key={`${product.id}-status`}
+                        value={product.status}
+                        onChange={(event) => setProductStatus(product.id, event.target.value)}
+                        className="rounded-md border border-[#ccd5e2] px-2 py-1 text-xs font-bold"
+                      >
+                        <option value="ativo">Ativo</option>
+                        <option value="pausado">Pausado</option>
+                        <option value="esgotado">Esgotado</option>
+                        <option value="rascunho">Rascunho</option>
+                      </select>,
                       <div className="flex gap-2" key={product.id}>
                         <button onClick={() => setEditingProduct(product)} className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black">
                           Editar
@@ -358,12 +492,10 @@ function AdminApp() {
                       </div>
                     ])}
                   />
+                  </section>
                 </div>
               ) : (
-                <div className="grid gap-6 md:grid-cols-2">
-                  <AdminAuthCard title="Entrar como admin" onSubmit={loginAdmin} />
-                  <AdminAuthCard title="Criar primeiro admin" onSubmit={bootstrapAdmin} includeName />
-                </div>
+                <AdminLoginPrompt onLogin={loginAdmin} onBootstrap={bootstrapAdmin} />
               )
             )}
 
@@ -532,6 +664,21 @@ function AdminAuthCard({
         </button>
       </form>
     </section>
+  );
+}
+
+function AdminLoginPrompt({
+  onLogin,
+  onBootstrap
+}: {
+  onLogin: (event: FormEvent<HTMLFormElement>) => void;
+  onBootstrap: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="grid gap-6 md:grid-cols-2">
+      <AdminAuthCard title="Entrar como admin" onSubmit={onLogin} />
+      <AdminAuthCard title="Criar primeiro admin" onSubmit={onBootstrap} includeName />
+    </div>
   );
 }
 

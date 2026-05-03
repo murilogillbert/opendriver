@@ -57,6 +57,17 @@ export type Notification = {
   created_at: string;
 };
 
+export type SavingsSummary = {
+  economia_total: number;
+  pedidos: number;
+  aquisicoes_mes: number;
+  meta_mensal: number;
+  faltam_para_subir: number;
+  nivel_atual: string;
+  proximo_nivel: string;
+  nivel_status: string;
+};
+
 async function request<T>(path: string, init?: RequestInit) {
   const token = getToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -126,7 +137,7 @@ export const marketplaceApi = {
     return (await request<Order[]>("/orders/my")).data;
   },
   async mySavings() {
-    return (await request<{ economia_total: number; pedidos: number }>("/savings/my")).data;
+    return (await request<SavingsSummary>("/savings/my")).data;
   },
   async myNotifications() {
     return (await request<Notification[]>("/notifications/my")).data;

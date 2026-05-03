@@ -5,13 +5,25 @@ import {
   marketplaceApi,
   money,
   Notification,
-  Order
+  Order,
+  SavingsSummary
 } from "../../lib/marketplaceApi";
+
+const defaultSavings: SavingsSummary = {
+  economia_total: 0,
+  pedidos: 0,
+  aquisicoes_mes: 0,
+  meta_mensal: 5,
+  faltam_para_subir: 5,
+  nivel_atual: "Bronze",
+  proximo_nivel: "Prata",
+  nivel_status: "em_progresso"
+};
 
 function AccountPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [savings, setSavings] = useState({ economia_total: 0, pedidos: 0 });
+  const [savings, setSavings] = useState<SavingsSummary>(defaultSavings);
   const [name, setName] = useState("Cliente");
 
   useEffect(() => {
@@ -59,8 +71,41 @@ function AccountPage() {
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <Metric label="Economia acumulada" value={money(savings.economia_total)} />
           <Metric label="Pedidos" value={savings.pedidos} />
-          <Metric label="Nivel" value={savings.economia_total >= 1000 ? "Ouro" : savings.economia_total >= 500 ? "Prata" : "Bronze"} />
+          <Metric label="Nivel" value={savings.nivel_atual} />
         </div>
+
+        <section className="mt-6 rounded-md border border-[#dfe5ef] bg-white p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-gold">
+                Regra de nivel mensal
+              </p>
+              <h2 className="mt-2 text-xl font-black">
+                Adquira 5 produtos e/ou beneficios no mes para passar de nivel.
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">
+                Seu nivel e calculado automaticamente com base nos pedidos confirmados, enviados ou entregues dentro do mes atual.
+              </p>
+            </div>
+            <div className="rounded-md bg-[#f6f8fb] p-4 md:min-w-64">
+              <div className="flex items-center justify-between text-sm font-black">
+                <span>{savings.aquisicoes_mes}/{savings.meta_mensal}</span>
+                <span>{savings.nivel_status === "nivel_liberado" ? "Nivel liberado" : `Faltam ${savings.faltam_para_subir}`}</span>
+              </div>
+              <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#e1e7f0]">
+                <span
+                  className="block h-full rounded-full bg-brand-gold"
+                  style={{
+                    width: `${Math.min((savings.aquisicoes_mes / savings.meta_mensal) * 100, 100)}%`
+                  }}
+                />
+              </div>
+              <p className="mt-3 text-xs font-bold uppercase tracking-[0.12em] text-[#68748a]">
+                Proximo nivel: {savings.proximo_nivel}
+              </p>
+            </div>
+          </div>
+        </section>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
           <section className="rounded-md border border-[#dfe5ef] bg-white">

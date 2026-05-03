@@ -67,12 +67,58 @@ export type AdminProduct = {
   status: string;
 };
 
+export type AdminUser = {
+  id: number;
+  nome: string;
+  email?: string;
+  telefone?: string;
+  tipo_usuario: string;
+  cidade?: string;
+  estado?: string;
+  status: string;
+  monthly_acquisitions: number;
+  total_orders: number;
+  total_savings: number;
+  nivel_atual: string;
+  proximo_nivel: string;
+  nivel_status: string;
+  faltam_para_subir: number;
+};
+
+export type AdminOrder = {
+  id: number;
+  public_code: string;
+  usuario_nome: string;
+  usuario_email: string;
+  produto_nome: string;
+  tipo_entrega: string;
+  valor_pago_total: number;
+  economia_total: number;
+  voucher_code?: string;
+  status: string;
+  created_at: string;
+};
+
 export type Overview = {
   total_leads: number;
   leads_convertidos: number;
   servicos_confirmados: number;
   receita_estimada: number;
   receita_recebida: number;
+};
+
+export type AdminMetrics = {
+  total_usuarios: number;
+  usuarios_ativos: number;
+  total_produtos: number;
+  produtos_ativos: number;
+  total_pedidos: number;
+  pedidos_mes: number;
+  receita_produtos: number;
+  economia_gerada: number;
+  total_leads: number;
+  total_interacoes_bot: number;
+  usuarios_com_nivel: number;
 };
 
 export type BotInteraction = {
@@ -100,7 +146,16 @@ async function request<T>(path: string, init?: RequestInit) {
   });
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    let message = `API request failed: ${response.status}`;
+
+    try {
+      const body = (await response.json()) as { error?: string };
+      message = body.error ?? message;
+    } catch {
+      // keep default message
+    }
+
+    throw new Error(message);
   }
 
   return response.json() as Promise<{ data: T }>;
@@ -109,6 +164,15 @@ async function request<T>(path: string, init?: RequestInit) {
 export const adminApi = {
   async overview() {
     return (await request<Overview>("/reports/overview")).data;
+  },
+  async metrics() {
+    return (await request<AdminMetrics>("/admin/metrics")).data;
+  },
+  async users() {
+    return (await request<AdminUser[]>("/admin/users")).data;
+  },
+  async orders() {
+    return (await request<AdminOrder[]>("/admin/orders")).data;
   },
   async partners() {
     return (await request<Partner[]>("/partners")).data;
@@ -178,6 +242,23 @@ export const adminApi = {
   async deleteProduct(id: number) {
     return request<{ id: number }>(`/admin/products/${id}`, {
       method: "DELETE"
+    });
+  },
+  async updateProductStatus(id: number, status: string) {
+    return request<{ id: number; status: string }>(`/admin/products/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+  },
+  async activateAllProducts() {
+    return request<{ affected: number }>("/admin/products/activate-all", {
+      method: "POST"
+    });
+  },
+  async updateOrderStatus(id: number, status: string) {
+    return request<{ id: number; status: string }>(`/admin/orders/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
     });
   },
   async createPartner(input: Record<string, FormDataEntryValue>) {
