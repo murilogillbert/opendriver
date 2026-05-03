@@ -12,12 +12,24 @@ export type Product = {
   descricao: string;
   tipo: "digital" | "fisico";
   tipo_entrega: "digital" | "fisico" | "ambos";
+  offer_type?:
+    | "produto_fisico"
+    | "produto_digital"
+    | "servico"
+    | "voucher"
+    | "beneficio_recorrente"
+    | "assinatura"
+    | "combo";
+  delivery_method?: "digital" | "presencial" | "fisica";
   preco_original: number;
   preco_desconto: number;
   economia_estimada: number;
   economia_mensal_estimada: number;
   imagem_url?: string;
+  gallery_urls?: string;
   video_url?: string;
+  usage_rules?: string;
+  delivery_deadline?: string;
   destaque_home: boolean;
   status: string;
 };
@@ -42,10 +54,14 @@ export type Order = {
   produto_nome: string;
   imagem_url?: string;
   tipo_entrega: string;
+  offer_type?: string;
+  delivery_method?: string;
   valor_pago_total: number;
   economia_total: number;
   voucher_code?: string;
   status: string;
+  payment_status?: string;
+  payment_method?: string;
   created_at: string;
 };
 
@@ -130,6 +146,34 @@ export const marketplaceApi = {
       await request<{ id: number; public_code: string; voucher_code?: string }>("/orders", {
         method: "POST",
         body: JSON.stringify({ product_id: productId, quantidade: 1, tipo_entrega: tipoEntrega })
+      })
+    ).data;
+  },
+  async paymentConfig() {
+    return (await request<{ public_key?: string }>("/payments/config")).data;
+  },
+  async processPayment(input: {
+    product_id: number;
+    payment_method: "pix" | "credit_card" | "debit_card";
+    token?: string;
+    installments?: number;
+    payment_method_id?: string;
+    issuer_id?: string;
+  }) {
+    return (
+      await request<{
+        order: { id: number; public_code: string; voucher_code?: string };
+        payment: {
+          id?: string | number;
+          status: string;
+          status_detail?: string;
+          qr_code_base64?: string;
+          qr_code?: string;
+          ticket_url?: string;
+        };
+      }>("/payments/process_payment", {
+        method: "POST",
+        body: JSON.stringify(input)
       })
     ).data;
   },

@@ -4,6 +4,7 @@ import BenefitsSection from "./components/BenefitsSection";
 import AdminApp from "./components/admin/AdminApp";
 import AccountPage from "./components/marketplace/AccountPage";
 import AuthPage from "./components/marketplace/AuthPage";
+import CheckoutPage from "./components/marketplace/CheckoutPage";
 import MarketplaceHome from "./components/marketplace/MarketplaceHome";
 import BotSection from "./components/BotSection";
 import EarningsSection from "./components/EarningsSection";
@@ -39,6 +40,11 @@ function App() {
 
   if (path.startsWith("/minha-conta")) {
     return <AccountPage />;
+  }
+
+  if (path.startsWith("/checkout/")) {
+    const productId = Number(path.split("/").at(-1));
+    return <CheckoutPage productId={productId} />;
   }
 
   if (!path.startsWith("/motoristas")) {

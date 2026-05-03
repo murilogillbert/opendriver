@@ -86,6 +86,7 @@ function AuthPage() {
             ) : (
               <form onSubmit={register} className="grid gap-4 md:grid-cols-2">
                 <Input name="nome" label="Nome" required />
+                <Input name="cpf" label="CPF" required minLength={11} />
                 <Input name="email" label="Email" type="email" required />
                 <Input name="senha" label="Senha" type="password" required minLength={8} />
                 <Input name="telefone" label="Telefone" required />

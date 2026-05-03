@@ -209,12 +209,20 @@ function AdminApp() {
       descricao: String(formData.get("descricao")),
       tipo: String(formData.get("tipo")),
       tipo_entrega: String(formData.get("tipo_entrega")),
+      offer_type: String(formData.get("offer_type")),
+      delivery_method: String(formData.get("delivery_method")),
       preco_original: Number(formData.get("preco_original")),
       preco_desconto: Number(formData.get("preco_desconto")),
       economia_estimada: Number(formData.get("economia_estimada") || 0),
       economia_mensal_estimada: Number(formData.get("economia_mensal_estimada") || 0),
       imagem_url: imagemUrl || undefined,
+      gallery_urls: String(formData.get("gallery_urls") ?? "")
+        .split(",")
+        .map((url) => url.trim())
+        .filter(Boolean),
       video_url: videoUrl || undefined,
+      usage_rules: String(formData.get("usage_rules") ?? "") || undefined,
+      delivery_deadline: String(formData.get("delivery_deadline") ?? "") || undefined,
       estoque: formData.get("estoque") ? Number(formData.get("estoque")) : undefined,
       destaque_home: formData.get("destaque_home") === "on",
       status: String(formData.get("status"))
@@ -315,6 +323,15 @@ function AdminApp() {
                   <Metric label="Servicos" value={overview.servicos_confirmados} />
                   <Metric label="Usuarios nivel" value={metrics?.usuarios_com_nivel ?? "-"} />
                   <Metric label="Interacoes bot" value={metrics?.total_interacoes_bot ?? "-"} />
+                  <Metric label="Ticket medio" value={money(metrics?.ticket_medio)} />
+                  <Metric label="Conversao home" value={`${metrics?.home_views ? Math.round(((metrics.home_conversions ?? 0) / metrics.home_views) * 100) : 0}%`} />
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-5">
+                  <Metric label="Produto fisico" value={money(metrics?.receita_produto_fisico)} />
+                  <Metric label="Produto digital" value={money(metrics?.receita_produto_digital)} />
+                  <Metric label="Servicos" value={money(metrics?.receita_servico)} />
+                  <Metric label="Vouchers" value={money(metrics?.receita_voucher)} />
+                  <Metric label="Pagamentos" value={`${metrics?.pagamentos_aprovados ?? 0}/${metrics?.pagamentos_pendentes ?? 0}/${metrics?.pagamentos_recusados ?? 0}`} />
                 </div>
               </>
             )}
@@ -346,7 +363,7 @@ function AdminApp() {
                   rows={orders.map((order) => [
                     order.public_code,
                     `${order.usuario_nome} (${order.usuario_email})`,
-                    order.produto_nome,
+                    `${order.produto_nome} · ${order.offer_type ?? "-"}`,
                     money(order.valor_pago_total),
                     money(order.economia_total),
                     order.voucher_code ?? "-",
@@ -403,6 +420,28 @@ function AdminApp() {
                       <Input name="nome" label="Nome" required defaultValue={editingProduct?.nome} />
                       <Input name="slug" label="Slug" defaultValue={editingProduct?.slug} />
                       <Input name="descricao_curta" label="Descricao curta" required defaultValue={editingProduct?.descricao_curta} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1 text-sm font-bold">
+                          Tipo de oferta
+                          <select name="offer_type" defaultValue={editingProduct?.offer_type ?? "produto_digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                            <option value="produto_fisico">Produto fisico</option>
+                            <option value="produto_digital">Produto digital</option>
+                            <option value="servico">Servico</option>
+                            <option value="voucher">Voucher</option>
+                            <option value="beneficio_recorrente">Beneficio recorrente</option>
+                            <option value="assinatura">Assinatura</option>
+                            <option value="combo">Combo promocional</option>
+                          </select>
+                        </label>
+                        <label className="grid gap-1 text-sm font-bold">
+                          Forma de entrega
+                          <select name="delivery_method" defaultValue={editingProduct?.delivery_method ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                            <option value="digital">Digital</option>
+                            <option value="presencial">Presencial</option>
+                            <option value="fisica">Fisica</option>
+                          </select>
+                        </label>
+                      </div>
                       <label className="grid gap-1 text-sm font-bold">
                         Descricao completa
                         <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-md border border-[#ccd5e2] px-3 py-2" />
@@ -432,8 +471,14 @@ function AdminApp() {
                       </div>
                       <Input name="imagem_url" label="URL imagem" defaultValue={editingProduct?.imagem_url} />
                       <Input name="imagem" label="Upload imagem" type="file" accept="image/*" />
+                      <Input name="gallery_urls" label="Galeria URLs separadas por virgula" defaultValue={editingProduct?.gallery_urls} />
                       <Input name="video_url" label="URL video" defaultValue={editingProduct?.video_url} />
                       <Input name="video" label="Upload video" type="file" accept="video/*" />
+                      <Input name="delivery_deadline" label="Prazo de entrega" defaultValue={editingProduct?.delivery_deadline} />
+                      <label className="grid gap-1 text-sm font-bold">
+                        Regras de uso
+                        <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-md border border-[#ccd5e2] px-3 py-2" />
+                      </label>
                       <Input name="estoque" label="Estoque" type="number" defaultValue={editingProduct?.estoque} />
                       <label className="flex items-center gap-2 text-sm font-bold">
                         <input name="destaque_home" type="checkbox" defaultChecked={Boolean(editingProduct?.destaque_home)} />

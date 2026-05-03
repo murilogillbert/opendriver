@@ -4,12 +4,14 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
+import { config } from "./config.js";
 import { execute, query, sqlTypes } from "./db.js";
 import { saveUpload } from "./upload.js";
 import {
   createOrderSchema,
   forgotPasswordSchema,
   loginSchema,
+  processPaymentSchema,
   productSchema,
   registerSchema
 } from "./schemas.js";
@@ -45,6 +47,146 @@ const nextLevelCaseSql = `
   END
 `;
 
+const paymentStatusFromMercadoPago = (status?: string) => {
+  if (status === "approved") {
+    return "approved";
+  }
+
+  if (status === "rejected") {
+    return "rejected";
+  }
+
+  if (status === "cancelled" || status === "cancelled_by_user") {
+    return "cancelled";
+  }
+
+  return "pending";
+};
+
+const orderStatusFromPayment = (paymentStatus: string) =>
+  paymentStatus === "approved" ? "confirmado" : paymentStatus === "rejected" ? "cancelado" : "pendente_pagamento";
+
+async function createMercadoPagoPayment(body: unknown) {
+  if (!config.mercadoPago.accessToken) {
+    throw Object.assign(new Error("mercado_pago_access_token_missing"), { statusCode: 500 });
+  }
+
+  const response = await fetch("https://api.mercadopago.com/v1/payments", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.mercadoPago.accessToken}`,
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": randomBytes(16).toString("hex")
+    },
+    body: JSON.stringify(body)
+  });
+
+  const data = (await response.json()) as Record<string, unknown>;
+
+  if (!response.ok) {
+    throw Object.assign(new Error("mercado_pago_payment_failed"), {
+      statusCode: 502,
+      details: data
+    });
+  }
+
+  return data;
+}
+
+async function getProductForCheckout(productId: number) {
+  const products = await query<{
+    id: number;
+    nome: string;
+    offer_type: string;
+    delivery_method: "digital" | "presencial" | "fisica";
+    tipo_entrega: "digital" | "fisico" | "ambos";
+    preco_original: number;
+    preco_desconto: number;
+    economia_estimada: number;
+    status: string;
+  }>(
+    `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto, economia_estimada, status
+       FROM dbo.products
+      WHERE id = @id AND status = 'ativo'`,
+    (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, productId)
+  );
+
+  return products[0];
+}
+
+async function createOrderRecord(input: {
+  userId: number;
+  product: {
+    id: number;
+    nome: string;
+    delivery_method?: "digital" | "presencial" | "fisica";
+    tipo_entrega?: "digital" | "fisico" | "ambos";
+    preco_original: number;
+    preco_desconto: number;
+    economia_estimada: number;
+  };
+  paymentStatus: string;
+  paymentMethod: string;
+  mercadoPagoPaymentId?: string | number | null;
+  mercadoPagoStatus?: string | null;
+}) {
+  const userRows = await query<{
+    email: string;
+    endereco: string;
+    numero: string;
+    complemento: string | null;
+    bairro: string;
+    cidade: string;
+    estado: string;
+    cep: string;
+  }>(
+    `SELECT email, endereco, numero, complemento, bairro, cidade, estado, cep
+       FROM dbo.users
+      WHERE id = @id`,
+    (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, input.userId)
+  );
+  const profile = userRows[0];
+  const enderecoEntrega = `${profile.endereco}, ${profile.numero}${profile.complemento ? ` - ${profile.complemento}` : ""}, ${profile.bairro}, ${profile.cidade}/${profile.estado}, CEP ${profile.cep}`;
+  const deliveryType =
+    input.product.delivery_method === "fisica" || input.product.tipo_entrega === "fisico" ? "fisico" : "digital";
+  const paymentStatus = input.paymentStatus;
+  const orderStatus = orderStatusFromPayment(paymentStatus);
+  const code = deliveryType === "digital" && paymentStatus === "approved" ? voucherCode() : null;
+
+  const result = await execute<{ id: number; public_code: string; voucher_code: string | null }>(
+    `INSERT INTO dbo.product_orders (
+        user_id, product_id, quantidade, valor_original_total, valor_pago_total,
+        economia_total, tipo_entrega, email_entrega, endereco_entrega, voucher_code, status,
+        payment_status, payment_method, mercado_pago_payment_id, mercado_pago_status, paid_at
+      )
+      OUTPUT INSERTED.id, INSERTED.public_code, INSERTED.voucher_code
+      VALUES (
+        @user_id, @product_id, 1, @valor_original_total, @valor_pago_total,
+        @economia_total, @tipo_entrega, @email_entrega, @endereco_entrega, @voucher_code, @status,
+        @payment_status, @payment_method, @mercado_pago_payment_id, @mercado_pago_status, @paid_at
+      )`,
+    (sqlRequest) =>
+      sqlRequest
+        .input("user_id", sqlTypes.BigInt, input.userId)
+        .input("product_id", sqlTypes.BigInt, input.product.id)
+        .input("valor_original_total", sqlTypes.Decimal(12, 2), input.product.preco_original)
+        .input("valor_pago_total", sqlTypes.Decimal(12, 2), input.product.preco_desconto)
+        .input("economia_total", sqlTypes.Decimal(12, 2), input.product.economia_estimada)
+        .input("tipo_entrega", sqlTypes.VarChar(20), deliveryType)
+        .input("email_entrega", sqlTypes.NVarChar(180), deliveryType === "digital" ? profile.email : null)
+        .input("endereco_entrega", sqlTypes.NVarChar(500), enderecoEntrega)
+        .input("voucher_code", sqlTypes.VarChar(40), code)
+        .input("status", sqlTypes.VarChar(30), orderStatus)
+        .input("payment_status", sqlTypes.VarChar(30), paymentStatus)
+        .input("payment_method", sqlTypes.VarChar(30), input.paymentMethod)
+        .input("mercado_pago_payment_id", sqlTypes.NVarChar(80), input.mercadoPagoPaymentId ? String(input.mercadoPagoPaymentId) : null)
+        .input("mercado_pago_status", sqlTypes.NVarChar(80), input.mercadoPagoStatus ?? null)
+        .input("paid_at", sqlTypes.DateTime2, paymentStatus === "approved" ? new Date() : null)
+  );
+
+  return result.recordset[0];
+}
+
 export async function registerMarketplaceRoutes(app: FastifyInstance) {
   app.post("/api/auth/register", async (request, reply) => {
     const body = registerSchema.parse(request.body);
@@ -52,17 +194,18 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
     const result = await execute<{ id: number; email: string; nome: string; tipo_usuario: "passageiro" }>(
       `INSERT INTO dbo.users (
-          nome, email, telefone, tipo_usuario, cidade, estado, status, password_hash,
+          nome, cpf, email, telefone, tipo_usuario, cidade, estado, status, password_hash,
           endereco, numero, complemento, bairro, cep
         )
         OUTPUT INSERTED.id, INSERTED.email, INSERTED.nome, INSERTED.tipo_usuario
         VALUES (
-          @nome, @email, @telefone, 'passageiro', @cidade, @estado, 'ativo', @password_hash,
+          @nome, @cpf, @email, @telefone, 'passageiro', @cidade, @estado, 'ativo', @password_hash,
           @endereco, @numero, @complemento, @bairro, @cep
         )`,
       (sqlRequest) =>
         sqlRequest
           .input("nome", sqlTypes.NVarChar(140), body.nome)
+          .input("cpf", sqlTypes.VarChar(14), body.cpf)
           .input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
           .input("telefone", sqlTypes.VarChar(30), body.telefone)
           .input("cidade", sqlTypes.NVarChar(120), body.cidade)
@@ -220,7 +363,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   app.get("/api/me", async (request) => {
     const user = await requireUser(request);
     const profile = await query(
-      `SELECT id, nome, email, telefone, tipo_usuario, cidade, estado, endereco, numero,
+      `SELECT id, nome, cpf, email, telefone, tipo_usuario, cidade, estado, endereco, numero,
               complemento, bairro, cep
          FROM dbo.users
         WHERE id = @id`,
@@ -242,18 +385,20 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/products", async (request) => {
-    const queryParams = request.query as { category?: string; featured?: string };
+    const queryParams = request.query as { category?: string; featured?: string; offer_type?: string };
     const data = await query(
       `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
          FROM dbo.products p
          LEFT JOIN dbo.product_categories c ON c.id = p.category_id
         WHERE p.status = 'ativo'
           AND (@category IS NULL OR c.slug = @category)
+          AND (@offer_type IS NULL OR p.offer_type = @offer_type)
           AND (@featured IS NULL OR p.destaque_home = 1)
         ORDER BY p.destaque_home DESC, p.economia_mensal_estimada DESC, p.created_at DESC`,
       (sqlRequest) =>
         sqlRequest
           .input("category", sqlTypes.VarChar(140), queryParams.category ?? null)
+          .input("offer_type", sqlTypes.VarChar(30), queryParams.offer_type ?? null)
           .input("featured", sqlTypes.VarChar(10), queryParams.featured ?? null)
     );
 
@@ -314,6 +459,16 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           (SELECT COUNT(*) FROM dbo.product_orders WHERE created_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1)) AS pedidos_mes,
           (SELECT COALESCE(SUM(valor_pago_total), 0) FROM dbo.product_orders WHERE status IN (${eligibleOrderStatuses})) AS receita_produtos,
           (SELECT COALESCE(SUM(economia_total), 0) FROM dbo.product_orders WHERE status IN (${eligibleOrderStatuses})) AS economia_gerada,
+          (SELECT COALESCE(AVG(CAST(valor_pago_total AS DECIMAL(12,2))), 0) FROM dbo.product_orders WHERE status IN (${eligibleOrderStatuses})) AS ticket_medio,
+          (SELECT COUNT(*) FROM dbo.product_orders WHERE payment_status = 'approved') AS pagamentos_aprovados,
+          (SELECT COUNT(*) FROM dbo.product_orders WHERE payment_status = 'pending') AS pagamentos_pendentes,
+          (SELECT COUNT(*) FROM dbo.product_orders WHERE payment_status = 'rejected') AS pagamentos_recusados,
+          (SELECT COUNT(*) FROM dbo.page_events WHERE event_name = 'home_view') AS home_views,
+          (SELECT COUNT(*) FROM dbo.page_events WHERE event_name IN ('checkout_started', 'purchase_completed')) AS home_conversions,
+          (SELECT COALESCE(SUM(o.valor_pago_total), 0) FROM dbo.product_orders o JOIN dbo.products p ON p.id = o.product_id WHERE o.status IN (${eligibleOrderStatuses}) AND p.offer_type = 'produto_fisico') AS receita_produto_fisico,
+          (SELECT COALESCE(SUM(o.valor_pago_total), 0) FROM dbo.product_orders o JOIN dbo.products p ON p.id = o.product_id WHERE o.status IN (${eligibleOrderStatuses}) AND p.offer_type = 'produto_digital') AS receita_produto_digital,
+          (SELECT COALESCE(SUM(o.valor_pago_total), 0) FROM dbo.product_orders o JOIN dbo.products p ON p.id = o.product_id WHERE o.status IN (${eligibleOrderStatuses}) AND p.offer_type = 'servico') AS receita_servico,
+          (SELECT COALESCE(SUM(o.valor_pago_total), 0) FROM dbo.product_orders o JOIN dbo.products p ON p.id = o.product_id WHERE o.status IN (${eligibleOrderStatuses}) AND p.offer_type = 'voucher') AS receita_voucher,
           (SELECT COUNT(*) FROM dbo.leads) AS total_leads,
           (SELECT COUNT(*) FROM dbo.bot_interactions) AS total_interacoes_bot,
           (SELECT COUNT(*) FROM (
@@ -373,7 +528,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     await requireAdmin(request);
     const data = await query(
       `SELECT o.*, u.nome AS usuario_nome, u.email AS usuario_email, p.nome AS produto_nome,
-              p.tipo AS produto_tipo, p.imagem_url
+              p.tipo AS produto_tipo, p.offer_type, p.delivery_method, p.imagem_url
          FROM dbo.product_orders o
          JOIN dbo.users u ON u.id = o.user_id
          JOIN dbo.products p ON p.id = o.product_id
@@ -393,13 +548,15 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       `INSERT INTO dbo.products (
           category_id, partner_id, nome, slug, descricao_curta, descricao, tipo, tipo_entrega,
           preco_original, preco_desconto, economia_estimada, economia_mensal_estimada,
-          imagem_url, video_url, estoque, limite_resgates, destaque_home, status
+          imagem_url, gallery_urls, video_url, usage_rules, delivery_deadline,
+          estoque, limite_resgates, destaque_home, status, offer_type, delivery_method
         )
         OUTPUT INSERTED.id
         VALUES (
           @category_id, @partner_id, @nome, @slug, @descricao_curta, @descricao, @tipo, @tipo_entrega,
           @preco_original, @preco_desconto, @economia_estimada, @economia_mensal_estimada,
-          @imagem_url, @video_url, @estoque, @limite_resgates, @destaque_home, @status
+          @imagem_url, @gallery_urls, @video_url, @usage_rules, @delivery_deadline,
+          @estoque, @limite_resgates, @destaque_home, @status, @offer_type, @delivery_method
         )`,
       (sqlRequest) =>
         sqlRequest
@@ -411,12 +568,17 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("descricao", sqlTypes.NVarChar(sqlTypes.MAX), body.descricao)
           .input("tipo", sqlTypes.VarChar(20), body.tipo)
           .input("tipo_entrega", sqlTypes.VarChar(20), body.tipo_entrega)
+          .input("offer_type", sqlTypes.VarChar(30), body.offer_type)
+          .input("delivery_method", sqlTypes.VarChar(30), body.delivery_method)
           .input("preco_original", sqlTypes.Decimal(12, 2), body.preco_original)
           .input("preco_desconto", sqlTypes.Decimal(12, 2), body.preco_desconto)
           .input("economia_estimada", sqlTypes.Decimal(12, 2), economy)
           .input("economia_mensal_estimada", sqlTypes.Decimal(12, 2), body.economia_mensal_estimada)
           .input("imagem_url", sqlTypes.NVarChar(500), body.imagem_url ?? null)
+          .input("gallery_urls", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify(body.gallery_urls ?? []))
           .input("video_url", sqlTypes.NVarChar(500), body.video_url ?? null)
+          .input("usage_rules", sqlTypes.NVarChar(sqlTypes.MAX), body.usage_rules ?? null)
+          .input("delivery_deadline", sqlTypes.NVarChar(120), body.delivery_deadline ?? null)
           .input("estoque", sqlTypes.Int, body.estoque ?? null)
           .input("limite_resgates", sqlTypes.Int, body.limite_resgates ?? null)
           .input("destaque_home", sqlTypes.Bit, body.destaque_home)
@@ -443,12 +605,17 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
               descricao = @descricao,
               tipo = @tipo,
               tipo_entrega = @tipo_entrega,
+              offer_type = @offer_type,
+              delivery_method = @delivery_method,
               preco_original = @preco_original,
               preco_desconto = @preco_desconto,
               economia_estimada = @economia_estimada,
               economia_mensal_estimada = @economia_mensal_estimada,
               imagem_url = @imagem_url,
+              gallery_urls = @gallery_urls,
               video_url = @video_url,
+              usage_rules = @usage_rules,
+              delivery_deadline = @delivery_deadline,
               estoque = @estoque,
               limite_resgates = @limite_resgates,
               destaque_home = @destaque_home,
@@ -466,12 +633,17 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("descricao", sqlTypes.NVarChar(sqlTypes.MAX), body.descricao)
           .input("tipo", sqlTypes.VarChar(20), body.tipo)
           .input("tipo_entrega", sqlTypes.VarChar(20), body.tipo_entrega)
+          .input("offer_type", sqlTypes.VarChar(30), body.offer_type)
+          .input("delivery_method", sqlTypes.VarChar(30), body.delivery_method)
           .input("preco_original", sqlTypes.Decimal(12, 2), body.preco_original)
           .input("preco_desconto", sqlTypes.Decimal(12, 2), body.preco_desconto)
           .input("economia_estimada", sqlTypes.Decimal(12, 2), economy)
           .input("economia_mensal_estimada", sqlTypes.Decimal(12, 2), body.economia_mensal_estimada)
           .input("imagem_url", sqlTypes.NVarChar(500), body.imagem_url ?? null)
+          .input("gallery_urls", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify(body.gallery_urls ?? []))
           .input("video_url", sqlTypes.NVarChar(500), body.video_url ?? null)
+          .input("usage_rules", sqlTypes.NVarChar(sqlTypes.MAX), body.usage_rules ?? null)
+          .input("delivery_deadline", sqlTypes.NVarChar(120), body.delivery_deadline ?? null)
           .input("estoque", sqlTypes.Int, body.estoque ?? null)
           .input("limite_resgates", sqlTypes.Int, body.limite_resgates ?? null)
           .input("destaque_home", sqlTypes.Bit, body.destaque_home)
@@ -670,10 +842,134 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
+  app.get("/api/payments/config", async () => ({
+    data: {
+      public_key: config.mercadoPago.publicKey
+    }
+  }));
+
+  app.post("/api/payments/process_payment", async (request, reply) => {
+    const user = await requireUser(request);
+    const body = processPaymentSchema.parse(request.body);
+    const product = await getProductForCheckout(body.product_id);
+
+    if (!product) {
+      return reply.code(404).send({ error: "product_not_found" });
+    }
+
+    const profile = await query<{ email: string; nome: string; cpf: string | null }>(
+      `SELECT email, nome, cpf FROM dbo.users WHERE id = @id`,
+      (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, user.id)
+    );
+
+    const transactionAmount = Number(product.preco_desconto);
+    const paymentMethodId =
+      body.payment_method === "pix" ? "pix" : body.payment_method_id ?? (body.payment_method === "debit_card" ? "debvisa" : "visa");
+    const mpBody: Record<string, unknown> = {
+      transaction_amount: transactionAmount,
+      description: product.nome,
+      payment_method_id: paymentMethodId,
+      payer: {
+        email: profile[0].email,
+        ...(profile[0].cpf
+          ? {
+              identification: {
+                type: "CPF",
+                number: profile[0].cpf.replace(/\D/g, "")
+              }
+            }
+          : {})
+      }
+    };
+
+    if (body.payment_method !== "pix") {
+      if (!body.token) {
+        return reply.code(400).send({ error: "card_token_required" });
+      }
+
+      mpBody.token = body.token;
+      mpBody.installments = body.installments;
+      if (body.issuer_id) {
+        mpBody.issuer_id = body.issuer_id;
+      }
+    }
+
+    const mpPayment = await createMercadoPagoPayment(mpBody);
+    const mpStatus = String(mpPayment.status ?? "pending");
+    const paymentStatus = paymentStatusFromMercadoPago(mpStatus);
+    const order = await createOrderRecord({
+      userId: user.id,
+      product,
+      paymentStatus,
+      paymentMethod: body.payment_method,
+      mercadoPagoPaymentId: mpPayment.id as string | number | undefined,
+      mercadoPagoStatus: mpStatus
+    });
+
+    const pointOfInteraction = mpPayment.point_of_interaction as
+      | {
+          transaction_data?: {
+            qr_code_base64?: string;
+            qr_code?: string;
+            ticket_url?: string;
+          };
+        }
+      | undefined;
+
+    return reply.code(201).send({
+      data: {
+        order,
+        payment: {
+          id: mpPayment.id,
+          status: mpStatus,
+          status_detail: mpPayment.status_detail,
+          qr_code_base64: pointOfInteraction?.transaction_data?.qr_code_base64,
+          qr_code: pointOfInteraction?.transaction_data?.qr_code,
+          ticket_url: pointOfInteraction?.transaction_data?.ticket_url
+        }
+      }
+    });
+  });
+
+  app.post("/api/process_payment", async (request, reply) => {
+    return app.inject({
+      method: "POST",
+      url: "/api/payments/process_payment",
+      headers: request.headers as Record<string, string>,
+      payload: request.body as object
+    }).then((response) => {
+      reply.code(response.statusCode);
+      return JSON.parse(response.body);
+    });
+  });
+
+  app.post("/api/analytics/page-view", async (request) => {
+    const body = z
+      .object({
+        event_name: z.string().default("home_view"),
+        path: z.string().optional(),
+        metadata: z.record(z.unknown()).optional()
+      })
+      .parse(request.body);
+
+    await execute(
+      `INSERT INTO dbo.page_events (event_name, path, metadata)
+       VALUES (@event_name, @path, @metadata)`,
+      (sqlRequest) =>
+        sqlRequest
+          .input("event_name", sqlTypes.VarChar(60), body.event_name)
+          .input("path", sqlTypes.NVarChar(240), body.path ?? null)
+          .input("metadata", sqlTypes.NVarChar(sqlTypes.MAX), body.metadata ? JSON.stringify(body.metadata) : null)
+    );
+
+    return { data: { tracked: true } };
+  });
+
   app.get("/api/orders/my", async (request) => {
     const user = await requireUser(request);
     const data = await query(
-      `SELECT o.*, p.nome AS produto_nome, p.imagem_url, p.tipo AS produto_tipo
+      `SELECT o.*, p.nome AS produto_nome, p.imagem_url, p.tipo AS produto_tipo,
+              p.offer_type, p.delivery_method, p.video_url
          FROM dbo.product_orders o
          JOIN dbo.products p ON p.id = o.product_id
         WHERE o.user_id = @user_id

@@ -17,6 +17,10 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   jwtSecret: process.env.JWT_SECRET ?? "change_this_jwt_secret",
   uploadDir: process.env.UPLOAD_DIR ?? "uploads",
+  mercadoPago: {
+    accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN ?? "",
+    publicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? ""
+  },
   sql: {
     server: process.env.SQLSERVER_HOST ?? "localhost",
     port: numberFromEnv("SQLSERVER_PORT", 1433),

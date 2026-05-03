@@ -20,6 +20,8 @@ const fallbackProducts: Product[] = [
     descricao: "Use o voucher em postos parceiros e reduza o custo mensal com abastecimento.",
     tipo: "digital",
     tipo_entrega: "digital",
+    offer_type: "voucher",
+    delivery_method: "digital",
     preco_original: 100,
     preco_desconto: 90,
     economia_estimada: 10,
@@ -38,6 +40,8 @@ const fallbackProducts: Product[] = [
     descricao: "Acesso a descontos recorrentes em farmacias parceiras para compras do mes.",
     tipo: "digital",
     tipo_entrega: "digital",
+    offer_type: "beneficio_recorrente",
+    delivery_method: "digital",
     preco_original: 49,
     preco_desconto: 19,
     economia_estimada: 30,
@@ -56,6 +60,8 @@ const fallbackProducts: Product[] = [
     descricao: "Kit com itens essenciais de limpeza automotiva enviado para o endereco cadastrado.",
     tipo: "fisico",
     tipo_entrega: "fisico",
+    offer_type: "produto_fisico",
+    delivery_method: "fisica",
     preco_original: 129,
     preco_desconto: 89,
     economia_estimada: 40,
@@ -74,6 +80,12 @@ function MarketplaceHome() {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    void fetch(`${import.meta.env.VITE_API_BASE_URL ?? "/api"}/analytics/page-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_name: "home_view", path: "/" })
+    }).catch(() => undefined);
+
     void marketplaceApi
       .products()
       .then((data) => setProducts(data.length > 0 ? data : fallbackProducts))
@@ -94,6 +106,11 @@ function MarketplaceHome() {
   );
 
   const featuredProducts = visibleProducts.slice(0, 6);
+  const serviceProducts = products.filter((product) => product.offer_type === "servico").slice(0, 3);
+  const voucherProducts = products.filter((product) => product.offer_type === "voucher").slice(0, 3);
+  const biggestSavings = [...products]
+    .sort((a, b) => Number(b.economia_estimada) - Number(a.economia_estimada))
+    .slice(0, 3);
   const totalSavings = savingsItems.reduce((sum, item) => sum + item.value, 0);
 
   const navigate = (path: string) => {
@@ -106,15 +123,12 @@ function MarketplaceHome() {
       navigate("/entrar");
       return;
     }
-
-    const deliveryType = product.tipo_entrega === "fisico" ? "fisico" : "digital";
-
-    try {
-      await marketplaceApi.createOrder(product.id, deliveryType);
-      setStatus(`Pedido confirmado. Voce economizou ${money(product.economia_estimada)}.`);
-    } catch {
-      setStatus("Nao foi possivel concluir o pedido agora.");
-    }
+    void fetch(`${import.meta.env.VITE_API_BASE_URL ?? "/api"}/analytics/page-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_name: "checkout_started", path: `/checkout/${product.id}` })
+    }).catch(() => undefined);
+    navigate(`/checkout/${product.id}`);
   };
 
   return (
@@ -231,8 +245,17 @@ function MarketplaceHome() {
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-10 md:grid-cols-4">
           <Benefit title="Vouchers" text="Combustivel, alimentacao, farmacia e viagens com economia clara." />
           <Benefit title="Produtos" text="Itens fisicos e digitais com preco Open Driver." />
+          <Benefit title="Servicos" text="Lavagem, oleo, guincho e assistencia presencial." />
           <Benefit title="Cashback" text="Retorno acumulado para compras e beneficios recorrentes." />
-          <Benefit title="Minha economia" text="Historico, vouchers e total economizado por usuario." />
+        </div>
+      </section>
+
+      <section className="bg-white">
+        <div className="mx-auto grid max-w-7xl gap-5 px-5 py-10 md:grid-cols-4">
+          <Highlight title="Economia media mensal" value="R$600+" />
+          <Highlight title="Mais comprados" value={products[0]?.nome ?? "Combustivel"} />
+          <Highlight title="Servicos utilizados" value={serviceProducts[0]?.nome ?? "Lavagem"} />
+          <Highlight title="Economia dos usuarios" value={money(products.reduce((sum, product) => sum + Number(product.economia_mensal_estimada ?? 0), 0))} />
         </div>
       </section>
 
@@ -270,10 +293,14 @@ function MarketplaceHome() {
 
         <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {featuredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} onBuy={() => buy(product)} />
+            <ProductCard key={product.id} product={product} onBuy={() => buy(product)} onDetails={() => setStatus(product.descricao)} />
           ))}
         </div>
       </section>
+
+      <OfferShelf title="Servicos mais utilizados" products={serviceProducts} onBuy={buy} />
+      <OfferShelf title="Vouchers em destaque" products={voucherProducts} onBuy={buy} />
+      <OfferShelf title="Beneficios com maior economia" products={biggestSavings} onBuy={buy} />
 
       <section className="bg-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
@@ -331,6 +358,15 @@ function Benefit({ title, text }: { title: string; text: string }) {
   );
 }
 
+function Highlight({ title, value }: { title: string; value: string }) {
+  return (
+    <article className="rounded-md border border-[#e0e6ef] bg-[#f7f3ea] p-5">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">{title}</p>
+      <strong className="mt-2 block text-xl font-black">{value}</strong>
+    </article>
+  );
+}
+
 function FilterButton({
   active,
   onClick,
@@ -355,7 +391,21 @@ function FilterButton({
   );
 }
 
-function ProductCard({ product, onBuy }: { product: Product; onBuy: () => void }) {
+function offerTypeLabel(product: Product) {
+  const labels: Record<string, string> = {
+    produto_fisico: "Produto fisico",
+    produto_digital: "Digital",
+    servico: "Servico",
+    voucher: "Voucher",
+    beneficio_recorrente: "Beneficio",
+    assinatura: "Assinatura",
+    combo: "Combo"
+  };
+
+  return labels[product.offer_type ?? ""] ?? product.categoria_nome ?? product.tipo;
+}
+
+function ProductCard({ product, onBuy, onDetails }: { product: Product; onBuy: () => void; onDetails: () => void }) {
   return (
     <article className="group overflow-hidden rounded-md border border-[#ded4bb] bg-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-navy">
       <div className="relative aspect-[16/10] bg-[#dce3ee]">
@@ -363,7 +413,7 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: () => void }
           <img src={product.imagem_url} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         )}
         <span className="absolute left-3 top-3 rounded-md bg-[#08111f] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white">
-          {product.categoria_nome ?? product.tipo}
+          {offerTypeLabel(product)}
         </span>
       </div>
       <div className="p-5">
@@ -383,16 +433,50 @@ function ProductCard({ product, onBuy }: { product: Product; onBuy: () => void }
             </span>
             <strong className="text-2xl font-black">{money(product.preco_desconto)}</strong>
           </div>
-          <button
-            type="button"
-            onClick={onBuy}
-            className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink transition hover:bg-brand-goldLight"
-          >
-            Resgatar
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={onBuy}
+              className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink transition hover:bg-brand-goldLight"
+            >
+              Comprar agora
+            </button>
+            <button
+              type="button"
+              onClick={onDetails}
+              className="rounded-md border border-[#d9caa7] px-4 py-2 text-xs font-black text-[#344055]"
+            >
+              Ver detalhes
+            </button>
+          </div>
         </div>
       </div>
     </article>
+  );
+}
+
+function OfferShelf({
+  title,
+  products,
+  onBuy
+}: {
+  title: string;
+  products: Product[];
+  onBuy: (product: Product) => void;
+}) {
+  if (products.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mx-auto max-w-7xl px-5 pb-12">
+      <h2 className="font-display text-2xl font-black">{title}</h2>
+      <div className="mt-5 grid gap-5 md:grid-cols-3">
+        {products.map((product) => (
+          <ProductCard key={`${title}-${product.id}`} product={product} onBuy={() => onBuy(product)} onDetails={() => undefined} />
+        ))}
+      </div>
+    </section>
   );
 }
 

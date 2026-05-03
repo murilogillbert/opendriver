@@ -114,6 +114,7 @@ export const createPaymentSchema = z.object({
 
 export const registerSchema = z.object({
   nome: z.string().trim().min(2),
+  cpf: z.string().trim().min(11),
   email: z.string().trim().email(),
   senha: z.string().min(8),
   telefone: z.string().trim().min(8),
@@ -144,12 +145,27 @@ export const productSchema = z.object({
   descricao: z.string().trim().min(12),
   tipo: z.enum(["digital", "fisico"]),
   tipo_entrega: z.enum(["digital", "fisico", "ambos"]),
+  offer_type: z
+    .enum([
+      "produto_fisico",
+      "produto_digital",
+      "servico",
+      "voucher",
+      "beneficio_recorrente",
+      "assinatura",
+      "combo"
+    ])
+    .default("produto_digital"),
+  delivery_method: z.enum(["digital", "presencial", "fisica"]).default("digital"),
   preco_original: z.coerce.number().nonnegative(),
   preco_desconto: z.coerce.number().nonnegative(),
   economia_estimada: z.coerce.number().nonnegative().optional().nullable(),
   economia_mensal_estimada: z.coerce.number().nonnegative().default(0),
   imagem_url: nullableString,
+  gallery_urls: z.array(z.string()).optional().default([]),
   video_url: nullableString,
+  usage_rules: nullableString,
+  delivery_deadline: nullableString,
   estoque: z.coerce.number().int().nonnegative().optional().nullable(),
   limite_resgates: z.coerce.number().int().nonnegative().optional().nullable(),
   destaque_home: z.boolean().default(false),
@@ -160,4 +176,13 @@ export const createOrderSchema = z.object({
   product_id: z.coerce.number().int().positive(),
   quantidade: z.coerce.number().int().positive().default(1),
   tipo_entrega: z.enum(["digital", "fisico"]).optional()
+});
+
+export const processPaymentSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  payment_method: z.enum(["pix", "credit_card", "debit_card"]),
+  token: z.string().optional().nullable(),
+  installments: z.coerce.number().int().positive().default(1),
+  payment_method_id: z.string().optional().nullable(),
+  issuer_id: z.string().optional().nullable()
 });
