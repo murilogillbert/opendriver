@@ -15,6 +15,8 @@ export const config = {
   env: process.env.APP_ENV ?? process.env.NODE_ENV ?? "development",
   port: numberFromEnv("APP_PORT", 3001),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  jwtSecret: process.env.JWT_SECRET ?? "change_this_jwt_secret",
+  uploadDir: process.env.UPLOAD_DIR ?? "uploads",
   sql: {
     server: process.env.SQLSERVER_HOST ?? "localhost",
     port: numberFromEnv("SQLSERVER_PORT", 1433),

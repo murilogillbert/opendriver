@@ -2,18 +2,21 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 
 import {
+  AdminProduct,
   adminApi,
   Commission,
   Lead,
   Overview,
   Partner,
-  PartnerService
+  PartnerService,
+  ProductCategory
 } from "../../lib/adminApi";
 
-type AdminTab = "visao" | "parceiros" | "leads" | "comissoes";
+type AdminTab = "visao" | "produtos" | "parceiros" | "leads" | "comissoes";
 
 const tabs: { id: AdminTab; label: string }[] = [
   { id: "visao", label: "Visao geral" },
+  { id: "produtos", label: "Produtos" },
   { id: "parceiros", label: "Parceiros" },
   { id: "leads", label: "Leads" },
   { id: "comissoes", label: "Comissoes" }
@@ -32,6 +35,12 @@ function AdminApp() {
   const [services, setServices] = useState<PartnerService[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
+  const [hasAdminToken, setHasAdminToken] = useState(
+    Boolean(window.localStorage.getItem("opendriver-admin-token"))
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,13 +49,14 @@ function AdminApp() {
     setError(null);
 
     try {
-      const [overviewData, partnersData, servicesData, leadsData, commissionsData] =
+      const [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData] =
         await Promise.all([
           adminApi.overview(),
           adminApi.partners(),
           adminApi.services(),
           adminApi.leads(),
-          adminApi.commissions()
+          adminApi.commissions(),
+          adminApi.categories()
         ]);
 
       setOverview(overviewData);
@@ -54,8 +64,13 @@ function AdminApp() {
       setServices(servicesData);
       setLeads(leadsData);
       setCommissions(commissionsData);
+      setCategories(categoryData);
+
+      if (window.localStorage.getItem("opendriver-admin-token")) {
+        setProducts(await adminApi.adminProducts());
+      }
     } catch {
-      setError("Nao foi possivel conectar com a API.");
+      setError("Nao foi possivel carregar todos os dados da API.");
     } finally {
       setIsLoading(false);
     }
@@ -101,6 +116,72 @@ function AdminApp() {
 
   const updateLead = async (id: number, status: string) => {
     await adminApi.updateLeadStatus(id, status);
+    await reload();
+  };
+
+  const loginAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+
+    await adminApi.loginAdmin(String(values.email), String(values.senha));
+    setHasAdminToken(true);
+    await reload();
+  };
+
+  const bootstrapAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+
+    await adminApi.bootstrapAdmin(String(values.email), String(values.senha), String(values.nome));
+    setHasAdminToken(true);
+    await reload();
+  };
+
+  const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const imageFile = formData.get("imagem") as File | null;
+    const videoFile = formData.get("video") as File | null;
+
+    let imagemUrl = String(formData.get("imagem_url") ?? "");
+    let videoUrl = String(formData.get("video_url") ?? "");
+
+    if (imageFile?.size) {
+      imagemUrl = (await adminApi.upload(imageFile)).url;
+    }
+
+    if (videoFile?.size) {
+      videoUrl = (await adminApi.upload(videoFile)).url;
+    }
+
+    const payload = {
+      category_id: formData.get("category_id") ? Number(formData.get("category_id")) : undefined,
+      nome: String(formData.get("nome")),
+      slug: String(formData.get("slug") ?? "") || undefined,
+      descricao_curta: String(formData.get("descricao_curta")),
+      descricao: String(formData.get("descricao")),
+      tipo: String(formData.get("tipo")),
+      tipo_entrega: String(formData.get("tipo_entrega")),
+      preco_original: Number(formData.get("preco_original")),
+      preco_desconto: Number(formData.get("preco_desconto")),
+      economia_estimada: Number(formData.get("economia_estimada") || 0),
+      economia_mensal_estimada: Number(formData.get("economia_mensal_estimada") || 0),
+      imagem_url: imagemUrl || undefined,
+      video_url: videoUrl || undefined,
+      estoque: formData.get("estoque") ? Number(formData.get("estoque")) : undefined,
+      destaque_home: formData.get("destaque_home") === "on",
+      status: String(formData.get("status"))
+    };
+
+    if (editingProduct) {
+      await adminApi.updateProduct(editingProduct.id, payload);
+    } else {
+      await adminApi.createProduct(payload);
+    }
+
+    form.reset();
+    setEditingProduct(null);
     await reload();
   };
 
@@ -154,6 +235,104 @@ function AdminApp() {
                 <Metric label="Receita estimada" value={money(overview.receita_estimada)} />
                 <Metric label="Recebido" value={money(overview.receita_recebida)} />
               </div>
+            )}
+
+            {activeTab === "produtos" && (
+              hasAdminToken ? (
+                <div className="grid gap-6 lg:grid-cols-[25rem_1fr]">
+                  <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                    <h2 className="text-lg font-black">
+                      {editingProduct ? "Editar produto" : "Novo produto"}
+                    </h2>
+                    <form onSubmit={submitProduct} className="mt-4 grid gap-3">
+                      <label className="grid gap-1 text-sm font-bold">
+                        Categoria
+                        <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <option value="">Selecione</option>
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>{category.nome}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <Input name="nome" label="Nome" required defaultValue={editingProduct?.nome} />
+                      <Input name="slug" label="Slug" defaultValue={editingProduct?.slug} />
+                      <Input name="descricao_curta" label="Descricao curta" required defaultValue={editingProduct?.descricao_curta} />
+                      <label className="grid gap-1 text-sm font-bold">
+                        Descricao completa
+                        <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-md border border-[#ccd5e2] px-3 py-2" />
+                      </label>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1 text-sm font-bold">
+                          Tipo
+                          <select name="tipo" defaultValue={editingProduct?.tipo ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                            <option value="digital">Digital</option>
+                            <option value="fisico">Fisico</option>
+                          </select>
+                        </label>
+                        <label className="grid gap-1 text-sm font-bold">
+                          Entrega
+                          <select name="tipo_entrega" defaultValue={editingProduct?.tipo_entrega ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                            <option value="digital">Digital</option>
+                            <option value="fisico">Fisica</option>
+                            <option value="ambos">Ambos</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input name="preco_original" label="Preco original" type="number" step="0.01" required defaultValue={editingProduct?.preco_original} />
+                        <Input name="preco_desconto" label="Preco desconto" type="number" step="0.01" required defaultValue={editingProduct?.preco_desconto} />
+                        <Input name="economia_estimada" label="Economia por compra" type="number" step="0.01" defaultValue={editingProduct?.economia_estimada} />
+                        <Input name="economia_mensal_estimada" label="Economia mensal" type="number" step="0.01" defaultValue={editingProduct?.economia_mensal_estimada} />
+                      </div>
+                      <Input name="imagem_url" label="URL imagem" defaultValue={editingProduct?.imagem_url} />
+                      <Input name="imagem" label="Upload imagem" type="file" accept="image/*" />
+                      <Input name="video_url" label="URL video" defaultValue={editingProduct?.video_url} />
+                      <Input name="video" label="Upload video" type="file" accept="video/*" />
+                      <Input name="estoque" label="Estoque" type="number" defaultValue={editingProduct?.estoque} />
+                      <label className="flex items-center gap-2 text-sm font-bold">
+                        <input name="destaque_home" type="checkbox" defaultChecked={Boolean(editingProduct?.destaque_home)} />
+                        Destaque na home
+                      </label>
+                      <label className="grid gap-1 text-sm font-bold">
+                        Status
+                        <select name="status" defaultValue={editingProduct?.status ?? "ativo"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <option value="ativo">Ativo</option>
+                          <option value="pausado">Pausado</option>
+                          <option value="esgotado">Esgotado</option>
+                          <option value="rascunho">Rascunho</option>
+                        </select>
+                      </label>
+                      <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+                        Salvar produto
+                      </button>
+                    </form>
+                  </section>
+
+                  <DataTable
+                    headers={["Produto", "Categoria", "Preco", "Economia", "Status", "Acoes"]}
+                    rows={products.map((product) => [
+                      product.nome,
+                      product.categoria_nome ?? "-",
+                      money(product.preco_desconto),
+                      money(product.economia_mensal_estimada),
+                      product.status,
+                      <div className="flex gap-2" key={product.id}>
+                        <button onClick={() => setEditingProduct(product)} className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black">
+                          Editar
+                        </button>
+                        <button onClick={() => adminApi.deleteProduct(product.id).then(reload)} className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700">
+                          Pausar
+                        </button>
+                      </div>
+                    ])}
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                  <AdminAuthCard title="Entrar como admin" onSubmit={loginAdmin} />
+                  <AdminAuthCard title="Criar primeiro admin" onSubmit={bootstrapAdmin} includeName />
+                </div>
+              )
             )}
 
             {activeTab === "parceiros" && (
@@ -297,6 +476,30 @@ function Input(props: InputHTMLAttributes<HTMLInputElement> & { label: string; n
       {label}
       <input {...inputProps} className="rounded-md border border-[#ccd5e2] px-3 py-2" />
     </label>
+  );
+}
+
+function AdminAuthCard({
+  title,
+  onSubmit,
+  includeName = false
+}: {
+  title: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  includeName?: boolean;
+}) {
+  return (
+    <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+      <h2 className="text-lg font-black">{title}</h2>
+      <form onSubmit={onSubmit} className="mt-4 grid gap-3">
+        {includeName && <Input name="nome" label="Nome" required />}
+        <Input name="email" label="Email" type="email" required />
+        <Input name="senha" label="Senha" type="password" required minLength={8} />
+        <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+          Continuar
+        </button>
+      </form>
+    </section>
   );
 }
 

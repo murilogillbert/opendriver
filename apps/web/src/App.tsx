@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import BenefitsSection from "./components/BenefitsSection";
 import AdminApp from "./components/admin/AdminApp";
+import AccountPage from "./components/marketplace/AccountPage";
+import AuthPage from "./components/marketplace/AuthPage";
+import MarketplaceHome from "./components/marketplace/MarketplaceHome";
 import BotSection from "./components/BotSection";
 import EarningsSection from "./components/EarningsSection";
 import FinalCTA from "./components/FinalCTA";
@@ -12,14 +15,34 @@ import TrustSection from "./components/TrustSection";
 
 function App() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-  const isAdmin = window.location.pathname.startsWith("/admin");
+  const [path, setPath] = useState(window.location.pathname);
+  const isAdmin = path.startsWith("/admin");
 
   const openAssistant = () => {
     setIsAssistantOpen(true);
   };
 
+  useEffect(() => {
+    const updatePath = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", updatePath);
+
+    return () => window.removeEventListener("popstate", updatePath);
+  }, []);
+
   if (isAdmin) {
     return <AdminApp />;
+  }
+
+  if (path.startsWith("/entrar")) {
+    return <AuthPage />;
+  }
+
+  if (path.startsWith("/minha-conta")) {
+    return <AccountPage />;
+  }
+
+  if (!path.startsWith("/motoristas")) {
+    return <MarketplaceHome />;
   }
 
   return (

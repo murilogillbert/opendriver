@@ -111,3 +111,53 @@ export const createPaymentSchema = z.object({
   status: z.enum(["pendente", "pago", "recusado"]).default("pendente"),
   observacao: nullableString
 });
+
+export const registerSchema = z.object({
+  nome: z.string().trim().min(2),
+  email: z.string().trim().email(),
+  senha: z.string().min(8),
+  telefone: z.string().trim().min(8),
+  endereco: z.string().trim().min(3),
+  numero: z.string().trim().min(1),
+  complemento: nullableString,
+  bairro: z.string().trim().min(2),
+  cidade: z.string().trim().min(2),
+  estado: z.string().trim().min(2).max(2),
+  cep: z.string().trim().min(8)
+});
+
+export const loginSchema = z.object({
+  email: z.string().trim().email(),
+  senha: z.string().min(1)
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email()
+});
+
+export const productSchema = z.object({
+  category_id: z.coerce.number().int().positive().optional().nullable(),
+  partner_id: z.coerce.number().int().positive().optional().nullable(),
+  nome: z.string().trim().min(2),
+  slug: z.string().trim().min(2).optional().nullable(),
+  descricao_curta: z.string().trim().min(8),
+  descricao: z.string().trim().min(12),
+  tipo: z.enum(["digital", "fisico"]),
+  tipo_entrega: z.enum(["digital", "fisico", "ambos"]),
+  preco_original: z.coerce.number().nonnegative(),
+  preco_desconto: z.coerce.number().nonnegative(),
+  economia_estimada: z.coerce.number().nonnegative().optional().nullable(),
+  economia_mensal_estimada: z.coerce.number().nonnegative().default(0),
+  imagem_url: nullableString,
+  video_url: nullableString,
+  estoque: z.coerce.number().int().nonnegative().optional().nullable(),
+  limite_resgates: z.coerce.number().int().nonnegative().optional().nullable(),
+  destaque_home: z.boolean().default(false),
+  status: z.enum(["ativo", "pausado", "esgotado", "rascunho"]).default("ativo")
+});
+
+export const createOrderSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  quantidade: z.coerce.number().int().positive().default(1),
+  tipo_entrega: z.enum(["digital", "fisico"]).optional()
+});
