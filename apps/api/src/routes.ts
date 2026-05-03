@@ -1,5 +1,7 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyRequest } from "fastify";
 
+import { requireAdmin } from "./auth.js";
+import { writeAuditLog } from "./audit.js";
 import { generateOpenDriverCommission } from "./commission.js";
 import { execute, getPool, query, sqlTypes } from "./db.js";
 import {
@@ -25,13 +27,82 @@ const pageQuery = (requestQuery: unknown) => {
   };
 };
 
+const clientIp = (request: FastifyRequest) => {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0]?.trim() ?? null;
+  }
+  return request.ip ?? null;
+};
+
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => {
     await getPool();
     return { ok: true };
   });
 
-  app.get("/api/partners", async (request) => {
+  // Lead capture is public so the bot, landing pages and the WhatsApp flow can post
+  // leads without an admin token. Status is forced to "novo" to avoid abuse.
+  app.post("/api/leads", async (request, reply) => {
+    const body = createLeadSchema.parse(request.body);
+    const estado = typeof body.estado === "string" ? body.estado.toUpperCase() : null;
+    const result = await execute<{ id: number; public_token: string }>(
+      `INSERT INTO dbo.leads (
+          user_id, driver_id, campaign_id, origem, telefone, nome, cidade, estado,
+          servico_interesse, partner_id, partner_service_id, status, observacao
+        )
+        OUTPUT INSERTED.id, INSERTED.public_token
+        VALUES (
+          @user_id, @driver_id, @campaign_id, @origem, @telefone, @nome, @cidade, @estado,
+          @servico_interesse, @partner_id, @partner_service_id, 'novo', @observacao
+        )`,
+      (sqlRequest) =>
+        sqlRequest
+          .input("user_id", sqlTypes.BigInt, body.user_id ?? null)
+          .input("driver_id", sqlTypes.BigInt, body.driver_id ?? null)
+          .input("campaign_id", sqlTypes.BigInt, body.campaign_id ?? null)
+          .input("origem", sqlTypes.VarChar(30), body.origem)
+          .input("telefone", sqlTypes.VarChar(30), body.telefone ?? null)
+          .input("nome", sqlTypes.NVarChar(140), body.nome ?? null)
+          .input("cidade", sqlTypes.NVarChar(120), body.cidade ?? null)
+          .input("estado", sqlTypes.Char(2), estado)
+          .input("servico_interesse", sqlTypes.NVarChar(140), body.servico_interesse ?? null)
+          .input("partner_id", sqlTypes.BigInt, body.partner_id ?? null)
+          .input("partner_service_id", sqlTypes.BigInt, body.partner_service_id ?? null)
+          .input("observacao", sqlTypes.NVarChar(sqlTypes.MAX), body.observacao ?? null)
+    );
+
+    return reply.code(201).send({ data: result.recordset[0] });
+  });
+
+  // Bot ingestion stays public so the WhatsApp/automation worker can stream messages.
+  app.post("/api/bot/interactions", async (request, reply) => {
+    const body = createBotInteractionSchema.parse(request.body);
+    const result = await execute<{ id: number }>(
+      `INSERT INTO dbo.bot_interactions (
+          user_id, telefone, canal, mensagem_usuario, resposta_bot, etapa_fluxo, intencao, lead_id
+        )
+        OUTPUT INSERTED.id
+        VALUES (
+          @user_id, @telefone, @canal, @mensagem_usuario, @resposta_bot, @etapa_fluxo, @intencao, @lead_id
+        )`,
+      (sqlRequest) =>
+        sqlRequest
+          .input("user_id", sqlTypes.BigInt, body.user_id ?? null)
+          .input("telefone", sqlTypes.VarChar(30), body.telefone ?? null)
+          .input("canal", sqlTypes.VarChar(20), body.canal)
+          .input("mensagem_usuario", sqlTypes.NVarChar(sqlTypes.MAX), body.mensagem_usuario)
+          .input("resposta_bot", sqlTypes.NVarChar(sqlTypes.MAX), body.resposta_bot)
+          .input("etapa_fluxo", sqlTypes.NVarChar(80), body.etapa_fluxo ?? null)
+          .input("intencao", sqlTypes.VarChar(40), body.intencao)
+          .input("lead_id", sqlTypes.BigInt, body.lead_id ?? null)
+    );
+
+    return reply.code(201).send({ data: result.recordset[0] });
+  });
+
+  app.get("/api/admin/partners", async (request) => {
+    await requireAdmin(request);
     const { limit, offset } = pageQuery(request.query);
     const data = await query(
       `SELECT *
@@ -45,7 +116,8 @@ export async function registerRoutes(app: FastifyInstance) {
     return { data };
   });
 
-  app.post("/api/partners", async (request, reply) => {
+  app.post("/api/admin/partners", async (request, reply) => {
+    const admin = await requireAdmin(request);
     const body = createPartnerSchema.parse(request.body);
     const result = await execute<{ id: number }>(
       `INSERT INTO dbo.partners (
@@ -75,10 +147,20 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("status", sqlTypes.VarChar(20), body.status)
     );
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "partner.created",
+      entityType: "partner",
+      entityId: result.recordset[0].id,
+      payload: { nome_fantasia: body.nome_fantasia, cidade: body.cidade, estado: body.estado },
+      ipAddress: clientIp(request)
+    });
+
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
-  app.get("/api/partner-services", async (request) => {
+  app.get("/api/admin/partner-services", async (request) => {
+    await requireAdmin(request);
     const queryParams = request.query as { partner_id?: string };
     const data = await query(
       `SELECT ps.*, p.nome_fantasia AS partner_nome
@@ -97,7 +179,8 @@ export async function registerRoutes(app: FastifyInstance) {
     return { data };
   });
 
-  app.post("/api/partner-services", async (request, reply) => {
+  app.post("/api/admin/partner-services", async (request, reply) => {
+    const admin = await requireAdmin(request);
     const body = createPartnerServiceSchema.parse(request.body);
     const result = await execute<{ id: number }>(
       `INSERT INTO dbo.partner_services (
@@ -118,10 +201,20 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("ativo", sqlTypes.Bit, body.ativo)
     );
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "partner_service.created",
+      entityType: "partner_service",
+      entityId: result.recordset[0].id,
+      payload: { partner_id: body.partner_id, nome_servico: body.nome_servico },
+      ipAddress: clientIp(request)
+    });
+
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
-  app.post("/api/commission-rules", async (request, reply) => {
+  app.post("/api/admin/commission-rules", async (request, reply) => {
+    const admin = await requireAdmin(request);
     const body = createCommissionRuleSchema.parse(request.body);
     const result = await execute<{ id: number }>(
       `INSERT INTO dbo.commission_rules (
@@ -145,10 +238,20 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("ativo", sqlTypes.Bit, body.ativo)
     );
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "commission_rule.created",
+      entityType: "commission_rule",
+      entityId: result.recordset[0].id,
+      payload: body,
+      ipAddress: clientIp(request)
+    });
+
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
-  app.get("/api/leads", async (request) => {
+  app.get("/api/admin/leads", async (request) => {
+    await requireAdmin(request);
     const { limit, offset } = pageQuery(request.query);
     const data = await query(
       `SELECT l.*, p.nome_fantasia AS partner_nome, ps.nome_servico
@@ -164,40 +267,8 @@ export async function registerRoutes(app: FastifyInstance) {
     return { data };
   });
 
-  app.post("/api/leads", async (request, reply) => {
-    const body = createLeadSchema.parse(request.body);
-    const estado = typeof body.estado === "string" ? body.estado.toUpperCase() : null;
-    const result = await execute<{ id: number; public_token: string }>(
-      `INSERT INTO dbo.leads (
-          user_id, driver_id, campaign_id, origem, telefone, nome, cidade, estado,
-          servico_interesse, partner_id, partner_service_id, status, observacao
-        )
-        OUTPUT INSERTED.id, INSERTED.public_token
-        VALUES (
-          @user_id, @driver_id, @campaign_id, @origem, @telefone, @nome, @cidade, @estado,
-          @servico_interesse, @partner_id, @partner_service_id, @status, @observacao
-        )`,
-      (sqlRequest) =>
-        sqlRequest
-          .input("user_id", sqlTypes.BigInt, body.user_id ?? null)
-          .input("driver_id", sqlTypes.BigInt, body.driver_id ?? null)
-          .input("campaign_id", sqlTypes.BigInt, body.campaign_id ?? null)
-          .input("origem", sqlTypes.VarChar(30), body.origem)
-          .input("telefone", sqlTypes.VarChar(30), body.telefone ?? null)
-          .input("nome", sqlTypes.NVarChar(140), body.nome ?? null)
-          .input("cidade", sqlTypes.NVarChar(120), body.cidade ?? null)
-          .input("estado", sqlTypes.Char(2), estado)
-          .input("servico_interesse", sqlTypes.NVarChar(140), body.servico_interesse ?? null)
-          .input("partner_id", sqlTypes.BigInt, body.partner_id ?? null)
-          .input("partner_service_id", sqlTypes.BigInt, body.partner_service_id ?? null)
-          .input("status", sqlTypes.VarChar(30), body.status)
-          .input("observacao", sqlTypes.NVarChar(sqlTypes.MAX), body.observacao ?? null)
-    );
-
-    return reply.code(201).send({ data: result.recordset[0] });
-  });
-
-  app.patch("/api/leads/:id/status", async (request) => {
+  app.patch("/api/admin/leads/:id/status", async (request) => {
+    const admin = await requireAdmin(request);
     const params = request.params as { id: string };
     const body = updateLeadStatusSchema.parse(request.body);
     await execute(
@@ -213,35 +284,20 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("observacao", sqlTypes.NVarChar(sqlTypes.MAX), body.observacao ?? null)
     );
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "lead.status_updated",
+      entityType: "lead",
+      entityId: Number(params.id),
+      payload: { status: body.status },
+      ipAddress: clientIp(request)
+    });
+
     return { data: { id: Number(params.id), status: body.status } };
   });
 
-  app.post("/api/bot/interactions", async (request, reply) => {
-    const body = createBotInteractionSchema.parse(request.body);
-    const result = await execute<{ id: number }>(
-      `INSERT INTO dbo.bot_interactions (
-          user_id, telefone, canal, mensagem_usuario, resposta_bot, etapa_fluxo, intencao, lead_id
-        )
-        OUTPUT INSERTED.id
-        VALUES (
-          @user_id, @telefone, @canal, @mensagem_usuario, @resposta_bot, @etapa_fluxo, @intencao, @lead_id
-        )`,
-      (sqlRequest) =>
-        sqlRequest
-          .input("user_id", sqlTypes.BigInt, body.user_id ?? null)
-          .input("telefone", sqlTypes.VarChar(30), body.telefone ?? null)
-          .input("canal", sqlTypes.VarChar(20), body.canal)
-          .input("mensagem_usuario", sqlTypes.NVarChar(sqlTypes.MAX), body.mensagem_usuario)
-          .input("resposta_bot", sqlTypes.NVarChar(sqlTypes.MAX), body.resposta_bot)
-          .input("etapa_fluxo", sqlTypes.NVarChar(80), body.etapa_fluxo ?? null)
-          .input("intencao", sqlTypes.VarChar(40), body.intencao)
-          .input("lead_id", sqlTypes.BigInt, body.lead_id ?? null)
-    );
-
-    return reply.code(201).send({ data: result.recordset[0] });
-  });
-
-  app.get("/api/bot/interactions", async (request) => {
+  app.get("/api/admin/bot/interactions", async (request) => {
+    await requireAdmin(request);
     const { limit, offset } = pageQuery(request.query);
     const data = await query(
       `SELECT bi.*, u.nome AS user_nome, l.servico_interesse, l.status AS lead_status
@@ -257,7 +313,8 @@ export async function registerRoutes(app: FastifyInstance) {
     return { data };
   });
 
-  app.post("/api/service-orders", async (request, reply) => {
+  app.post("/api/admin/service-orders", async (request, reply) => {
+    const admin = await requireAdmin(request);
     const body = createServiceOrderSchema.parse(request.body);
     const dataServico = typeof body.data_servico === "string" ? new Date(body.data_servico) : null;
     const result = await execute<{ id: number }>(
@@ -287,10 +344,20 @@ export async function registerRoutes(app: FastifyInstance) {
       await generateOpenDriverCommission(result.recordset[0].id);
     }
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "service_order.created",
+      entityType: "service_order",
+      entityId: result.recordset[0].id,
+      payload: { partner_id: body.partner_id, valor: body.valor_servico, status: body.status },
+      ipAddress: clientIp(request)
+    });
+
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
-  app.patch("/api/service-orders/:id/confirm", async (request) => {
+  app.patch("/api/admin/service-orders/:id/confirm", async (request) => {
+    const admin = await requireAdmin(request);
     const params = request.params as { id: string };
     const body = confirmServiceOrderSchema.parse(request.body);
     const serviceOrderId = Number(params.id);
@@ -314,10 +381,20 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const commission = await generateOpenDriverCommission(serviceOrderId);
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "service_order.confirmed",
+      entityType: "service_order",
+      entityId: serviceOrderId,
+      payload: { commission_id: commission?.id ?? null },
+      ipAddress: clientIp(request)
+    });
+
     return { data: { id: serviceOrderId, status: "confirmado", commission } };
   });
 
-  app.get("/api/commissions", async () => {
+  app.get("/api/admin/commissions", async (request) => {
+    await requireAdmin(request);
     const data = await query(
       `SELECT c.*, p.nome_fantasia AS partner_nome
          FROM dbo.commissions c
@@ -328,7 +405,8 @@ export async function registerRoutes(app: FastifyInstance) {
     return { data };
   });
 
-  app.post("/api/payments", async (request, reply) => {
+  app.post("/api/admin/payments", async (request, reply) => {
+    const admin = await requireAdmin(request);
     const body = createPaymentSchema.parse(request.body);
     const result = await execute<{ id: number }>(
       `INSERT INTO dbo.payments (
@@ -352,10 +430,51 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("observacao", sqlTypes.NVarChar(sqlTypes.MAX), body.observacao ?? null)
     );
 
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "payment.created",
+      entityType: "payment",
+      entityId: result.recordset[0].id,
+      payload: { partner_id: body.partner_id, valor: body.valor_pago, status: body.status },
+      ipAddress: clientIp(request)
+    });
+
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
-  app.get("/api/reports/overview", async () => {
+  app.get("/api/admin/audit-logs", async (request) => {
+    await requireAdmin(request);
+    const { limit, offset } = pageQuery(request.query);
+    const data = await query(
+      `SELECT al.id, al.actor_id, al.action, al.entity_type, al.entity_id, al.payload,
+              al.ip_address, al.created_at, u.nome AS actor_nome, u.email AS actor_email
+         FROM dbo.audit_logs al
+         LEFT JOIN dbo.users u ON u.id = al.actor_id
+        ORDER BY al.created_at DESC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      (sqlRequest) =>
+        sqlRequest.input("offset", sqlTypes.Int, offset).input("limit", sqlTypes.Int, limit)
+    );
+    return { data };
+  });
+
+  app.get("/api/admin/payment-events", async (request) => {
+    await requireAdmin(request);
+    const { limit, offset } = pageQuery(request.query);
+    const data = await query(
+      `SELECT id, provider, event_type, payment_id, order_id, status, status_detail,
+              received_at, processed_at
+         FROM dbo.payment_events
+        ORDER BY received_at DESC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      (sqlRequest) =>
+        sqlRequest.input("offset", sqlTypes.Int, offset).input("limit", sqlTypes.Int, limit)
+    );
+    return { data };
+  });
+
+  app.get("/api/admin/reports/overview", async (request) => {
+    await requireAdmin(request);
     const data = await query(
       `SELECT
           (SELECT COUNT(*) FROM dbo.leads) AS total_leads,

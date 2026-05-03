@@ -4,6 +4,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
+import { createBenefitActivation, shouldCreateActivationFor } from "./benefits.js";
 import { config } from "./config.js";
 import { execute, query, sqlTypes } from "./db.js";
 import { saveUpload } from "./upload.js";
@@ -104,8 +105,9 @@ async function getProductForCheckout(productId: number) {
     preco_desconto: number;
     economia_estimada: number;
     status: string;
+    limite_resgates: number | null;
   }>(
-    `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto, economia_estimada, status
+    `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto, economia_estimada, status, limite_resgates
        FROM dbo.products
       WHERE id = @id AND status = 'ativo'`,
     (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, productId)
@@ -119,11 +121,13 @@ async function createOrderRecord(input: {
   product: {
     id: number;
     nome: string;
+    offer_type?: string | null;
     delivery_method?: "digital" | "presencial" | "fisica";
     tipo_entrega?: "digital" | "fisico" | "ambos";
     preco_original: number;
     preco_desconto: number;
     economia_estimada: number;
+    limite_resgates?: number | null;
   };
   paymentStatus: string;
   paymentMethod: string;
@@ -184,7 +188,20 @@ async function createOrderRecord(input: {
         .input("paid_at", sqlTypes.DateTime2, paymentStatus === "approved" ? new Date() : null)
   );
 
-  return result.recordset[0];
+  const orderRow = result.recordset[0];
+
+  if (paymentStatus === "approved" && shouldCreateActivationFor(input.product)) {
+    await createBenefitActivation({
+      userId: input.userId,
+      orderId: orderRow.id,
+      voucherCode: orderRow.voucher_code,
+      product: input.product
+    }).catch((err) => {
+      console.error("benefit_activation_failed", err);
+    });
+  }
+
+  return orderRow;
 }
 
 export async function registerMarketplaceRoutes(app: FastifyInstance) {
@@ -772,8 +789,12 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       preco_desconto: number;
       economia_estimada: number;
       status: string;
+      offer_type: string;
+      delivery_method: "digital" | "presencial" | "fisica";
+      limite_resgates: number | null;
     }>(
-      `SELECT id, nome, tipo_entrega, preco_original, preco_desconto, economia_estimada, status
+      `SELECT id, nome, tipo_entrega, preco_original, preco_desconto, economia_estimada, status,
+              offer_type, delivery_method, limite_resgates
          FROM dbo.products
         WHERE id = @id AND status = 'ativo'`,
       (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, body.product_id)
@@ -837,6 +858,17 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("endereco_entrega", sqlTypes.NVarChar(500), enderecoEntrega)
           .input("voucher_code", sqlTypes.VarChar(40), code)
     );
+
+    if (shouldCreateActivationFor(product)) {
+      await createBenefitActivation({
+        userId: user.id,
+        orderId: result.recordset[0].id,
+        voucherCode: result.recordset[0].voucher_code,
+        product
+      }).catch((err) => {
+        request.log.error({ err }, "benefit_activation_failed");
+      });
+    }
 
     await execute(
       `INSERT INTO dbo.notifications (user_id, titulo, mensagem, canal)

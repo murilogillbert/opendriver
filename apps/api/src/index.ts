@@ -7,7 +7,10 @@ import path from "path";
 import { ZodError } from "zod";
 
 import { config } from "./config.js";
+import { registerBenefitRoutes } from "./benefitRoutes.js";
+import { registerGeoRoutes } from "./geoRoutes.js";
 import { registerMarketplaceRoutes } from "./marketplaceRoutes.js";
+import { registerPaymentWebhookRoutes } from "./paymentWebhooks.js";
 import { registerRoutes } from "./routes.js";
 
 const app = Fastify({
@@ -56,6 +59,9 @@ app.setErrorHandler((error, _request, reply) => {
 
 await registerRoutes(app);
 await registerMarketplaceRoutes(app);
+await registerPaymentWebhookRoutes(app);
+await registerBenefitRoutes(app);
+await registerGeoRoutes(app);
 
 await app.listen({
   port: config.port,

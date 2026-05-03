@@ -153,6 +153,101 @@ export type BotInteraction = {
   created_at: string;
 };
 
+export type BenefitActivation = {
+  id: number;
+  user_id: number;
+  user_nome: string;
+  user_email?: string;
+  product_id: number;
+  produto_nome: string;
+  voucher_code?: string;
+  redemption_token: string;
+  status: string;
+  redemption_count: number;
+  redemption_limit?: number | null;
+  activated_at: string;
+  expires_at?: string | null;
+};
+
+export type Redemption = {
+  id: number;
+  activation_id: number;
+  user_nome: string;
+  produto_nome: string;
+  partner_nome?: string;
+  confirmation_method: string;
+  valor_referencia?: number;
+  economia_aplicada?: number;
+  status: string;
+  redeemed_at: string;
+};
+
+export type Receivable = {
+  id: number;
+  partner_id: number;
+  partner_nome: string;
+  redemption_id?: number;
+  product_order_id?: number;
+  descricao: string;
+  valor: number;
+  status: string;
+  due_date?: string | null;
+  settled_at?: string | null;
+  created_at: string;
+};
+
+export type BenefitAlert = {
+  id: number;
+  user_id: number;
+  user_nome: string;
+  partner_id: number;
+  partner_nome: string;
+  activation_id?: number;
+  voucher_code?: string;
+  redemption_token?: string;
+  status: string;
+  triggered_at: string;
+  notes?: string | null;
+};
+
+export type PartnerLocation = {
+  id: number;
+  partner_id: number;
+  partner_nome: string;
+  nome: string;
+  endereco?: string | null;
+  latitude: number;
+  longitude: number;
+  raio_metros: number;
+  status: string;
+  created_at: string;
+};
+
+export type AuditLog = {
+  id: number;
+  actor_id?: number | null;
+  actor_nome?: string | null;
+  actor_email?: string | null;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  payload?: string | null;
+  ip_address?: string | null;
+  created_at: string;
+};
+
+export type PaymentEvent = {
+  id: number;
+  provider: string;
+  event_type?: string | null;
+  payment_id?: string | null;
+  order_id?: number | null;
+  status?: string | null;
+  status_detail?: string | null;
+  received_at: string;
+  processed_at?: string | null;
+};
+
 async function request<T>(path: string, init?: RequestInit) {
   const token = window.localStorage.getItem("opendriver-admin-token");
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -182,7 +277,7 @@ async function request<T>(path: string, init?: RequestInit) {
 
 export const adminApi = {
   async overview() {
-    return (await request<Overview>("/reports/overview")).data;
+    return (await request<Overview>("/admin/reports/overview")).data;
   },
   async metrics() {
     return (await request<AdminMetrics>("/admin/metrics")).data;
@@ -194,25 +289,46 @@ export const adminApi = {
     return (await request<AdminOrder[]>("/admin/orders")).data;
   },
   async partners() {
-    return (await request<Partner[]>("/partners")).data;
+    return (await request<Partner[]>("/admin/partners")).data;
   },
   async services() {
-    return (await request<PartnerService[]>("/partner-services")).data;
+    return (await request<PartnerService[]>("/admin/partner-services")).data;
   },
   async leads() {
-    return (await request<Lead[]>("/leads")).data;
+    return (await request<Lead[]>("/admin/leads")).data;
   },
   async commissions() {
-    return (await request<Commission[]>("/commissions")).data;
+    return (await request<Commission[]>("/admin/commissions")).data;
   },
   async botInteractions() {
-    return (await request<BotInteraction[]>("/bot/interactions")).data;
+    return (await request<BotInteraction[]>("/admin/bot/interactions")).data;
   },
   async categories() {
     return (await request<ProductCategory[]>("/product-categories")).data;
   },
   async adminProducts() {
     return (await request<AdminProduct[]>("/admin/products")).data;
+  },
+  async benefitActivations() {
+    return (await request<BenefitActivation[]>("/admin/benefit-activations")).data;
+  },
+  async redemptions() {
+    return (await request<Redemption[]>("/admin/redemptions")).data;
+  },
+  async receivables() {
+    return (await request<Receivable[]>("/admin/receivables")).data;
+  },
+  async benefitAlerts() {
+    return (await request<BenefitAlert[]>("/admin/benefit-alerts")).data;
+  },
+  async partnerLocations() {
+    return (await request<PartnerLocation[]>("/admin/partner-locations")).data;
+  },
+  async auditLogs() {
+    return (await request<AuditLog[]>("/admin/audit-logs?limit=100")).data;
+  },
+  async paymentEvents() {
+    return (await request<PaymentEvent[]>("/admin/payment-events?limit=100")).data;
   },
   async session() {
     return (await request<{ id: number; email: string; nome: string; tipo_usuario: string }>("/admin/session")).data;
@@ -284,21 +400,54 @@ export const adminApi = {
     });
   },
   async createPartner(input: Record<string, FormDataEntryValue>) {
-    return request<{ id: number }>("/partners", {
+    return request<{ id: number }>("/admin/partners", {
       method: "POST",
       body: JSON.stringify(input)
     });
   },
   async createService(input: Record<string, unknown>) {
-    return request<{ id: number }>("/partner-services", {
+    return request<{ id: number }>("/admin/partner-services", {
       method: "POST",
       body: JSON.stringify(input)
     });
   },
   async updateLeadStatus(id: number, status: string) {
-    return request<{ id: number; status: string }>(`/leads/${id}/status`, {
+    return request<{ id: number; status: string }>(`/admin/leads/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status })
     });
+  },
+  async createPartnerLocation(input: Record<string, unknown>) {
+    return request<{ id: number }>("/admin/partner-locations", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  async updateReceivableStatus(id: number, status: string) {
+    return request<{ id: number; status: string }>(`/admin/receivables/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+  },
+  async updateBenefitAlert(id: number, payload: { status: string; notes?: string }) {
+    return request<{ id: number; status: string }>(`/admin/benefit-alerts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  },
+  async redeemBenefit(payload: {
+    redemption_token: string;
+    partner_id?: number;
+    confirmation_method?: string;
+    valor_referencia?: number;
+    notes?: string;
+  }) {
+    return request<{ redemption_id: number; activation_id: number; receivable_id: number | null; status: string }>(
+      "/benefits/redeem",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }
+    );
   }
 };

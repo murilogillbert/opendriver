@@ -7,16 +7,37 @@ import {
   AdminOrder,
   AdminUser,
   adminApi,
+  AuditLog,
+  BenefitActivation,
+  BenefitAlert,
   BotInteraction,
   Commission,
   Lead,
   Overview,
   Partner,
+  PartnerLocation,
   PartnerService,
-  ProductCategory
+  PaymentEvent,
+  ProductCategory,
+  Receivable,
+  Redemption
 } from "../../lib/adminApi";
 
-type AdminTab = "visao" | "usuarios" | "pedidos" | "bot" | "produtos" | "parceiros" | "leads" | "comissoes";
+type AdminTab =
+  | "visao"
+  | "usuarios"
+  | "pedidos"
+  | "bot"
+  | "produtos"
+  | "parceiros"
+  | "leads"
+  | "comissoes"
+  | "validacao"
+  | "beneficios"
+  | "alertas"
+  | "receber"
+  | "locations"
+  | "auditoria";
 
 const tabs: { id: AdminTab; label: string }[] = [
   { id: "visao", label: "Visao geral" },
@@ -26,7 +47,13 @@ const tabs: { id: AdminTab; label: string }[] = [
   { id: "produtos", label: "Produtos" },
   { id: "parceiros", label: "Parceiros" },
   { id: "leads", label: "Leads" },
-  { id: "comissoes", label: "Comissoes" }
+  { id: "comissoes", label: "Comissoes" },
+  { id: "validacao", label: "Validacao" },
+  { id: "beneficios", label: "Beneficios" },
+  { id: "alertas", label: "Alertas geo" },
+  { id: "receber", label: "Contas a receber" },
+  { id: "locations", label: "Locais parceiros" },
+  { id: "auditoria", label: "Auditoria" }
 ];
 
 const money = (value?: number) =>
@@ -49,6 +76,14 @@ function AdminApp() {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
+  const [activations, setActivations] = useState<BenefitActivation[]>([]);
+  const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [receivables, setReceivables] = useState<Receivable[]>([]);
+  const [alerts, setAlerts] = useState<BenefitAlert[]>([]);
+  const [partnerLocations, setPartnerLocations] = useState<PartnerLocation[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
+  const [redeemResult, setRedeemResult] = useState<string | null>(null);
   const [hasAdminToken, setHasAdminToken] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,7 +111,14 @@ function AdminApp() {
         productData,
         metricsData,
         userData,
-        orderData
+        orderData,
+        activationsData,
+        redemptionsData,
+        receivablesData,
+        alertsData,
+        locationsData,
+        auditData,
+        paymentEventsData
       ] = await Promise.all([
         adminApi.overview(),
         adminApi.partners(),
@@ -88,7 +130,14 @@ function AdminApp() {
         adminApi.adminProducts(),
         adminApi.metrics(),
         adminApi.users(),
-        adminApi.orders()
+        adminApi.orders(),
+        adminApi.benefitActivations().catch(() => []),
+        adminApi.redemptions().catch(() => []),
+        adminApi.receivables().catch(() => []),
+        adminApi.benefitAlerts().catch(() => []),
+        adminApi.partnerLocations().catch(() => []),
+        adminApi.auditLogs().catch(() => []),
+        adminApi.paymentEvents().catch(() => [])
       ]);
 
       setOverview(overviewData);
@@ -102,6 +151,13 @@ function AdminApp() {
       setMetrics(metricsData);
       setUsers(userData);
       setOrders(orderData);
+      setActivations(activationsData);
+      setRedemptions(redemptionsData);
+      setReceivables(receivablesData);
+      setAlerts(alertsData);
+      setPartnerLocations(locationsData);
+      setAuditLogs(auditData);
+      setPaymentEvents(paymentEventsData);
     } catch {
       window.localStorage.removeItem("opendriver-admin-token");
       setHasAdminToken(false);
@@ -284,6 +340,64 @@ function AdminApp() {
   const activateAllProducts = async () => {
     const result = await adminApi.activateAllProducts();
     setFormMessage(`${result.data.affected} beneficios/produtos ativados.`);
+    await reload();
+  };
+
+  const submitRedeem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    setRedeemResult(null);
+
+    try {
+      const response = await adminApi.redeemBenefit({
+        redemption_token: String(values.redemption_token).trim().toUpperCase(),
+        partner_id: values.partner_id ? Number(values.partner_id) : undefined,
+        confirmation_method: String(values.confirmation_method || "token"),
+        valor_referencia: values.valor_referencia ? Number(values.valor_referencia) : undefined,
+        notes: values.notes ? String(values.notes) : undefined
+      });
+      setRedeemResult(
+        `Resgate ${response.data.redemption_id} confirmado (${response.data.status}). ` +
+          (response.data.receivable_id ? `Conta a receber #${response.data.receivable_id} criada.` : "Sem conta a receber gerada.")
+      );
+      form.reset();
+      await reload();
+    } catch (err) {
+      setRedeemResult(err instanceof Error ? err.message : "Falha ao validar token.");
+    }
+  };
+
+  const submitPartnerLocation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+
+    try {
+      await adminApi.createPartnerLocation({
+        partner_id: Number(values.partner_id),
+        nome: String(values.nome),
+        endereco: values.endereco ? String(values.endereco) : null,
+        latitude: Number(values.latitude),
+        longitude: Number(values.longitude),
+        raio_metros: values.raio_metros ? Number(values.raio_metros) : 120,
+        status: "ativo"
+      });
+      setFormMessage("Local cadastrado.");
+      form.reset();
+      await reload();
+    } catch (err) {
+      setFormMessage(err instanceof Error ? err.message : "Falha ao cadastrar local.");
+    }
+  };
+
+  const updateReceivable = async (id: number, status: string) => {
+    await adminApi.updateReceivableStatus(id, status);
+    await reload();
+  };
+
+  const updateAlert = async (id: number, status: string) => {
+    await adminApi.updateBenefitAlert(id, { status });
     await reload();
   };
 
@@ -720,6 +834,228 @@ function AdminApp() {
                     : "-"
                 ])}
               />
+            )}
+
+            {activeTab === "validacao" && (
+              <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
+                <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                  <h2 className="text-lg font-black">Validar token de beneficio</h2>
+                  <p className="mt-2 text-xs font-semibold text-[#68748a]">
+                    Use o codigo de 12 caracteres exibido no QR ou na area do cliente. A confirmacao gera o
+                    resgate e a conta a receber para o parceiro selecionado.
+                  </p>
+                  <form onSubmit={submitRedeem} className="mt-4 grid gap-3">
+                    <Input name="redemption_token" label="Token (12 letras)" required maxLength={12} />
+                    <label className="grid gap-1 text-sm font-bold">
+                      Parceiro
+                      <select name="partner_id" className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <option value="">Auto (do produto)</option>
+                        {partners.map((partner) => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.nome_fantasia}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-sm font-bold">
+                      Metodo
+                      <select name="confirmation_method" className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <option value="token">Token digitado</option>
+                        <option value="qr">QR Code</option>
+                        <option value="partner">Confirmado por parceiro</option>
+                        <option value="admin">Manual (admin)</option>
+                        <option value="voucher">Voucher fisico</option>
+                      </select>
+                    </label>
+                    <Input name="valor_referencia" label="Valor de referencia" type="number" step="0.01" />
+                    <Input name="notes" label="Observacao" />
+                    <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+                      Confirmar resgate
+                    </button>
+                  </form>
+                  {redeemResult && (
+                    <div className="mt-4 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-3 py-2 text-xs font-bold text-brand-ink">
+                      {redeemResult}
+                    </div>
+                  )}
+                </section>
+                <DataTable
+                  headers={["Resgate", "Beneficio", "Usuario", "Parceiro", "Metodo", "Valor", "Quando"]}
+                  rows={redemptions.slice(0, 30).map((redemption) => [
+                    `#${redemption.id}`,
+                    redemption.produto_nome,
+                    redemption.user_nome,
+                    redemption.partner_nome ?? "-",
+                    redemption.confirmation_method,
+                    money(redemption.valor_referencia),
+                    new Date(redemption.redeemed_at).toLocaleString("pt-BR")
+                  ])}
+                />
+              </div>
+            )}
+
+            {activeTab === "beneficios" && (
+              <DataTable
+                headers={["Usuario", "Beneficio", "Token", "Voucher", "Resgates", "Status", "Ativado"]}
+                rows={activations.map((activation) => [
+                  activation.user_nome,
+                  activation.produto_nome,
+                  <code key={`token-${activation.id}`} className="font-mono text-xs">
+                    {activation.redemption_token}
+                  </code>,
+                  activation.voucher_code ?? "-",
+                  `${activation.redemption_count}/${activation.redemption_limit ?? "∞"}`,
+                  activation.status,
+                  new Date(activation.activated_at).toLocaleString("pt-BR")
+                ])}
+              />
+            )}
+
+            {activeTab === "alertas" && (
+              <DataTable
+                headers={["Usuario", "Parceiro", "Token", "Status", "Quando", "Acoes"]}
+                rows={alerts.map((alert) => [
+                  alert.user_nome,
+                  alert.partner_nome,
+                  alert.redemption_token ? (
+                    <code key={`alert-token-${alert.id}`} className="font-mono text-xs">
+                      {alert.redemption_token}
+                    </code>
+                  ) : (
+                    "-"
+                  ),
+                  alert.status,
+                  new Date(alert.triggered_at).toLocaleString("pt-BR"),
+                  <div className="flex flex-wrap gap-2" key={`alert-actions-${alert.id}`}>
+                    <button
+                      onClick={() => updateAlert(alert.id, "notificado")}
+                      className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black"
+                    >
+                      Notificar
+                    </button>
+                    <button
+                      onClick={() => updateAlert(alert.id, "confirmado")}
+                      className="rounded bg-brand-gold px-2 py-1 text-xs font-black"
+                    >
+                      Confirmar
+                    </button>
+                    <button
+                      onClick={() => updateAlert(alert.id, "descartado")}
+                      className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700"
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                ])}
+              />
+            )}
+
+            {activeTab === "receber" && (
+              <DataTable
+                headers={["Parceiro", "Descricao", "Valor", "Status", "Vencimento", "Criado", "Acoes"]}
+                rows={receivables.map((receivable) => [
+                  receivable.partner_nome,
+                  receivable.descricao,
+                  money(receivable.valor),
+                  receivable.status,
+                  receivable.due_date ? new Date(receivable.due_date).toLocaleDateString("pt-BR") : "-",
+                  new Date(receivable.created_at).toLocaleDateString("pt-BR"),
+                  <div className="flex flex-wrap gap-2" key={`rec-${receivable.id}`}>
+                    <button
+                      onClick={() => updateReceivable(receivable.id, "fechado")}
+                      className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black"
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      onClick={() => updateReceivable(receivable.id, "pago")}
+                      className="rounded bg-brand-gold px-2 py-1 text-xs font-black"
+                    >
+                      Marcar pago
+                    </button>
+                    <button
+                      onClick={() => updateReceivable(receivable.id, "cancelado")}
+                      className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ])}
+              />
+            )}
+
+            {activeTab === "locations" && (
+              <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
+                <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                  <h2 className="text-lg font-black">Novo local de parceiro</h2>
+                  <p className="mt-2 text-xs font-semibold text-[#68748a]">
+                    Locais ativos sao usados para gerar alertas de presenca quando o usuario consente
+                    rastreio de localizacao.
+                  </p>
+                  <form onSubmit={submitPartnerLocation} className="mt-4 grid gap-3">
+                    <label className="grid gap-1 text-sm font-bold">
+                      Parceiro
+                      <select name="partner_id" required className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <option value="">Selecione</option>
+                        {partners.map((partner) => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.nome_fantasia}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Input name="nome" label="Nome do local" required />
+                    <Input name="endereco" label="Endereco" />
+                    <Input name="latitude" label="Latitude" type="number" step="0.0000001" required />
+                    <Input name="longitude" label="Longitude" type="number" step="0.0000001" required />
+                    <Input name="raio_metros" label="Raio (m)" type="number" min={20} max={5000} defaultValue={120} />
+                    <button className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white">
+                      Salvar local
+                    </button>
+                  </form>
+                </section>
+                <DataTable
+                  headers={["Parceiro", "Local", "Coordenadas", "Raio", "Status"]}
+                  rows={partnerLocations.map((loc) => [
+                    loc.partner_nome,
+                    loc.nome,
+                    `${loc.latitude}, ${loc.longitude}`,
+                    `${loc.raio_metros} m`,
+                    loc.status
+                  ])}
+                />
+              </div>
+            )}
+
+            {activeTab === "auditoria" && (
+              <div className="grid gap-6">
+                <DataTable
+                  headers={["Quando", "Ator", "Acao", "Entidade", "IP"]}
+                  rows={auditLogs.map((log) => [
+                    new Date(log.created_at).toLocaleString("pt-BR"),
+                    log.actor_nome ?? (log.actor_id ? `#${log.actor_id}` : "sistema"),
+                    log.action,
+                    `${log.entity_type ?? "-"}${log.entity_id ? ` #${log.entity_id}` : ""}`,
+                    log.ip_address ?? "-"
+                  ])}
+                />
+                <div>
+                  <h3 className="mb-3 text-sm font-black uppercase tracking-[0.18em] text-[#68748a]">
+                    Webhooks de pagamento
+                  </h3>
+                  <DataTable
+                    headers={["Recebido", "Provider", "Tipo", "Payment ID", "Pedido", "Status"]}
+                    rows={paymentEvents.map((event) => [
+                      new Date(event.received_at).toLocaleString("pt-BR"),
+                      event.provider,
+                      event.event_type ?? "-",
+                      event.payment_id ?? "-",
+                      event.order_id ? `#${event.order_id}` : "-",
+                      event.status ?? "-"
+                    ])}
+                  />
+                </div>
+              </div>
             )}
 
             {activeTab === "visao" && services.length > 0 && (
