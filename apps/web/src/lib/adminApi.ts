@@ -214,6 +214,9 @@ export const adminApi = {
   async adminProducts() {
     return (await request<AdminProduct[]>("/admin/products")).data;
   },
+  async session() {
+    return (await request<{ id: number; email: string; nome: string; tipo_usuario: string }>("/admin/session")).data;
+  },
   async loginAdmin(email: string, senha: string) {
     const response = await request<{ user: { tipo_usuario: string }; token: string }>("/auth/login", {
       method: "POST",

@@ -49,72 +49,97 @@ function AdminApp() {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
-  const [hasAdminToken, setHasAdminToken] = useState(
-    Boolean(window.localStorage.getItem("opendriver-admin-token"))
-  );
+  const [hasAdminToken, setHasAdminToken] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
   const reload = async () => {
+    if (!window.localStorage.getItem("opendriver-admin-token")) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      const [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData, botData] =
-        await Promise.allSettled([
-          adminApi.overview(),
-          adminApi.partners(),
-          adminApi.services(),
-          adminApi.leads(),
-          adminApi.commissions(),
-          adminApi.categories(),
-          adminApi.botInteractions()
-        ]);
+      const [
+        overviewData,
+        partnersData,
+        servicesData,
+        leadsData,
+        commissionsData,
+        categoryData,
+        botData,
+        productData,
+        metricsData,
+        userData,
+        orderData
+      ] = await Promise.all([
+        adminApi.overview(),
+        adminApi.partners(),
+        adminApi.services(),
+        adminApi.leads(),
+        adminApi.commissions(),
+        adminApi.categories(),
+        adminApi.botInteractions(),
+        adminApi.adminProducts(),
+        adminApi.metrics(),
+        adminApi.users(),
+        adminApi.orders()
+      ]);
 
-      if (overviewData.status === "fulfilled") setOverview(overviewData.value);
-      if (partnersData.status === "fulfilled") setPartners(partnersData.value);
-      if (servicesData.status === "fulfilled") setServices(servicesData.value);
-      if (leadsData.status === "fulfilled") setLeads(leadsData.value);
-      if (commissionsData.status === "fulfilled") setCommissions(commissionsData.value);
-      if (categoryData.status === "fulfilled") setCategories(categoryData.value);
-      if (botData.status === "fulfilled") setBotInteractions(botData.value);
-
-      if (
-        [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData, botData].some(
-          (item) => item.status === "rejected"
-        )
-      ) {
-        setError("Alguns dados nao carregaram. Verifique se a API esta ativa e tente recarregar.");
-      }
-
-      if (window.localStorage.getItem("opendriver-admin-token")) {
-        try {
-          const [productData, metricsData, userData, orderData] = await Promise.all([
-            adminApi.adminProducts(),
-            adminApi.metrics(),
-            adminApi.users(),
-            adminApi.orders()
-          ]);
-          setProducts(productData);
-          setMetrics(metricsData);
-          setUsers(userData);
-          setOrders(orderData);
-        } catch {
-          window.localStorage.removeItem("opendriver-admin-token");
-          setHasAdminToken(false);
-        }
-      }
+      setOverview(overviewData);
+      setPartners(partnersData);
+      setServices(servicesData);
+      setLeads(leadsData);
+      setCommissions(commissionsData);
+      setCategories(categoryData);
+      setBotInteractions(botData);
+      setProducts(productData);
+      setMetrics(metricsData);
+      setUsers(userData);
+      setOrders(orderData);
     } catch {
-      setError("Nao foi possivel conectar com a API. Se aparecer 502, o container da API provavelmente caiu.");
+      window.localStorage.removeItem("opendriver-admin-token");
+      setHasAdminToken(false);
+      setError("Sessao admin invalida ou expirada. Entre novamente.");
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    void reload();
+    const validateStoredSession = async () => {
+      if (!window.localStorage.getItem("opendriver-admin-token")) {
+        setIsCheckingAuth(false);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        await adminApi.session();
+        setHasAdminToken(true);
+      } catch {
+        window.localStorage.removeItem("opendriver-admin-token");
+        setHasAdminToken(false);
+        setError("Sessao admin invalida ou expirada. Entre novamente.");
+      } finally {
+        setIsCheckingAuth(false);
+        setIsLoading(false);
+      }
+    };
+
+    void validateStoredSession();
   }, []);
+
+  useEffect(() => {
+    if (!isCheckingAuth && hasAdminToken) {
+      void reload();
+    }
+  }, [hasAdminToken, isCheckingAuth]);
 
   const activeLeads = useMemo(
     () => leads.filter((lead) => !["convertido", "perdido", "cancelado"].includes(lead.status)),
@@ -162,8 +187,9 @@ function AdminApp() {
     try {
       await adminApi.loginAdmin(String(values.email), String(values.senha));
       setHasAdminToken(true);
+      setIsCheckingAuth(false);
+      setError(null);
       setFormMessage(null);
-      await reload();
     } catch (authError) {
       setFormMessage(authError instanceof Error ? authError.message : "Nao foi possivel entrar.");
     }
@@ -176,8 +202,9 @@ function AdminApp() {
     try {
       await adminApi.bootstrapAdmin(String(values.email), String(values.senha), String(values.nome));
       setHasAdminToken(true);
+      setIsCheckingAuth(false);
+      setError(null);
       setFormMessage(null);
-      await reload();
     } catch (authError) {
       setFormMessage(authError instanceof Error ? authError.message : "Nao foi possivel criar admin.");
     }
@@ -259,6 +286,54 @@ function AdminApp() {
     setFormMessage(`${result.data.affected} beneficios/produtos ativados.`);
     await reload();
   };
+
+  if (isCheckingAuth) {
+    return (
+      <main className="min-h-screen bg-[#f5f7fb] px-5 py-10 text-[#141820]">
+        <section className="mx-auto max-w-4xl rounded-md border border-[#dfe5ef] bg-white p-6">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
+            Open Driver
+          </p>
+          <h1 className="mt-2 font-display text-3xl font-black">Verificando acesso admin</h1>
+          <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">
+            O painel sera carregado somente depois que a sessao admin for validada.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!hasAdminToken) {
+    return (
+      <main className="min-h-screen bg-[#f5f7fb] px-5 py-10 text-[#141820]">
+        <section className="mx-auto max-w-4xl">
+          <div className="mb-6">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
+              Open Driver
+            </p>
+            <h1 className="mt-2 font-display text-3xl font-black">Acesso administrativo</h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#68748a]">
+              Entre com uma conta admin para carregar painel, metricas, usuarios, pedidos e catalogo.
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              {error}
+            </div>
+          )}
+
+          {formMessage && (
+            <div className="mb-5 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-4 py-3 text-sm font-bold text-brand-ink">
+              {formMessage}
+            </div>
+          )}
+
+          <AdminLoginPrompt onLogin={loginAdmin} onBootstrap={bootstrapAdmin} />
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-[#141820]">

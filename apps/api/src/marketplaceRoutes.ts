@@ -447,6 +447,19 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     return { data };
   });
 
+  app.get("/api/admin/session", async (request) => {
+    const user = await requireAdmin(request);
+
+    return {
+      data: {
+        id: user.id,
+        email: user.email,
+        nome: user.nome,
+        tipo_usuario: user.tipo_usuario
+      }
+    };
+  });
+
   app.get("/api/admin/metrics", async (request) => {
     await requireAdmin(request);
     const data = await query(
