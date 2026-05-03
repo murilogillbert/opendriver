@@ -1,4 +1,5 @@
 import "dotenv/config";
+import path from "path";
 
 const numberFromEnv = (name: string, fallback: number) => {
   const raw = process.env[name];
@@ -11,12 +12,18 @@ const numberFromEnv = (name: string, fallback: number) => {
   return value;
 };
 
+const resolveUploadDir = () => {
+  const raw = process.env.UPLOAD_DIR ?? "uploads";
+  return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+};
+
 export const config = {
   env: process.env.APP_ENV ?? process.env.NODE_ENV ?? "development",
   port: numberFromEnv("APP_PORT", 3001),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   jwtSecret: process.env.JWT_SECRET ?? "change_this_jwt_secret",
-  uploadDir: process.env.UPLOAD_DIR ?? "uploads",
+  uploadDir: resolveUploadDir(),
+  uploadMaxBytes: numberFromEnv("UPLOAD_MAX_BYTES", 200 * 1024 * 1024),
   mercadoPago: {
     accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN ?? "",
     publicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? ""

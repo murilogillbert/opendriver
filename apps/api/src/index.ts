@@ -25,7 +25,7 @@ await app.register(cors, {
 
 await app.register(multipart, {
   limits: {
-    fileSize: 25 * 1024 * 1024
+    fileSize: config.uploadMaxBytes
   }
 });
 
@@ -40,6 +40,17 @@ app.setErrorHandler((error, _request, reply) => {
       error: "validation_error",
       issues: error.issues
     });
+  }
+
+  const fastifyCode = (error as Error & { code?: string }).code;
+  if (fastifyCode === "FST_REQ_FILE_TOO_LARGE") {
+    return reply.code(413).send({
+      error: "file_too_large",
+      max_bytes: config.uploadMaxBytes
+    });
+  }
+  if (fastifyCode === "FST_INVALID_MULTIPART_CONTENT_TYPE") {
+    return reply.code(415).send({ error: "invalid_multipart" });
   }
 
   const statusCode = (error as Error & { statusCode?: number }).statusCode;

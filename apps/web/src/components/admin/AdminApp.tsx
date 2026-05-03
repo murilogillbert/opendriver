@@ -276,12 +276,36 @@ function AdminApp() {
     let imagemUrl = String(formData.get("imagem_url") ?? "");
     let videoUrl = String(formData.get("video_url") ?? "");
 
+    const describeUploadError = (kind: "imagem" | "video", err: unknown) => {
+      const raw = err instanceof Error ? err.message : String(err);
+      if (raw === "file_too_large") {
+        return `Falha no upload de ${kind}: arquivo maior que o limite. Reduza o tamanho ou ajuste UPLOAD_MAX_BYTES.`;
+      }
+      if (raw === "unsupported_file_type") {
+        return `Falha no upload de ${kind}: formato nao suportado. Use JPG/PNG/WebP/GIF para imagem ou MP4/MOV/WebM para video.`;
+      }
+      if (raw === "file_required") {
+        return `Falha no upload de ${kind}: nenhum arquivo anexado.`;
+      }
+      return `Falha no upload de ${kind}: ${raw}`;
+    };
+
     if (imageFile?.size) {
-      imagemUrl = (await adminApi.upload(imageFile)).url;
+      try {
+        imagemUrl = (await adminApi.upload(imageFile)).url;
+      } catch (err) {
+        setFormMessage(describeUploadError("imagem", err));
+        return;
+      }
     }
 
     if (videoFile?.size) {
-      videoUrl = (await adminApi.upload(videoFile)).url;
+      try {
+        videoUrl = (await adminApi.upload(videoFile)).url;
+      } catch (err) {
+        setFormMessage(describeUploadError("video", err));
+        return;
+      }
     }
 
     const payload = {
