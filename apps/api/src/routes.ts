@@ -241,6 +241,22 @@ export async function registerRoutes(app: FastifyInstance) {
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
+  app.get("/api/bot/interactions", async (request) => {
+    const { limit, offset } = pageQuery(request.query);
+    const data = await query(
+      `SELECT bi.*, u.nome AS user_nome, l.servico_interesse, l.status AS lead_status
+         FROM dbo.bot_interactions bi
+         LEFT JOIN dbo.users u ON u.id = bi.user_id
+         LEFT JOIN dbo.leads l ON l.id = bi.lead_id
+        ORDER BY bi.created_at DESC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      (sqlRequest) =>
+        sqlRequest.input("offset", sqlTypes.Int, offset).input("limit", sqlTypes.Int, limit)
+    );
+
+    return { data };
+  });
+
   app.post("/api/service-orders", async (request, reply) => {
     const body = createServiceOrderSchema.parse(request.body);
     const dataServico = typeof body.data_servico === "string" ? new Date(body.data_servico) : null;

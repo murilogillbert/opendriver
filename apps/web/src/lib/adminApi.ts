@@ -75,6 +75,19 @@ export type Overview = {
   receita_recebida: number;
 };
 
+export type BotInteraction = {
+  id: number;
+  telefone?: string;
+  canal: string;
+  mensagem_usuario: string;
+  resposta_bot: string;
+  etapa_fluxo?: string;
+  intencao: string;
+  servico_interesse?: string;
+  lead_status?: string;
+  created_at: string;
+};
+
 async function request<T>(path: string, init?: RequestInit) {
   const token = window.localStorage.getItem("opendriver-admin-token");
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -108,6 +121,9 @@ export const adminApi = {
   },
   async commissions() {
     return (await request<Commission[]>("/commissions")).data;
+  },
+  async botInteractions() {
+    return (await request<BotInteraction[]>("/bot/interactions")).data;
   },
   async categories() {
     return (await request<ProductCategory[]>("/product-categories")).data;

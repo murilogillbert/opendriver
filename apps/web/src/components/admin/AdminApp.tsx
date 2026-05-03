@@ -4,6 +4,7 @@ import type { InputHTMLAttributes, ReactNode } from "react";
 import {
   AdminProduct,
   adminApi,
+  BotInteraction,
   Commission,
   Lead,
   Overview,
@@ -12,10 +13,11 @@ import {
   ProductCategory
 } from "../../lib/adminApi";
 
-type AdminTab = "visao" | "produtos" | "parceiros" | "leads" | "comissoes";
+type AdminTab = "visao" | "bot" | "produtos" | "parceiros" | "leads" | "comissoes";
 
 const tabs: { id: AdminTab; label: string }[] = [
   { id: "visao", label: "Visao geral" },
+  { id: "bot", label: "Bot" },
   { id: "produtos", label: "Produtos" },
   { id: "parceiros", label: "Parceiros" },
   { id: "leads", label: "Leads" },
@@ -34,6 +36,7 @@ function AdminApp() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [services, setServices] = useState<PartnerService[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [botInteractions, setBotInteractions] = useState<BotInteraction[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -49,28 +52,43 @@ function AdminApp() {
     setError(null);
 
     try {
-      const [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData] =
-        await Promise.all([
+      const [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData, botData] =
+        await Promise.allSettled([
           adminApi.overview(),
           adminApi.partners(),
           adminApi.services(),
           adminApi.leads(),
           adminApi.commissions(),
-          adminApi.categories()
+          adminApi.categories(),
+          adminApi.botInteractions()
         ]);
 
-      setOverview(overviewData);
-      setPartners(partnersData);
-      setServices(servicesData);
-      setLeads(leadsData);
-      setCommissions(commissionsData);
-      setCategories(categoryData);
+      if (overviewData.status === "fulfilled") setOverview(overviewData.value);
+      if (partnersData.status === "fulfilled") setPartners(partnersData.value);
+      if (servicesData.status === "fulfilled") setServices(servicesData.value);
+      if (leadsData.status === "fulfilled") setLeads(leadsData.value);
+      if (commissionsData.status === "fulfilled") setCommissions(commissionsData.value);
+      if (categoryData.status === "fulfilled") setCategories(categoryData.value);
+      if (botData.status === "fulfilled") setBotInteractions(botData.value);
+
+      if (
+        [overviewData, partnersData, servicesData, leadsData, commissionsData, categoryData, botData].some(
+          (item) => item.status === "rejected"
+        )
+      ) {
+        setError("Alguns dados nao carregaram. Verifique se a API esta ativa e tente recarregar.");
+      }
 
       if (window.localStorage.getItem("opendriver-admin-token")) {
-        setProducts(await adminApi.adminProducts());
+        try {
+          setProducts(await adminApi.adminProducts());
+        } catch {
+          window.localStorage.removeItem("opendriver-admin-token");
+          setHasAdminToken(false);
+        }
       }
     } catch {
-      setError("Nao foi possivel carregar todos os dados da API.");
+      setError("Nao foi possivel conectar com a API. Se aparecer 502, o container da API provavelmente caiu.");
     } finally {
       setIsLoading(false);
     }
@@ -235,6 +253,20 @@ function AdminApp() {
                 <Metric label="Receita estimada" value={money(overview.receita_estimada)} />
                 <Metric label="Recebido" value={money(overview.receita_recebida)} />
               </div>
+            )}
+
+            {activeTab === "bot" && (
+              <DataTable
+                headers={["Quando", "Canal", "Intencao", "Mensagem", "Resposta", "Lead"]}
+                rows={botInteractions.map((interaction) => [
+                  new Date(interaction.created_at).toLocaleString("pt-BR"),
+                  interaction.canal,
+                  interaction.intencao,
+                  interaction.mensagem_usuario,
+                  interaction.resposta_bot,
+                  interaction.servico_interesse ?? interaction.lead_status ?? "-"
+                ])}
+              />
             )}
 
             {activeTab === "produtos" && (
