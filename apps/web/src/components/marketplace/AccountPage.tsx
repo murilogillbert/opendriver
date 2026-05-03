@@ -51,7 +51,7 @@ function AccountPage() {
   const digitalProducts = orders.filter(
     (order) => order.offer_type === "produto_digital" || order.delivery_method === "digital"
   );
-  const approvedPayments = orders.filter((order) => order.payment_status === "aprovado").length;
+  const approvedPayments = orders.filter((order) => order.payment_status === "approved").length;
   const fullAddress = profile
     ? [profile.endereco, profile.numero, profile.complemento, profile.bairro, profile.cidade, profile.estado, profile.cep]
         .filter(Boolean)

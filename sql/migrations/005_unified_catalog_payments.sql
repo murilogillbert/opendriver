@@ -27,6 +27,16 @@ IF COL_LENGTH('dbo.products', 'delivery_deadline') IS NULL
 IF COL_LENGTH('dbo.products', 'payment_required') IS NULL
   ALTER TABLE dbo.products ADD payment_required BIT NOT NULL CONSTRAINT df_products_payment_required DEFAULT 1;
 
+GO
+
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET XACT_ABORT ON;
+
 IF COL_LENGTH('dbo.products', 'offer_type') IS NOT NULL
 BEGIN
   EXEC('UPDATE dbo.products SET offer_type = CASE WHEN tipo = ''fisico'' THEN ''produto_fisico'' ELSE ''produto_digital'' END WHERE offer_type IS NULL;');
@@ -59,6 +69,16 @@ IF COL_LENGTH('dbo.product_orders', 'mercado_pago_status') IS NULL
 
 IF COL_LENGTH('dbo.product_orders', 'paid_at') IS NULL
   ALTER TABLE dbo.product_orders ADD paid_at DATETIME2 NULL;
+
+GO
+
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET XACT_ABORT ON;
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'ck_product_orders_payment_status')
   ALTER TABLE dbo.product_orders ADD CONSTRAINT ck_product_orders_payment_status CHECK (payment_status IN ('pending', 'approved', 'rejected', 'refunded', 'cancelled'));
