@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 
+import { assetUrl } from "../../lib/assets";
 import {
   AuthUser,
   BenefitActivation,
@@ -147,7 +148,7 @@ function AccountPage() {
                 orders.map((order) => (
                   <article key={order.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
                     <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
-                      {order.imagem_url && <img src={order.imagem_url} alt="" className="h-full w-full object-cover" />}
+                      {order.imagem_url && <img src={assetUrl(order.imagem_url)} alt="" className="h-full w-full object-cover" />}
                     </div>
                     <div>
                       <h3 className="font-black">{order.produto_nome}</h3>
@@ -201,7 +202,7 @@ function AccountPage() {
                 benefits.map((benefit) => (
                   <div key={benefit.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
                     <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
-                      {benefit.imagem_url && <img src={benefit.imagem_url} alt="" className="h-full w-full object-cover" />}
+                      {benefit.imagem_url && <img src={assetUrl(benefit.imagem_url)} alt="" className="h-full w-full object-cover" />}
                     </div>
                     <div>
                       <h3 className="font-black">{benefit.product_nome}</h3>

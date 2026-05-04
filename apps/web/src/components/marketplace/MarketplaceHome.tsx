@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { assetUrl } from "../../lib/assets";
 import { getToken, marketplaceApi, money, Product } from "../../lib/marketplaceApi";
 import logoUrl from "../../assets/open-driver-logo.svg";
 
@@ -410,7 +411,7 @@ function ProductCard({ product, onBuy, onDetails }: { product: Product; onBuy: (
     <article className="group overflow-hidden rounded-md border border-[#ded4bb] bg-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-navy">
       <div className="relative aspect-[16/10] bg-[#dce3ee]">
         {product.imagem_url && (
-          <img src={product.imagem_url} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+          <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         )}
         <span className="absolute left-3 top-3 rounded-md bg-[#08111f] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white">
           {offerTypeLabel(product)}

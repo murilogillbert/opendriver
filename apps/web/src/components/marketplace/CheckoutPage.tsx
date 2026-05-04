@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { assetUrl } from "../../lib/assets";
 import { getToken, marketplaceApi, money, Product } from "../../lib/marketplaceApi";
 
 type CheckoutPageProps = {
@@ -280,7 +281,7 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
         <aside className="rounded-md border border-[#dfe5ef] bg-white p-5">
           {product ? (
             <>
-              {product.imagem_url && <img src={product.imagem_url} alt="" className="aspect-[16/10] w-full rounded-md object-cover" />}
+              {product.imagem_url && <img src={assetUrl(product.imagem_url)} alt="" className="aspect-[16/10] w-full rounded-md object-cover" />}
               <h2 className="mt-4 text-xl font-black">{product.nome}</h2>
               <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">{product.descricao_curta}</p>
               <div className="mt-4 flex items-end justify-between">
