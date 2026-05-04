@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 
 import {
   AuthUser,
+  BenefitActivation,
   clearToken,
   marketplaceApi,
   money,
@@ -23,6 +24,7 @@ const defaultSavings: SavingsSummary = {
 
 function AccountPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [benefits, setBenefits] = useState<BenefitActivation[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [savings, setSavings] = useState<SavingsSummary>(defaultSavings);
   const [profile, setProfile] = useState<(AuthUser & Record<string, string>) | null>(null);
@@ -31,12 +33,14 @@ function AccountPage() {
     void Promise.all([
       marketplaceApi.me(),
       marketplaceApi.myOrders(),
+      marketplaceApi.myBenefits(),
       marketplaceApi.mySavings(),
       marketplaceApi.myNotifications()
     ])
-      .then(([me, orderData, savingsData, notificationData]) => {
+      .then(([me, orderData, benefitData, savingsData, notificationData]) => {
         setProfile(me);
         setOrders(orderData);
+        setBenefits(benefitData);
         setSavings(savingsData);
         setNotifications(notificationData);
       })
@@ -52,6 +56,7 @@ function AccountPage() {
     (order) => order.offer_type === "produto_digital" || order.delivery_method === "digital"
   );
   const approvedPayments = orders.filter((order) => order.payment_status === "approved").length;
+  const activeBenefits = benefits.filter((benefit) => benefit.status === "active");
   const fullAddress = profile
     ? [profile.endereco, profile.numero, profile.complemento, profile.bairro, profile.cidade, profile.estado, profile.cep]
         .filter(Boolean)
@@ -92,6 +97,7 @@ function AccountPage() {
           <Metric label="Servicos adquiridos" value={services.length} />
           <Metric label="Digitais liberados" value={digitalProducts.length} />
           <Metric label="Pagamentos aprovados" value={approvedPayments} />
+          <Metric label="Beneficios ativos" value={activeBenefits.length} />
         </div>
 
         <section className="mt-6 rounded-md border border-[#dfe5ef] bg-white p-5">
@@ -181,6 +187,73 @@ function AccountPage() {
           <OrderGroup title="Meus vouchers" orders={vouchers} empty="Nenhum voucher liberado ainda." />
           <OrderGroup title="Meus servicos adquiridos" orders={services} empty="Nenhum servico adquirido ainda." />
           <OrderGroup title="Produtos digitais liberados" orders={digitalProducts} empty="Nenhum produto digital liberado ainda." />
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
+          <section className="rounded-md border border-[#dfe5ef] bg-white">
+            <div className="border-b border-[#edf1f6] px-5 py-4">
+              <h2 className="text-lg font-black">Beneficios ativos</h2>
+            </div>
+            <div className="divide-y divide-[#edf1f6]">
+              {benefits.length === 0 ? (
+                <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nenhum beneficio ativado ainda.</p>
+              ) : (
+                benefits.map((benefit) => (
+                  <div key={benefit.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
+                    <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
+                      {benefit.imagem_url && <img src={benefit.imagem_url} alt="" className="h-full w-full object-cover" />}
+                    </div>
+                    <div>
+                      <h3 className="font-black">{benefit.product_nome}</h3>
+                      <p className="mt-1 text-sm font-semibold text-[#68748a]">
+                        Codigo {benefit.activation_code} | {benefit.status}
+                      </p>
+                    </div>
+                    <span className="rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black">
+                      {benefit.offer_type ?? "beneficio"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <InfoPanel title="Localizacao">
+            <p>Ative para receber alertas quando houver beneficio disponivel em parceiro proximo.</p>
+            <div className="mt-3 grid gap-2">
+              <button
+                type="button"
+                onClick={() => marketplaceApi.setLocationConsent("granted")}
+                className="rounded-md bg-brand-gold px-3 py-2 text-sm font-black text-brand-ink"
+              >
+                Permitir alertas por localizacao
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!navigator.geolocation) return;
+                  navigator.geolocation.getCurrentPosition((position) => {
+                    void marketplaceApi.sendLocationEvent({
+                      latitude: position.coords.latitude,
+                      longitude: position.coords.longitude,
+                      accuracy_meters: Math.round(position.coords.accuracy),
+                      event_type: "nearby"
+                    });
+                  });
+                }}
+                className="rounded-md bg-brand-ink px-3 py-2 text-sm font-black text-white"
+              >
+                Detectar parceiro proximo
+              </button>
+              <button
+                type="button"
+                onClick={() => marketplaceApi.setLocationConsent("revoked")}
+                className="rounded-md border border-[#ccd5e2] px-3 py-2 text-sm font-black"
+              >
+                Revogar permissao
+              </button>
+            </div>
+          </InfoPanel>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">

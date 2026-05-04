@@ -26,7 +26,8 @@ export const config = {
   uploadMaxBytes: numberFromEnv("UPLOAD_MAX_BYTES", 200 * 1024 * 1024),
   mercadoPago: {
     accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN ?? "",
-    publicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? ""
+    publicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? "",
+    webhookSecret: process.env.MERCADO_PAGO_WEBHOOK_SECRET ?? ""
   },
   sql: {
     server: process.env.SQLSERVER_HOST ?? "localhost",

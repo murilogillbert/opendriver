@@ -73,6 +73,17 @@ export type Notification = {
   created_at: string;
 };
 
+export type BenefitActivation = {
+  id: number;
+  activation_code: string;
+  product_nome: string;
+  offer_type?: string;
+  delivery_method?: string;
+  imagem_url?: string;
+  status: string;
+  created_at: string;
+};
+
 export type SavingsSummary = {
   economia_total: number;
   pedidos: number;
@@ -185,6 +196,30 @@ export const marketplaceApi = {
   },
   async myNotifications() {
     return (await request<Notification[]>("/notifications/my")).data;
+  },
+  async myBenefits() {
+    return (await request<BenefitActivation[]>("/benefits/my")).data;
+  },
+  async setLocationConsent(status: "granted" | "revoked") {
+    return (
+      await request<{ id: number }>("/location/consent", {
+        method: "POST",
+        body: JSON.stringify({ status })
+      })
+    ).data;
+  },
+  async sendLocationEvent(input: {
+    latitude: number;
+    longitude: number;
+    accuracy_meters?: number;
+    event_type?: "enter" | "exit" | "nearby";
+  }) {
+    return (
+      await request<{ events: Array<{ id: number }>; alerts: Array<{ id: number }> }>("/location/events", {
+        method: "POST",
+        body: JSON.stringify(input)
+      })
+    ).data;
   }
 };
 

@@ -788,12 +788,13 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       preco_original: number;
       preco_desconto: number;
       economia_estimada: number;
+      payment_required: boolean;
       status: string;
       offer_type: string;
       delivery_method: "digital" | "presencial" | "fisica";
       limite_resgates: number | null;
     }>(
-      `SELECT id, nome, tipo_entrega, preco_original, preco_desconto, economia_estimada, status,
+      `SELECT id, nome, tipo_entrega, preco_original, preco_desconto, economia_estimada, payment_required, status,
               offer_type, delivery_method, limite_resgates
          FROM dbo.products
         WHERE id = @id AND status = 'ativo'`,
@@ -803,6 +804,10 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
     if (!product) {
       return reply.code(404).send({ error: "product_not_found" });
+    }
+
+    if (product.payment_required) {
+      return reply.code(409).send({ error: "payment_required_use_process_payment" });
     }
 
     const deliveryType =

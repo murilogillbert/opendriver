@@ -147,7 +147,19 @@ export async function processMercadoPagoPaymentUpdate(paymentId: string, eventTy
 
 export async function registerPaymentWebhookRoutes(app: FastifyInstance) {
   const handler = async (request: import("fastify").FastifyRequest, reply: import("fastify").FastifyReply) => {
-    const queryParams = request.query as { id?: string; topic?: string; type?: string };
+    const queryParams = request.query as { id?: string; topic?: string; type?: string; secret?: string };
+    const configuredSecret = config.mercadoPago.webhookSecret;
+    if (configuredSecret) {
+      const receivedSecret =
+        (request.headers["x-webhook-secret"] as string | undefined) ??
+        (request.headers["x-opendriver-webhook-secret"] as string | undefined) ??
+        queryParams.secret;
+
+      if (receivedSecret !== configuredSecret) {
+        return reply.code(401).send({ error: "invalid_webhook_secret" });
+      }
+    }
+
     const body = webhookBodySchema.safeParse(request.body ?? {});
     const parsed = body.success ? body.data : {};
     const topic = parsed.type ?? parsed.topic ?? queryParams.type ?? queryParams.topic;
