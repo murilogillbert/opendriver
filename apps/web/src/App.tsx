@@ -1,18 +1,11 @@
 import { useEffect, useState } from "react";
 
-import BenefitsSection from "./components/BenefitsSection";
 import AdminApp from "./components/admin/AdminApp";
 import AccountPage from "./components/marketplace/AccountPage";
 import AuthPage from "./components/marketplace/AuthPage";
 import CheckoutPage from "./components/marketplace/CheckoutPage";
 import MarketplaceHome from "./components/marketplace/MarketplaceHome";
-import BotSection from "./components/BotSection";
-import EarningsSection from "./components/EarningsSection";
-import FinalCTA from "./components/FinalCTA";
 import FloatingAssistant from "./components/FloatingAssistant";
-import HeroSection from "./components/HeroSection";
-import HowItWorks from "./components/HowItWorks";
-import TrustSection from "./components/TrustSection";
 
 function App() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
@@ -47,26 +40,15 @@ function App() {
     return <CheckoutPage productId={productId} />;
   }
 
-  if (!path.startsWith("/motoristas")) {
-    return <MarketplaceHome />;
-  }
-
   return (
-    <main className="min-h-screen overflow-hidden bg-brand-ink font-sans text-white antialiased">
-      <HeroSection onCtaClick={openAssistant} />
-      <BenefitsSection />
-      <EarningsSection />
-      <HowItWorks />
-      <BotSection onCtaClick={openAssistant} />
-      <TrustSection />
-      <FinalCTA onCtaClick={openAssistant} />
-
+    <>
+      <MarketplaceHome />
       <FloatingAssistant
         isOpen={isAssistantOpen}
         onClose={() => setIsAssistantOpen(false)}
         onOpen={openAssistant}
       />
-    </main>
+    </>
   );
 }
 

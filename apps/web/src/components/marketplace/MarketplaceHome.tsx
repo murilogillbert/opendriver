@@ -151,13 +151,6 @@ function MarketplaceHome() {
             </a>
             <button
               type="button"
-              onClick={() => navigate("/motoristas")}
-              className="hidden rounded-md border border-[#d1c19c] px-3 py-2 text-sm font-black text-[#263242] md:inline"
-            >
-              Motoristas
-            </button>
-            <button
-              type="button"
               onClick={() => navigate(getToken() ? "/minha-conta" : "/entrar")}
               className="rounded-md bg-[#08111f] px-4 py-3 text-sm font-black text-white shadow-sm"
             >
