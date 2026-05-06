@@ -17,7 +17,7 @@ function FinalCTA({ onCtaClick }: FinalCTAProps) {
           onClick={onCtaClick}
           className="mt-8 w-full rounded-full bg-brand-gold px-7 py-5 text-sm font-black uppercase tracking-[0.18em] text-brand-ink shadow-gold transition duration-300 hover:-translate-y-1 hover:scale-[1.02] hover:bg-brand-goldLight focus:outline-none focus:ring-4 focus:ring-brand-gold/30 sm:w-auto sm:min-w-80"
         >
-          Entrar na Open Driver
+          Entrar na DriverHub
         </button>
       </div>
     </section>

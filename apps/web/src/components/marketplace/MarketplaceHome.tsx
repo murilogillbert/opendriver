@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
 import { getToken, marketplaceApi, money, Product } from "../../lib/marketplaceApi";
-import logoUrl from "../../assets/open-driver-logo.svg";
+import logoUrl from "../../assets/driverhub-logo.svg";
 
 const savingsItems = [
   { label: "Combustivel", value: 180 },
@@ -137,10 +137,7 @@ function MarketplaceHome() {
       <header className="sticky top-0 z-40 border-b border-[#d8caa9]/70 bg-[#f7f3ea]/95 backdrop-blur">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5">
           <button type="button" onClick={() => navigate("/")} className="flex items-center gap-3">
-            <img src={logoUrl} alt="Open Driver" className="h-10 w-auto" />
-            <span className="hidden text-sm font-black uppercase tracking-[0.16em] text-[#263242] sm:inline">
-              Open Driver
-            </span>
+            <img src={logoUrl} alt="DriverHub" className="h-11 w-auto max-w-[12rem]" />
           </button>
           <nav className="flex items-center gap-2">
             <a href="#beneficios" className="hidden px-3 py-2 text-sm font-black text-[#465366] sm:inline">

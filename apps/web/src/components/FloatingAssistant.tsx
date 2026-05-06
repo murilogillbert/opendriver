@@ -166,7 +166,7 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Abrir assistente da Open Driver"
+        aria-label="Abrir assistente da DriverHub"
         className={`fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-full bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-wide text-brand-ink shadow-gold transition duration-300 hover:-translate-y-1 hover:scale-105 hover:bg-brand-goldLight focus:outline-none focus:ring-4 focus:ring-brand-gold/30 sm:bottom-6 sm:right-6 ${
           isOpen ? "pointer-events-none translate-y-3 opacity-0" : "opacity-100"
         }`}
@@ -190,7 +190,7 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
                 IA local
               </p>
               <h2 className="mt-1 font-display text-lg font-black text-white">
-                Assistente Open Driver
+                Assistente DriverHub
               </h2>
             </div>
 

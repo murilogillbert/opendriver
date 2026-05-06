@@ -42,7 +42,7 @@ const intentToBotIntent = (intent: AssistantLead["mainIntent"]) => {
 export async function createLeadFromAssistant(lead: AssistantLead) {
   const response = await postJson<{ data: CreatedLead }>("/leads", {
     origem: "bot_whatsapp",
-    nome: "Lead assistente Open Driver",
+    nome: "Lead assistente DriverHub",
     cidade: lead.city,
     servico_interesse: getLeadInterestLabel(lead),
     observacao: JSON.stringify({

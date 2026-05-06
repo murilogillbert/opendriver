@@ -97,7 +97,7 @@ function BenefitsSection() {
 
         <div className="mt-12 rounded-[2rem] bg-white p-6 shadow-soft sm:p-8">
           <span className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-            Vitrine Open Driver
+            Vitrine DriverHub
           </span>
           <p className="mt-3 font-display text-2xl font-black text-brand-ink sm:text-3xl">
             Benefícios organizados para o motorista entender rápido e decidir sem fricção.

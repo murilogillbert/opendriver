@@ -4,7 +4,7 @@ const WHATSAPP_NUMBER = "556182187476";
 
 export function createWhatsAppLeadUrl(lead: AssistantLead) {
   const lines = [
-    "Olá, vim pelo assistente da Open Driver.",
+    "Olá, vim pelo assistente da DriverHub.",
     lead.driverType ? `Perfil: ${lead.driverType}` : undefined,
     lead.city ? `Cidade/região: ${lead.city}` : undefined,
     `Principal interesse: ${getLeadInterestLabel(lead)}`,

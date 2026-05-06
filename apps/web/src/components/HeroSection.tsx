@@ -1,4 +1,4 @@
-import logo from "../assets/open-driver-logo.svg";
+import logo from "../assets/driverhub-logo.svg";
 
 type HeroSectionProps = {
   onCtaClick: () => void;
@@ -16,15 +16,12 @@ function HeroSection({ onCtaClick }: HeroSectionProps) {
         </div>
 
         <header className="flex items-center justify-between rounded-[1.75rem] border border-white/10 bg-white/[0.06] px-4 py-3 shadow-navy backdrop-blur-xl sm:px-5">
-          <a href="#topo" className="flex items-center gap-3" aria-label="Open Driver">
+          <a href="#topo" className="flex items-center gap-3" aria-label="DriverHub">
             <img
               src={logo}
-              alt="Logo Open Driver"
-              className="h-12 w-12 rounded-2xl border border-white/10 object-cover"
+              alt="Logo DriverHub"
+              className="h-14 w-auto max-w-[13rem] object-contain"
             />
-            <span className="font-display text-lg font-black tracking-tight text-white sm:text-xl">
-              Open <span className="text-brand-gold">Driver</span>
-            </span>
           </a>
 
           <nav className="hidden items-center gap-7 text-xs font-extrabold uppercase tracking-[0.18em] text-white/70 lg:flex">
@@ -51,11 +48,11 @@ function HeroSection({ onCtaClick }: HeroSectionProps) {
         <div id="topo" className="grid items-center gap-10 pb-6 pt-12 lg:grid-cols-[1.02fr_0.98fr] lg:gap-12 lg:pt-20">
           <div className="text-center lg:text-left">
             <span className="inline-flex rounded-full border border-brand-gold/40 bg-brand-gold/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-              MVP Open Driver
+              MVP DriverHub
             </span>
 
             <h1 className="mt-6 font-display text-4xl font-black leading-[0.96] tracking-[-0.05em] text-white sm:text-6xl lg:text-7xl">
-              Ganhe mais como motorista com a Open Driver
+              Ganhe mais como motorista com a DriverHub
             </h1>
 
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/72 sm:text-xl lg:mx-0">
@@ -101,7 +98,7 @@ function HeroSection({ onCtaClick }: HeroSectionProps) {
                     </p>
                     <h2 className="mt-1 font-display text-2xl font-black">Benefícios ativos</h2>
                   </div>
-                  <img src={logo} alt="" className="h-14 w-14 rounded-2xl object-cover" />
+                  <img src={logo} alt="" className="h-14 w-auto max-w-[12rem] object-contain" />
                 </div>
 
                 <div className="mt-6 rounded-[1.75rem] bg-brand-navy p-5 text-white">
