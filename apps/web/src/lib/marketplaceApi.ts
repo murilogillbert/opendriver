@@ -154,10 +154,40 @@ export function clearToken() {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
+const ERROR_MESSAGES: Record<string, string> = {
+  product_not_found: "Esta oferta nao esta mais disponivel.",
+  payment_required_use_process_payment: "Esta oferta exige finalizacao no checkout de pagamento.",
+  card_token_required: "Os dados do cartao precisam ser revalidados antes de tentar novamente.",
+  card_payment_method_required: "Selecione a bandeira do cartao para continuar.",
+  user_profile_incomplete: "Complete o cadastro do seu perfil antes de pagar.",
+  mercado_pago_payment_failed: "O Mercado Pago recusou o pagamento. Verifique os dados do cartao ou tente outro metodo.",
+  mercado_pago_access_token_missing: "O pagamento esta indisponivel no momento. Tente novamente em instantes.",
+  mercado_pago_lookup_failed: "Nao foi possivel verificar o status agora. Aguarde alguns segundos.",
+  mercado_pago_search_failed: "Nao foi possivel buscar o pagamento agora. Tente novamente.",
+  payment_not_found: "Pagamento nao encontrado.",
+  payment_order_not_found: "Pedido nao encontrado para este pagamento.",
+  invalid_order_id: "Pedido invalido.",
+  order_not_found: "Pedido nao encontrado.",
+  invalid_webhook_signature: "Falha de seguranca na validacao do pagamento."
+};
+
+export function friendlyPaymentError(error: unknown, fallback = "Nao foi possivel processar o pagamento."): string {
+  if (!(error instanceof Error)) return fallback;
+  const code = error.message;
+  if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  if (code.startsWith("API request failed")) return fallback;
+  // Don't surface raw technical messages — fall back if it looks like a code (snake_case English)
+  if (/^[a-z]+(_[a-z]+)+$/.test(code)) return fallback;
+  return code;
+}
+
 export const marketplaceApi = {
   async products(featured = false) {
     const query = featured ? "?featured=1" : "";
     return (await request<Product[]>(`/products${query}`)).data;
+  },
+  async product(idOrSlug: number | string) {
+    return (await request<Product>(`/products/${encodeURIComponent(String(idOrSlug))}`)).data;
   },
   async categories() {
     return (await request<Category[]>("/product-categories")).data;

@@ -11,6 +11,7 @@ import {
   createMercadoPagoPayment,
   generatePaymentReference,
   generateVoucherCode,
+  loadCachedPaymentStatus,
   normalizeMercadoPagoStatus,
   paymentStatusToOrderStatus,
   recordPaymentTransaction,
@@ -387,13 +388,24 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
   app.get("/api/products/:slug", async (request, reply) => {
     const params = request.params as { slug: string };
-    const data = await query(
-      `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
-         FROM dbo.products p
-         LEFT JOIN dbo.product_categories c ON c.id = p.category_id
-        WHERE p.slug = @slug AND p.status = 'ativo'`,
-      (sqlRequest) => sqlRequest.input("slug", sqlTypes.VarChar(180), params.slug)
-    );
+    const slug = params.slug;
+    const numericId = /^\d+$/.test(slug) ? Number(slug) : null;
+
+    const data = numericId
+      ? await query(
+          `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
+             FROM dbo.products p
+             LEFT JOIN dbo.product_categories c ON c.id = p.category_id
+            WHERE p.id = @id AND p.status = 'ativo'`,
+          (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, numericId)
+        )
+      : await query(
+          `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
+             FROM dbo.products p
+             LEFT JOIN dbo.product_categories c ON c.id = p.category_id
+            WHERE p.slug = @slug AND p.status = 'ativo'`,
+          (sqlRequest) => sqlRequest.input("slug", sqlTypes.VarChar(180), slug)
+        );
 
     if (!data[0]) {
       return reply.code(404).send({ error: "product_not_found" });
@@ -875,6 +887,11 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, user.id)
     );
 
+    const profileRow = profile[0];
+    if (!profileRow || !profileRow.email) {
+      return reply.code(400).send({ error: "user_profile_incomplete" });
+    }
+
     const transactionAmount = Number(product.preco_desconto);
     const paymentReference = generatePaymentReference(user.id, product.id);
     const paymentMethodId = body.payment_method === "pix" ? "pix" : body.payment_method_id;
@@ -884,12 +901,12 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       payment_method_id: paymentMethodId,
       external_reference: paymentReference,
       payer: {
-        email: profile[0].email,
-        ...(profile[0].cpf
+        email: profileRow.email,
+        ...(profileRow.cpf
           ? {
               identification: {
                 type: "CPF",
-                number: profile[0].cpf.replace(/\D/g, "")
+                number: profileRow.cpf.replace(/\D/g, "")
               }
             }
           : {})
@@ -965,16 +982,11 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/api/process_payment", async (request, reply) => {
-    return app.inject({
-      method: "POST",
-      url: "/api/payments/process_payment",
-      headers: request.headers as Record<string, string>,
-      payload: request.body as object
-    }).then((response) => {
-      reply.code(response.statusCode);
-      return JSON.parse(response.body);
-    });
+  app.post("/api/process_payment", async (_request, reply) => {
+    return reply
+      .code(308)
+      .header("Location", "/api/payments/process_payment")
+      .send({ error: "moved", location: "/api/payments/process_payment" });
   });
 
   app.post("/api/analytics/page-view", async (request) => {
@@ -1026,12 +1038,22 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   app.get("/api/orders/:id/payment-status", async (request, reply) => {
     const user = await requireUser(request);
     const params = request.params as { id: string };
+    const queryParams = request.query as { force?: string };
     const orderId = Number(params.id);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      return reply.code(400).send({ error: "invalid_order_id" });
+    }
 
-    const ownership = await query<{ id: number }>(
-      `SELECT id
-         FROM dbo.product_orders
-        WHERE id = @id AND user_id = @user_id`,
+    const ownership = await query<{
+      id: number;
+      payment_status: string | null;
+      last_synced_at: Date | null;
+    }>(
+      `SELECT TOP 1 o.id, o.payment_status,
+              (SELECT TOP 1 last_synced_at FROM dbo.payment_transactions tx
+                 WHERE tx.order_id = o.id ORDER BY tx.created_at DESC) AS last_synced_at
+         FROM dbo.product_orders o
+        WHERE o.id = @id AND o.user_id = @user_id`,
       (sqlRequest) =>
         sqlRequest
           .input("id", sqlTypes.BigInt, orderId)
@@ -1042,11 +1064,25 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "order_not_found" });
     }
 
-    const sync = await reconcileOrderPaymentStatus({
-      orderId,
-      actorId: user.id,
-      eventType: "customer_poll"
-    });
+    const ownershipRow = ownership[0];
+    const cooldownMs = 8000;
+    const force = queryParams.force === "1" || queryParams.force === "true";
+    const lastSyncedAt = ownershipRow.last_synced_at ? new Date(ownershipRow.last_synced_at).getTime() : 0;
+    const isTerminal =
+      ownershipRow.payment_status === "approved" ||
+      ownershipRow.payment_status === "rejected" ||
+      ownershipRow.payment_status === "cancelled" ||
+      ownershipRow.payment_status === "refunded";
+    const recent = lastSyncedAt && Date.now() - lastSyncedAt < cooldownMs;
+
+    const sync =
+      !force && (isTerminal || recent)
+        ? await loadCachedPaymentStatus(orderId)
+        : await reconcileOrderPaymentStatus({
+            orderId,
+            actorId: user.id,
+            eventType: "customer_poll"
+          });
 
     const orderRows = await query(
       `SELECT TOP 1 o.id, o.public_code, o.voucher_code, o.status, o.payment_status, o.payment_method,

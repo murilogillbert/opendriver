@@ -129,7 +129,7 @@ export async function fetchMercadoPagoPayment(paymentId: string) {
 
 export async function findMercadoPagoPaymentByExternalReference(externalReference: string) {
   const response = await fetch(
-    `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&external_reference=${encodeURIComponent(externalReference)}`,
+    `https://api.mercadopago.com/v1/payments/search?sort=date_last_updated&criteria=desc&external_reference=${encodeURIComponent(externalReference)}`,
     {
       headers: {
         Authorization: `Bearer ${getMercadoPagoAccessToken()}`
@@ -214,21 +214,43 @@ async function updatePaymentTransactionSnapshot(input: {
   statusDetail: string | null;
   responsePayload?: unknown;
 }) {
-  const existing = await query<{ id: number }>(
-    `SELECT TOP 1 id
-       FROM dbo.payment_transactions
-      WHERE (@order_id IS NOT NULL AND order_id = @order_id)
-         OR (@external_payment_id IS NOT NULL AND external_payment_id = @external_payment_id)
-         OR (@external_reference IS NOT NULL AND external_reference = @external_reference)
-      ORDER BY created_at DESC`,
-    (request) =>
-      request
-        .input("order_id", sqlTypes.BigInt, input.orderId)
-        .input("external_payment_id", sqlTypes.NVarChar(80), input.externalPaymentId)
-        .input("external_reference", sqlTypes.NVarChar(120), input.externalReference)
-  );
+  // Look up by the strongest available identifier in order.
+  // OR-combined predicates risk matching across distinct transactions when the database
+  // has partial duplicates, so fall through one identifier at a time.
+  const findExisting = async () => {
+    if (input.externalPaymentId) {
+      const rows = await query<{ id: number }>(
+        `SELECT TOP 1 id FROM dbo.payment_transactions
+          WHERE external_payment_id = @external_payment_id
+          ORDER BY created_at DESC`,
+        (request) => request.input("external_payment_id", sqlTypes.NVarChar(80), input.externalPaymentId)
+      );
+      if (rows[0]) return rows[0];
+    }
+    if (input.orderId) {
+      const rows = await query<{ id: number }>(
+        `SELECT TOP 1 id FROM dbo.payment_transactions
+          WHERE order_id = @order_id
+          ORDER BY created_at DESC`,
+        (request) => request.input("order_id", sqlTypes.BigInt, input.orderId)
+      );
+      if (rows[0]) return rows[0];
+    }
+    if (input.externalReference) {
+      const rows = await query<{ id: number }>(
+        `SELECT TOP 1 id FROM dbo.payment_transactions
+          WHERE external_reference = @external_reference
+          ORDER BY created_at DESC`,
+        (request) => request.input("external_reference", sqlTypes.NVarChar(120), input.externalReference)
+      );
+      if (rows[0]) return rows[0];
+    }
+    return null;
+  };
 
-  if (!existing[0]) {
+  const existing = await findExisting();
+
+  if (!existing) {
     if (input.orderId && input.userId && input.productId && input.amount != null) {
       await recordPaymentTransaction({
         orderId: input.orderId,
@@ -263,7 +285,7 @@ async function updatePaymentTransactionSnapshot(input: {
       WHERE id = @id`,
     (request) =>
       request
-        .input("id", sqlTypes.BigInt, existing[0].id)
+        .input("id", sqlTypes.BigInt, existing.id)
         .input("order_id", sqlTypes.BigInt, input.orderId)
         .input("user_id", sqlTypes.BigInt, input.userId)
         .input("product_id", sqlTypes.BigInt, input.productId)
@@ -334,6 +356,25 @@ async function loadOrderPaymentRow(input: {
   }
 
   return null;
+}
+
+export async function loadCachedPaymentStatus(orderId: number): Promise<PaymentSyncResult> {
+  const order = await loadOrderPaymentRow({ orderId });
+  if (!order) {
+    throw Object.assign(new Error("payment_not_found"), { statusCode: 404 });
+  }
+  const snapshot = await loadPaymentSnapshotForOrder(orderId);
+  return {
+    orderId: order.id,
+    paymentId: order.mercado_pago_payment_id,
+    paymentReference: order.payment_reference,
+    paymentStatus: order.payment_status ?? "pending",
+    gatewayStatus: order.mercado_pago_status,
+    statusDetail: snapshot?.status_detail ?? null,
+    orderStatus: order.status,
+    voucherCode: order.voucher_code,
+    paidAt: order.paid_at ? new Date(order.paid_at).toISOString() : null
+  } satisfies PaymentSyncResult;
 }
 
 async function loadPaymentSnapshotForOrder(orderId: number) {

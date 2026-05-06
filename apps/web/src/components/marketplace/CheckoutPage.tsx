@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
-import { getToken, marketplaceApi, money, Order, Product } from "../../lib/marketplaceApi";
+import { friendlyPaymentError, getToken, marketplaceApi, money, Order, Product } from "../../lib/marketplaceApi";
 
 type CheckoutPageProps = {
   productId: number;
@@ -76,6 +76,9 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cardReady, setCardReady] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [copiedPix, setCopiedPix] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     phase: "idle" | "polling" | "approved" | "rejected" | "cancelled" | "error";
     label: string;
@@ -97,8 +100,8 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
 
   useEffect(() => {
     void marketplaceApi
-      .products()
-      .then((products) => setProduct(products.find((item) => item.id === productId) ?? null))
+      .product(productId)
+      .then((found) => setProduct(found))
       .catch(() => setProduct(null));
 
     void marketplaceApi
@@ -255,6 +258,7 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
 
   const verifyPaymentStatus = async (orderId: number, silent = false) => {
     if (!silent) {
+      setIsVerifying(true);
       setSyncStatus((current) => ({
         ...current,
         phase: "polling",
@@ -275,10 +279,12 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
         setSyncStatus({
           phase: "error",
           label: "Nao foi possivel atualizar agora",
-          detail: syncError instanceof Error ? syncError.message : "Tente novamente em instantes.",
+          detail: friendlyPaymentError(syncError, "Tente novamente em instantes."),
           updatedAt: new Date().toISOString()
         });
       }
+    } finally {
+      if (!silent) setIsVerifying(false);
     }
   };
 
@@ -327,6 +333,7 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
       return Promise.reject(new Error("checkout_unavailable"));
     }
 
+    setIsSubmitting(true);
     try {
       const response = await marketplaceApi.processPayment({
         product_id: product.id,
@@ -339,8 +346,10 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
       finishPayment(response);
       return Promise.resolve();
     } catch (paymentError) {
-      setError(paymentError instanceof Error ? paymentError.message : "Nao foi possivel processar o pagamento.");
+      setError(friendlyPaymentError(paymentError));
       return Promise.reject(paymentError);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -348,13 +357,14 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
     event.preventDefault();
     setError(null);
 
-    if (!ensureLoggedIn()) return;
+    if (isSubmitting || !ensureLoggedIn()) return;
 
     if (!product) {
       setError("Oferta indisponivel.");
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const response = await marketplaceApi.processPayment({
         product_id: product.id,
@@ -363,7 +373,21 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
       });
       finishPayment(response);
     } catch (paymentError) {
-      setError(paymentError instanceof Error ? paymentError.message : "Nao foi possivel processar o pagamento.");
+      setError(friendlyPaymentError(paymentError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const copyPixCode = async () => {
+    if (!result?.payment.qr_code) return;
+    try {
+      await navigator.clipboard.writeText(result.payment.qr_code);
+      setCopiedPix(true);
+      window.setTimeout(() => setCopiedPix(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable (insecure context); leave the textarea so the user can select manually.
+      setCopiedPix(false);
     }
   };
 
@@ -405,11 +429,24 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
                 />
               )}
               {result.payment.qr_code && (
-                <textarea
-                  readOnly
-                  value={result.payment.qr_code}
-                  className="mt-4 h-28 w-full rounded-md border border-[#ccd5e2] p-3 text-xs"
-                />
+                <div className="mt-4 space-y-2">
+                  <label className="block text-xs font-black uppercase tracking-[0.12em] text-[#6c7788]">
+                    Pix copia e cola
+                  </label>
+                  <textarea
+                    readOnly
+                    value={result.payment.qr_code}
+                    onFocus={(event) => event.currentTarget.select()}
+                    className="h-28 w-full rounded-md border border-[#ccd5e2] p-3 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void copyPixCode()}
+                    className="rounded-md border border-brand-gold bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand-ink"
+                  >
+                    {copiedPix ? "Codigo copiado!" : "Copiar codigo Pix"}
+                  </button>
+                </div>
               )}
               {result.order.voucher_code && (
                 <p className="mt-4 rounded-md bg-white px-3 py-2 text-sm font-black">
@@ -437,10 +474,11 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
                   type="button"
+                  disabled={isVerifying}
                   onClick={() => void verifyPaymentStatus(result.order.id)}
-                  className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white"
+                  className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Verificar pagamento agora
+                  {isVerifying ? "Verificando..." : "Verificar pagamento agora"}
                 </button>
                 <button
                   type="button"
@@ -473,8 +511,12 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
 
               {paymentMethod === "pix" ? (
                 <form onSubmit={submitPixPayment}>
-                  <button className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink">
-                    Gerar Pix copia e cola
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmitting ? "Gerando codigo Pix..." : "Gerar Pix copia e cola"}
                   </button>
                 </form>
               ) : publicKey ? (
