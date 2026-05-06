@@ -3,7 +3,8 @@ import { randomBytes } from "crypto";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
+import { clientIp, hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
+import { writeAuditLog } from "./audit.js";
 import { createBenefitActivation, shouldCreateActivationFor } from "./benefits.js";
 import { config } from "./config.js";
 import { execute, query, sqlTypes } from "./db.js";
@@ -209,136 +210,344 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/api/auth/bootstrap-admin", async (request, reply) => {
-    const body = loginSchema.extend({ nome: z.string().trim().min(2).optional() }).parse(request.body);
-    const existingAdmins = await query<{ total: number }>(
-      "SELECT COUNT(*) AS total FROM dbo.users WHERE tipo_usuario = 'admin'"
-    );
+  app.post(
+    "/api/auth/bootstrap-admin",
+    {
+      config: {
+        rateLimit: { max: 5, timeWindow: "15 minutes" }
+      }
+    },
+    async (request, reply) => {
+      const body = loginSchema
+        .extend({
+          nome: z.string().trim().min(2).optional(),
+          bootstrap_token: z.string().min(1).optional()
+        })
+        .parse(request.body);
+      const ip = clientIp(request);
 
-    if (Number(existingAdmins[0]?.total ?? 0) > 0) {
-      return reply.code(403).send({ error: "admin_already_exists" });
-    }
+      // Require a configured shared secret for the public endpoint, and constant-time compare it.
+      const expected = config.adminBootstrapToken;
+      const providedHeader = (request.headers["x-admin-bootstrap-token"] as string | undefined) ?? null;
+      const provided = (body.bootstrap_token ?? providedHeader ?? "").trim();
+      if (!expected) {
+        await writeAuditLog({
+          action: "auth.bootstrap_blocked_no_token_configured",
+          entityType: "user",
+          payload: { reason: "ADMIN_BOOTSTRAP_TOKEN not configured", email: body.email.toLowerCase() },
+          ipAddress: ip
+        });
+        return reply.code(403).send({ error: "bootstrap_token_required" });
+      }
+      const valid =
+        provided.length === expected.length &&
+        // timingSafeEqual requires equal-length buffers; checking length first avoids leaks.
+        (await import("crypto")).timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+      if (!valid) {
+        await writeAuditLog({
+          action: "auth.bootstrap_invalid_token",
+          entityType: "user",
+          payload: { email: body.email.toLowerCase() },
+          ipAddress: ip
+        });
+        return reply.code(401).send({ error: "invalid_bootstrap_token" });
+      }
 
-    const passwordHash = await hashPassword(body.senha);
-    const existingUsers = await query<{ id: number; email: string; nome: string; tipo_usuario: "admin" }>(
-      `SELECT id, email, nome, tipo_usuario
-         FROM dbo.users
-        WHERE email = @email`,
-      (sqlRequest) => sqlRequest.input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
-    );
+      // Block if any *active* admin already exists. This prevents reopening the bootstrap window when
+      // a single admin is soft-deleted or marked inactive.
+      const existingAdmins = await query<{ total: number }>(
+        "SELECT COUNT(*) AS total FROM dbo.users WHERE tipo_usuario = 'admin'"
+      );
+      if (Number(existingAdmins[0]?.total ?? 0) > 0) {
+        await writeAuditLog({
+          action: "auth.bootstrap_blocked_admin_exists",
+          entityType: "user",
+          payload: { email: body.email.toLowerCase() },
+          ipAddress: ip
+        });
+        return reply.code(403).send({ error: "admin_already_exists" });
+      }
 
-    if (existingUsers[0]) {
-      await execute(
-        `UPDATE dbo.users
-            SET nome = @nome,
-                tipo_usuario = 'admin',
-                status = 'ativo',
-                password_hash = @password_hash,
-                updated_at = SYSUTCDATETIME()
-          WHERE id = @id`,
-        (sqlRequest) =>
-          sqlRequest
-            .input("id", sqlTypes.BigInt, existingUsers[0].id)
-            .input("nome", sqlTypes.NVarChar(140), body.nome ?? existingUsers[0].nome)
-            .input("password_hash", sqlTypes.NVarChar(255), passwordHash)
+      // Stronger password policy for the very first admin.
+      if (body.senha.length < 12) {
+        return reply.code(400).send({ error: "weak_admin_password" });
+      }
+
+      const passwordHash = await hashPassword(body.senha);
+      const existingUsers = await query<{
+        id: number;
+        email: string;
+        nome: string;
+        password_hash: string | null;
+      }>(
+        `SELECT id, email, nome, password_hash
+           FROM dbo.users
+          WHERE email = @email`,
+        (sqlRequest) => sqlRequest.input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
       );
 
-      const user = {
-        ...existingUsers[0],
-        nome: body.nome ?? existingUsers[0].nome,
-        tipo_usuario: "admin" as const
-      };
+      if (existingUsers[0]) {
+        // Refuse to take over a real, password-bearing account: the operator must pick a fresh email.
+        if (existingUsers[0].password_hash) {
+          await writeAuditLog({
+            action: "auth.bootstrap_blocked_account_takeover",
+            entityType: "user",
+            entityId: existingUsers[0].id,
+            payload: { email: body.email.toLowerCase() },
+            ipAddress: ip
+          });
+          return reply.code(409).send({ error: "email_already_in_use" });
+        }
+
+        await execute(
+          `UPDATE dbo.users
+              SET nome = @nome,
+                  tipo_usuario = 'admin',
+                  status = 'ativo',
+                  password_hash = @password_hash,
+                  token_version = COALESCE(token_version, 0) + 1,
+                  updated_at = SYSUTCDATETIME()
+            WHERE id = @id`,
+          (sqlRequest) =>
+            sqlRequest
+              .input("id", sqlTypes.BigInt, existingUsers[0].id)
+              .input("nome", sqlTypes.NVarChar(140), body.nome ?? existingUsers[0].nome)
+              .input("password_hash", sqlTypes.NVarChar(255), passwordHash)
+        );
+
+        const promoted = {
+          id: existingUsers[0].id,
+          email: existingUsers[0].email,
+          nome: body.nome ?? existingUsers[0].nome,
+          tipo_usuario: "admin" as const,
+          token_version: 1
+        };
+
+        await writeAuditLog({
+          actorId: promoted.id,
+          action: "auth.bootstrap_promoted",
+          entityType: "user",
+          entityId: promoted.id,
+          payload: { email: promoted.email },
+          ipAddress: ip
+        });
+
+        return reply.code(201).send({
+          data: {
+            user: { id: promoted.id, email: promoted.email, nome: promoted.nome, tipo_usuario: promoted.tipo_usuario },
+            token: signToken(promoted)
+          }
+        });
+      }
+
+      const result = await execute<{ id: number; email: string; nome: string; tipo_usuario: "admin" }>(
+        `INSERT INTO dbo.users (
+            nome, email, tipo_usuario, status, password_hash, telefone,
+            endereco, numero, bairro, cidade, estado, cep
+          )
+          OUTPUT INSERTED.id, INSERTED.email, INSERTED.nome, INSERTED.tipo_usuario
+          VALUES (
+            @nome, @email, 'admin', 'ativo', @password_hash, '',
+            'Endereco administrativo', '0', 'Centro', 'Brasilia', 'DF', '00000000'
+          )`,
+        (sqlRequest) =>
+          sqlRequest
+            .input("nome", sqlTypes.NVarChar(140), body.nome ?? "Administrador Open Driver")
+            .input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
+            .input("password_hash", sqlTypes.NVarChar(255), passwordHash)
+      );
+      const user = { ...result.recordset[0], token_version: 0 };
+
+      await writeAuditLog({
+        actorId: user.id,
+        action: "auth.bootstrap_created",
+        entityType: "user",
+        entityId: user.id,
+        payload: { email: user.email },
+        ipAddress: ip
+      });
 
       return reply.code(201).send({
         data: {
-          user,
+          user: { id: user.id, email: user.email, nome: user.nome, tipo_usuario: user.tipo_usuario },
           token: signToken(user)
         }
       });
     }
+  );
 
-    const result = await execute<{ id: number; email: string; nome: string; tipo_usuario: "admin" }>(
-      `INSERT INTO dbo.users (
-          nome, email, tipo_usuario, status, password_hash, telefone,
-          endereco, numero, bairro, cidade, estado, cep
-        )
-        OUTPUT INSERTED.id, INSERTED.email, INSERTED.nome, INSERTED.tipo_usuario
-        VALUES (
-          @nome, @email, 'admin', 'ativo', @password_hash, '',
-          'Endereco administrativo', '0', 'Centro', 'Brasilia', 'DF', '00000000'
-        )`,
-      (sqlRequest) =>
-        sqlRequest
-          .input("nome", sqlTypes.NVarChar(140), body.nome ?? "Administrador Open Driver")
-          .input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
-          .input("password_hash", sqlTypes.NVarChar(255), passwordHash)
-    );
-    const user = result.recordset[0];
-
-    return reply.code(201).send({
-      data: {
-        user,
-        token: signToken(user)
+  app.post(
+    "/api/auth/login",
+    {
+      config: {
+        rateLimit: { max: 10, timeWindow: "1 minute" }
       }
-    });
-  });
+    },
+    async (request, reply) => {
+      const body = loginSchema.parse(request.body);
+      const ip = clientIp(request);
+      const emailLower = body.email.toLowerCase();
+      const users = await query<{
+        id: number;
+        email: string;
+        nome: string;
+        tipo_usuario: "motorista" | "passageiro" | "parceiro" | "admin";
+        password_hash: string | null;
+        status: string;
+        token_version: number;
+        failed_login_count: number;
+        lockout_until: Date | null;
+      }>(
+        `SELECT id, email, nome, tipo_usuario, password_hash, status,
+                COALESCE(token_version, 0) AS token_version,
+                COALESCE(failed_login_count, 0) AS failed_login_count,
+                lockout_until
+           FROM dbo.users
+          WHERE email = @email`,
+        (sqlRequest) => sqlRequest.input("email", sqlTypes.NVarChar(180), emailLower)
+      );
 
-  app.post("/api/auth/login", async (request, reply) => {
-    const body = loginSchema.parse(request.body);
-    const users = await query<{
-      id: number;
-      email: string;
-      nome: string;
-      tipo_usuario: "motorista" | "passageiro" | "parceiro" | "admin";
-      password_hash: string | null;
-      status: string;
-    }>(
-      `SELECT id, email, nome, tipo_usuario, password_hash, status
-         FROM dbo.users
-        WHERE email = @email`,
-      (sqlRequest) => sqlRequest.input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
-    );
+      const user = users[0];
+      const now = new Date();
 
-    const user = users[0];
-    const valid = user?.password_hash ? await verifyPassword(body.senha, user.password_hash) : false;
+      // If the account is locked out, refuse before even running bcrypt — but keep the response uniform.
+      if (user?.lockout_until && new Date(user.lockout_until).getTime() > now.getTime()) {
+        await writeAuditLog({
+          action: "auth.login_blocked_lockout",
+          entityType: "user",
+          entityId: user.id,
+          payload: { email: emailLower },
+          ipAddress: ip
+        });
+        return reply.code(401).send({ error: "invalid_credentials" });
+      }
 
-    if (!user || !valid || user.status !== "ativo") {
-      return reply.code(401).send({ error: "invalid_credentials" });
+      const valid = user?.password_hash ? await verifyPassword(body.senha, user.password_hash) : false;
+
+      if (!user || !valid || user.status !== "ativo") {
+        if (user) {
+          const nextCount = Number(user.failed_login_count ?? 0) + 1;
+          const lockoutUntil = nextCount >= 10 ? new Date(now.getTime() + 15 * 60 * 1000) : null;
+          await execute(
+            `UPDATE dbo.users
+                SET failed_login_count = @count,
+                    lockout_until = @lockout_until,
+                    updated_at = SYSUTCDATETIME()
+              WHERE id = @id`,
+            (sqlRequest) =>
+              sqlRequest
+                .input("id", sqlTypes.BigInt, user.id)
+                .input("count", sqlTypes.Int, nextCount)
+                .input("lockout_until", sqlTypes.DateTime2, lockoutUntil)
+          );
+          await writeAuditLog({
+            action: "auth.login_failed",
+            entityType: "user",
+            entityId: user.id,
+            payload: { email: emailLower, attempts: nextCount, locked: Boolean(lockoutUntil) },
+            ipAddress: ip
+          });
+        } else {
+          await writeAuditLog({
+            action: "auth.login_failed_unknown_user",
+            entityType: "user",
+            payload: { email: emailLower },
+            ipAddress: ip
+          });
+        }
+        return reply.code(401).send({ error: "invalid_credentials" });
+      }
+
+      await execute(
+        `UPDATE dbo.users
+            SET failed_login_count = 0,
+                lockout_until = NULL,
+                last_login_at = SYSUTCDATETIME(),
+                updated_at = SYSUTCDATETIME()
+          WHERE id = @id`,
+        (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, user.id)
+      );
+
+      await writeAuditLog({
+        actorId: user.id,
+        action: user.tipo_usuario === "admin" ? "auth.admin_login" : "auth.login",
+        entityType: "user",
+        entityId: user.id,
+        payload: { email: user.email },
+        ipAddress: ip
+      });
+
+      return {
+        data: {
+          user: {
+            id: user.id,
+            email: user.email,
+            nome: user.nome,
+            tipo_usuario: user.tipo_usuario
+          },
+          token: signToken(user)
+        }
+      };
     }
+  );
 
-    return {
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          nome: user.nome,
-          tipo_usuario: user.tipo_usuario
-        },
-        token: signToken(user)
+  app.post(
+    "/api/auth/forgot-password",
+    {
+      config: {
+        rateLimit: { max: 5, timeWindow: "10 minutes" }
       }
-    };
-  });
+    },
+    async (request) => {
+      const body = forgotPasswordSchema.parse(request.body);
+      const ip = clientIp(request);
+      const token = resetToken();
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 2);
 
-  app.post("/api/auth/forgot-password", async (request) => {
-    const body = forgotPasswordSchema.parse(request.body);
-    const token = resetToken();
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 2);
+      await execute(
+        `UPDATE dbo.users
+            SET reset_token = @reset_token,
+                reset_token_expires_at = @expires_at,
+                updated_at = SYSUTCDATETIME()
+          WHERE email = @email`,
+        (sqlRequest) =>
+          sqlRequest
+            .input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
+            .input("reset_token", sqlTypes.NVarChar(120), token)
+            .input("expires_at", sqlTypes.DateTime2, expiresAt)
+      );
 
+      // Always return a uniform response regardless of whether the email exists, to avoid enumeration.
+      await writeAuditLog({
+        action: "auth.forgot_password_requested",
+        entityType: "user",
+        payload: { email: body.email.toLowerCase() },
+        ipAddress: ip
+      });
+
+      return { data: { sent: true } };
+    }
+  );
+
+  app.post("/api/auth/logout", async (request, reply) => {
+    // Bumping token_version revokes every JWT previously signed for this user.
+    const user = await requireUser(request);
     await execute(
       `UPDATE dbo.users
-          SET reset_token = @reset_token,
-              reset_token_expires_at = @expires_at,
+          SET token_version = COALESCE(token_version, 0) + 1,
               updated_at = SYSUTCDATETIME()
-        WHERE email = @email`,
-      (sqlRequest) =>
-        sqlRequest
-          .input("email", sqlTypes.NVarChar(180), body.email.toLowerCase())
-          .input("reset_token", sqlTypes.NVarChar(120), token)
-          .input("expires_at", sqlTypes.DateTime2, expiresAt)
+        WHERE id = @id`,
+      (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, user.id)
     );
-
-    return { data: { sent: true } };
+    await writeAuditLog({
+      actorId: user.id,
+      action: "auth.logout",
+      entityType: "user",
+      entityId: user.id,
+      ipAddress: clientIp(request)
+    });
+    return reply.code(204).send();
   });
 
   app.get("/api/me", async (request) => {

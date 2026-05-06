@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { FastifyRequest } from "fastify";
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 
 import { config } from "./config.js";
 import { query, sqlTypes } from "./db.js";
@@ -10,6 +10,7 @@ export type AuthUser = {
   email: string;
   nome: string;
   tipo_usuario: "motorista" | "passageiro" | "parceiro" | "admin";
+  token_version?: number;
 };
 
 type JwtPayload = {
@@ -17,6 +18,7 @@ type JwtPayload = {
   email: string;
   nome: string;
   tipo_usuario: AuthUser["tipo_usuario"];
+  tv: number;
 };
 
 export async function hashPassword(password: string) {
@@ -28,15 +30,18 @@ export async function verifyPassword(password: string, hash: string) {
 }
 
 export function signToken(user: AuthUser) {
+  const expiresIn = (user.tipo_usuario === "admin" ? config.adminTokenTtl : config.userTokenTtl) as
+    | SignOptions["expiresIn"];
   return jwt.sign(
     {
       sub: user.id,
       email: user.email,
       nome: user.nome,
-      tipo_usuario: user.tipo_usuario
+      tipo_usuario: user.tipo_usuario,
+      tv: user.token_version ?? 0
     },
     config.jwtSecret,
-    { expiresIn: "7d" }
+    { expiresIn }
   );
 }
 
@@ -48,9 +53,15 @@ export async function requireUser(request: FastifyRequest) {
     throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
   }
 
-  const payload = jwt.verify(token, config.jwtSecret) as unknown as JwtPayload;
-  const users = await query<AuthUser>(
-    `SELECT id, email, nome, tipo_usuario
+  let payload: JwtPayload;
+  try {
+    payload = jwt.verify(token, config.jwtSecret) as unknown as JwtPayload;
+  } catch {
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+  }
+
+  const users = await query<AuthUser & { token_version: number }>(
+    `SELECT id, email, nome, tipo_usuario, COALESCE(token_version, 0) AS token_version
        FROM dbo.users
       WHERE id = @id AND status = 'ativo'`,
     (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, payload.sub)
@@ -59,6 +70,12 @@ export async function requireUser(request: FastifyRequest) {
   const user = users[0];
 
   if (!user) {
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+  }
+
+  // Token revocation: bumping users.token_version invalidates every previously issued token for that user.
+  const tokenVersion = typeof payload.tv === "number" ? payload.tv : 0;
+  if (Number(user.token_version ?? 0) !== tokenVersion) {
     throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
   }
 
@@ -73,4 +90,15 @@ export async function requireAdmin(request: FastifyRequest) {
   }
 
   return user;
+}
+
+export function clientIp(request: FastifyRequest): string | null {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded[0]) {
+    return forwarded[0].split(",")[0].trim();
+  }
+  return request.ip ?? null;
 }

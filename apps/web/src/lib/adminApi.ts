@@ -347,12 +347,20 @@ export const adminApi = {
 
     return response.data.user;
   },
-  async bootstrapAdmin(email: string, senha: string, nome: string) {
+  async bootstrapAdmin(email: string, senha: string, nome: string, bootstrapToken: string) {
     const response = await request<{ token: string }>("/auth/bootstrap-admin", {
       method: "POST",
-      body: JSON.stringify({ email, senha, nome })
+      body: JSON.stringify({ email, senha, nome, bootstrap_token: bootstrapToken })
     });
     window.localStorage.setItem("opendriver-admin-token", response.data.token);
+  },
+  async logoutAdmin() {
+    try {
+      await request<{ ok: true }>("/auth/logout", { method: "POST" });
+    } catch {
+      // Logout is best-effort: even if the server call fails (network, expired token), clear locally.
+    }
+    window.localStorage.removeItem("opendriver-admin-token");
   },
   async upload(file: File) {
     const formData = new FormData();

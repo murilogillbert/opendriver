@@ -265,7 +265,12 @@ function AdminApp() {
     const values = Object.fromEntries(new FormData(event.currentTarget));
 
     try {
-      await adminApi.bootstrapAdmin(String(values.email), String(values.senha), String(values.nome));
+      await adminApi.bootstrapAdmin(
+        String(values.email),
+        String(values.senha),
+        String(values.nome),
+        String(values.bootstrap_token ?? "")
+      );
       setHasAdminToken(true);
       setIsCheckingAuth(false);
       setError(null);
@@ -549,8 +554,7 @@ function AdminApp() {
             <button
               type="button"
               onClick={() => {
-                window.localStorage.removeItem("opendriver-admin-token");
-                setHasAdminToken(false);
+                void adminApi.logoutAdmin().finally(() => setHasAdminToken(false));
               }}
               className="rounded-md bg-[#050b18] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
             >
@@ -1336,19 +1340,31 @@ function Input(props: InputHTMLAttributes<HTMLInputElement> & { label: string; n
 function AdminAuthCard({
   title,
   onSubmit,
-  includeName = false
+  includeName = false,
+  includeBootstrapToken = false
 }: {
   title: string;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   includeName?: boolean;
+  includeBootstrapToken?: boolean;
 }) {
+  const minPassword = includeBootstrapToken ? 12 : 8;
   return (
     <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
       <h2 className="text-lg font-black">{title}</h2>
       <form onSubmit={onSubmit} className="mt-4 grid gap-3">
         {includeName && <Input name="nome" label="Nome" required />}
         <Input name="email" label="Email" type="email" required />
-        <Input name="senha" label="Senha" type="password" required minLength={8} />
+        <Input name="senha" label="Senha" type="password" required minLength={minPassword} />
+        {includeBootstrapToken && (
+          <Input
+            name="bootstrap_token"
+            label="Token de bootstrap (ADMIN_BOOTSTRAP_TOKEN)"
+            type="password"
+            required
+            autoComplete="off"
+          />
+        )}
         <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
           Continuar
         </button>
@@ -1367,7 +1383,7 @@ function AdminLoginPrompt({
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <AdminAuthCard title="Entrar como admin" onSubmit={onLogin} />
-      <AdminAuthCard title="Criar primeiro admin" onSubmit={onBootstrap} includeName />
+      <AdminAuthCard title="Criar primeiro admin" onSubmit={onBootstrap} includeName includeBootstrapToken />
     </div>
   );
 }

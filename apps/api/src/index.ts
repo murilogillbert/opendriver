@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { mkdirSync } from "fs";
@@ -14,13 +15,20 @@ import { registerPaymentWebhookRoutes } from "./paymentWebhooks.js";
 import { registerRoutes } from "./routes.js";
 
 const app = Fastify({
-  logger: true
+  logger: true,
+  trustProxy: true
 });
 
 mkdirSync(config.uploadDir, { recursive: true });
 
 await app.register(cors, {
-  origin: config.corsOrigin === "*" ? true : config.corsOrigin.split(",").map((origin) => origin.trim())
+  origin: config.corsOrigin === "*" ? true : config.corsOrigin
+});
+
+await app.register(rateLimit, {
+  global: false,
+  max: 200,
+  timeWindow: "1 minute"
 });
 
 await app.register(multipart, {
