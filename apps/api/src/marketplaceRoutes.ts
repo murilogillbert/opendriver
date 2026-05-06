@@ -7,6 +7,15 @@ import { hashPassword, requireAdmin, requireUser, signToken, verifyPassword } fr
 import { createBenefitActivation, shouldCreateActivationFor } from "./benefits.js";
 import { config } from "./config.js";
 import { execute, query, sqlTypes } from "./db.js";
+import {
+  createMercadoPagoPayment,
+  generatePaymentReference,
+  generateVoucherCode,
+  normalizeMercadoPagoStatus,
+  paymentStatusToOrderStatus,
+  recordPaymentTransaction,
+  reconcileOrderPaymentStatus
+} from "./payments.js";
 import { saveUpload } from "./upload.js";
 import {
   createOrderSchema,
@@ -25,8 +34,6 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 170);
-
-const voucherCode = () => `OD-${randomBytes(4).toString("hex").toUpperCase()}`;
 
 const resetToken = () => randomBytes(24).toString("hex");
 
@@ -47,52 +54,6 @@ const nextLevelCaseSql = `
     ELSE 'Prata'
   END
 `;
-
-const paymentStatusFromMercadoPago = (status?: string) => {
-  if (status === "approved") {
-    return "approved";
-  }
-
-  if (status === "rejected") {
-    return "rejected";
-  }
-
-  if (status === "cancelled" || status === "cancelled_by_user") {
-    return "cancelled";
-  }
-
-  return "pending";
-};
-
-const orderStatusFromPayment = (paymentStatus: string) =>
-  paymentStatus === "approved" ? "confirmado" : paymentStatus === "rejected" ? "cancelado" : "pendente_pagamento";
-
-async function createMercadoPagoPayment(body: unknown) {
-  if (!config.mercadoPago.accessToken) {
-    throw Object.assign(new Error("mercado_pago_access_token_missing"), { statusCode: 500 });
-  }
-
-  const response = await fetch("https://api.mercadopago.com/v1/payments", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.mercadoPago.accessToken}`,
-      "Content-Type": "application/json",
-      "X-Idempotency-Key": randomBytes(16).toString("hex")
-    },
-    body: JSON.stringify(body)
-  });
-
-  const data = (await response.json()) as Record<string, unknown>;
-
-  if (!response.ok) {
-    throw Object.assign(new Error("mercado_pago_payment_failed"), {
-      statusCode: 502,
-      details: data
-    });
-  }
-
-  return data;
-}
 
 async function getProductForCheckout(productId: number) {
   const products = await query<{
@@ -131,6 +92,7 @@ async function createOrderRecord(input: {
   };
   paymentStatus: string;
   paymentMethod: string;
+  paymentReference?: string | null;
   mercadoPagoPaymentId?: string | number | null;
   mercadoPagoStatus?: string | null;
 }) {
@@ -154,19 +116,19 @@ async function createOrderRecord(input: {
   const deliveryType =
     input.product.delivery_method === "fisica" || input.product.tipo_entrega === "fisico" ? "fisico" : "digital";
   const paymentStatus = input.paymentStatus;
-  const orderStatus = orderStatusFromPayment(paymentStatus);
-  const code = deliveryType === "digital" && paymentStatus === "approved" ? voucherCode() : null;
+  const orderStatus = paymentStatusToOrderStatus(paymentStatus);
+  const code = deliveryType === "digital" && paymentStatus === "approved" ? generateVoucherCode() : null;
 
   const result = await execute<{ id: number; public_code: string; voucher_code: string | null }>(
     `INSERT INTO dbo.product_orders (
         user_id, product_id, quantidade, valor_original_total, valor_pago_total,
-        economia_total, tipo_entrega, email_entrega, endereco_entrega, voucher_code, status,
+        economia_total, tipo_entrega, email_entrega, endereco_entrega, voucher_code, status, payment_reference,
         payment_status, payment_method, mercado_pago_payment_id, mercado_pago_status, paid_at
       )
       OUTPUT INSERTED.id, INSERTED.public_code, INSERTED.voucher_code
       VALUES (
         @user_id, @product_id, 1, @valor_original_total, @valor_pago_total,
-        @economia_total, @tipo_entrega, @email_entrega, @endereco_entrega, @voucher_code, @status,
+        @economia_total, @tipo_entrega, @email_entrega, @endereco_entrega, @voucher_code, @status, @payment_reference,
         @payment_status, @payment_method, @mercado_pago_payment_id, @mercado_pago_status, @paid_at
       )`,
     (sqlRequest) =>
@@ -181,6 +143,7 @@ async function createOrderRecord(input: {
         .input("endereco_entrega", sqlTypes.NVarChar(500), enderecoEntrega)
         .input("voucher_code", sqlTypes.VarChar(40), code)
         .input("status", sqlTypes.VarChar(30), orderStatus)
+        .input("payment_reference", sqlTypes.NVarChar(120), input.paymentReference ?? null)
         .input("payment_status", sqlTypes.VarChar(30), paymentStatus)
         .input("payment_method", sqlTypes.VarChar(30), input.paymentMethod)
         .input("mercado_pago_payment_id", sqlTypes.NVarChar(80), input.mercadoPagoPaymentId ? String(input.mercadoPagoPaymentId) : null)
@@ -838,7 +801,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     const originalTotal = Number(product.preco_original) * quantidade;
     const paidTotal = Number(product.preco_desconto) * quantidade;
     const economyTotal = Number(product.economia_estimada) * quantidade;
-    const code = deliveryType === "digital" ? voucherCode() : null;
+    const code = deliveryType === "digital" ? generateVoucherCode() : null;
 
     const result = await execute<{ id: number; public_code: string; voucher_code: string | null }>(
       `INSERT INTO dbo.product_orders (
@@ -913,12 +876,13 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     );
 
     const transactionAmount = Number(product.preco_desconto);
-    const paymentMethodId =
-      body.payment_method === "pix" ? "pix" : body.payment_method_id ?? (body.payment_method === "debit_card" ? "debvisa" : "visa");
+    const paymentReference = generatePaymentReference(user.id, product.id);
+    const paymentMethodId = body.payment_method === "pix" ? "pix" : body.payment_method_id;
     const mpBody: Record<string, unknown> = {
       transaction_amount: transactionAmount,
       description: product.nome,
       payment_method_id: paymentMethodId,
+      external_reference: paymentReference,
       payer: {
         email: profile[0].email,
         ...(profile[0].cpf
@@ -936,6 +900,9 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       if (!body.token) {
         return reply.code(400).send({ error: "card_token_required" });
       }
+      if (!paymentMethodId) {
+        return reply.code(400).send({ error: "card_payment_method_required" });
+      }
 
       mpBody.token = body.token;
       mpBody.installments = body.installments;
@@ -946,14 +913,30 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
     const mpPayment = await createMercadoPagoPayment(mpBody);
     const mpStatus = String(mpPayment.status ?? "pending");
-    const paymentStatus = paymentStatusFromMercadoPago(mpStatus);
+    const paymentStatus = normalizeMercadoPagoStatus(mpStatus);
     const order = await createOrderRecord({
       userId: user.id,
       product,
       paymentStatus,
       paymentMethod: body.payment_method,
+      paymentReference,
       mercadoPagoPaymentId: mpPayment.id as string | number | undefined,
       mercadoPagoStatus: mpStatus
+    });
+
+    await recordPaymentTransaction({
+      orderId: order.id,
+      userId: user.id,
+      productId: product.id,
+      externalReference: paymentReference,
+      externalPaymentId:
+        typeof mpPayment.id === "number" || typeof mpPayment.id === "string" ? String(mpPayment.id) : null,
+      paymentMethod: body.payment_method,
+      amount: transactionAmount,
+      status: paymentStatus,
+      statusDetail: typeof mpPayment.status_detail === "string" ? mpPayment.status_detail : null,
+      requestPayload: mpBody,
+      responsePayload: mpPayment
     });
 
     const pointOfInteraction = mpPayment.point_of_interaction as
@@ -973,6 +956,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           id: mpPayment.id,
           status: mpStatus,
           status_detail: mpPayment.status_detail,
+          external_reference: paymentReference,
           qr_code_base64: pointOfInteraction?.transaction_data?.qr_code_base64,
           qr_code: pointOfInteraction?.transaction_data?.qr_code,
           ticket_url: pointOfInteraction?.transaction_data?.ticket_url
@@ -1019,15 +1003,67 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     const user = await requireUser(request);
     const data = await query(
       `SELECT o.*, p.nome AS produto_nome, p.imagem_url, p.tipo AS produto_tipo,
-              p.offer_type, p.delivery_method, p.video_url
+              p.offer_type, p.delivery_method, p.video_url,
+              tx.status_detail AS payment_status_detail,
+              tx.external_payment_id,
+              tx.last_synced_at
          FROM dbo.product_orders o
          JOIN dbo.products p ON p.id = o.product_id
+         OUTER APPLY (
+           SELECT TOP 1 status_detail, external_reference, external_payment_id, last_synced_at
+             FROM dbo.payment_transactions tx
+            WHERE tx.order_id = o.id
+            ORDER BY tx.created_at DESC
+         ) tx
         WHERE o.user_id = @user_id
         ORDER BY o.created_at DESC`,
       (sqlRequest) => sqlRequest.input("user_id", sqlTypes.BigInt, user.id)
     );
 
     return { data };
+  });
+
+  app.get("/api/orders/:id/payment-status", async (request, reply) => {
+    const user = await requireUser(request);
+    const params = request.params as { id: string };
+    const orderId = Number(params.id);
+
+    const ownership = await query<{ id: number }>(
+      `SELECT id
+         FROM dbo.product_orders
+        WHERE id = @id AND user_id = @user_id`,
+      (sqlRequest) =>
+        sqlRequest
+          .input("id", sqlTypes.BigInt, orderId)
+          .input("user_id", sqlTypes.BigInt, user.id)
+    );
+
+    if (!ownership[0]) {
+      return reply.code(404).send({ error: "order_not_found" });
+    }
+
+    const sync = await reconcileOrderPaymentStatus({
+      orderId,
+      actorId: user.id,
+      eventType: "customer_poll"
+    });
+
+    const orderRows = await query(
+      `SELECT TOP 1 o.id, o.public_code, o.voucher_code, o.status, o.payment_status, o.payment_method,
+              o.paid_at, o.mercado_pago_status, o.payment_reference,
+              p.nome AS produto_nome, p.offer_type, p.delivery_method, p.imagem_url
+         FROM dbo.product_orders o
+         JOIN dbo.products p ON p.id = o.product_id
+        WHERE o.id = @id`,
+      (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, orderId)
+    );
+
+    return {
+      data: {
+        order: orderRows[0],
+        payment: sync
+      }
+    };
   });
 
   app.get("/api/savings/my", async (request) => {

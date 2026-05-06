@@ -29,8 +29,9 @@ function AccountPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [savings, setSavings] = useState<SavingsSummary>(defaultSavings);
   const [profile, setProfile] = useState<(AuthUser & Record<string, string>) | null>(null);
+  const [syncingOrders, setSyncingOrders] = useState<number[]>([]);
 
-  useEffect(() => {
+  const loadAccountData = () => {
     void Promise.all([
       marketplaceApi.me(),
       marketplaceApi.myOrders(),
@@ -49,7 +50,38 @@ function AccountPage() {
         window.history.pushState(null, "", "/entrar");
         window.dispatchEvent(new PopStateEvent("popstate"));
       });
+  };
+
+  useEffect(() => {
+    loadAccountData();
   }, []);
+
+  const refreshOrderPayment = async (orderId: number) => {
+    setSyncingOrders((current) => [...current, orderId]);
+    try {
+      const sync = await marketplaceApi.getOrderPaymentStatus(orderId);
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                ...sync.order,
+                voucher_code: sync.payment.voucherCode ?? sync.order.voucher_code ?? order.voucher_code,
+                payment_status: sync.payment.paymentStatus,
+                payment_status_detail: sync.payment.statusDetail ?? order.payment_status_detail
+              }
+            : order
+        )
+      );
+      if (sync.payment.paymentStatus === "approved") {
+        loadAccountData();
+      }
+    } finally {
+      setSyncingOrders((current) => current.filter((id) => id !== orderId));
+    }
+  };
+
+  const pendingOrders = orders.filter((order) => order.payment_status === "pending");
 
   const vouchers = orders.filter((order) => order.offer_type === "voucher" || Boolean(order.voucher_code));
   const services = orders.filter((order) => order.offer_type === "servico");
@@ -136,8 +168,17 @@ function AccountPage() {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
           <section className="rounded-md border border-[#dfe5ef] bg-white">
-            <div className="border-b border-[#edf1f6] px-5 py-4">
+            <div className="flex flex-col gap-3 border-b border-[#edf1f6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-lg font-black">Meus pedidos</h2>
+              {pendingOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void Promise.all(pendingOrders.slice(0, 5).map((order) => refreshOrderPayment(order.id)))}
+                  className="rounded-md bg-brand-ink px-4 py-2 text-sm font-black text-white"
+                >
+                  Atualizar pagamentos pendentes
+                </button>
+              )}
             </div>
             <div className="divide-y divide-[#edf1f6]">
               {orders.length === 0 ? (
@@ -153,18 +194,35 @@ function AccountPage() {
                     <div>
                       <h3 className="font-black">{order.produto_nome}</h3>
                       <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        {labelOrderType(order)} | {order.status} | entrega {order.delivery_method ?? order.tipo_entrega}
+                        {labelOrderType(order)} | {labelOrderStatus(order.status)} | entrega {labelDelivery(order)}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        Pagamento {order.payment_status ?? "pendente"} via {order.payment_method ?? "-"} | economia {money(order.economia_total)}
+                        Pagamento {labelPaymentStatus(order.payment_status)} via {labelPaymentMethod(order.payment_method)} | economia {money(order.economia_total)}
                       </p>
+                      {order.payment_status_detail && (
+                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#8b95a5]">
+                          {order.payment_status_detail}
+                        </p>
+                      )}
                       {order.voucher_code && (
                         <p className="mt-2 inline-block rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black">
                           Voucher {order.voucher_code}
                         </p>
                       )}
                     </div>
-                    <strong>{money(order.valor_pago_total)}</strong>
+                    <div className="justify-self-end text-right">
+                      <strong>{money(order.valor_pago_total)}</strong>
+                      {order.payment_status === "pending" && (
+                        <button
+                          type="button"
+                          onClick={() => void refreshOrderPayment(order.id)}
+                          disabled={syncingOrders.includes(order.id)}
+                          className="mt-3 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
+                        >
+                          {syncingOrders.includes(order.id) ? "Verificando..." : "Verificar pagamento"}
+                        </button>
+                      )}
+                    </div>
                   </article>
                 ))
               )}
@@ -271,7 +329,7 @@ function AccountPage() {
                     <div>
                       <h3 className="text-sm font-black">{order.public_code}</h3>
                       <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        {order.payment_method ?? "-"} | {order.payment_status ?? "pendente"}
+                        {labelPaymentMethod(order.payment_method)} | {labelPaymentStatus(order.payment_status)}
                       </p>
                     </div>
                     <strong>{money(order.valor_pago_total)}</strong>
@@ -318,6 +376,48 @@ function labelOrderType(order: Order) {
   };
 
   return labels[order.offer_type ?? ""] ?? order.tipo_entrega;
+}
+
+function labelOrderStatus(status?: string) {
+  const labels: Record<string, string> = {
+    pendente_pagamento: "Aguardando pagamento",
+    confirmado: "Confirmado",
+    enviado: "Enviado",
+    entregue: "Entregue",
+    cancelado: "Cancelado"
+  };
+
+  return labels[status ?? ""] ?? (status || "Pendente");
+}
+
+function labelPaymentStatus(status?: string) {
+  const labels: Record<string, string> = {
+    pending: "Aguardando confirmacao",
+    approved: "Aprovado",
+    rejected: "Recusado",
+    refunded: "Estornado",
+    cancelled: "Cancelado"
+  };
+
+  return labels[status ?? ""] ?? (status || "Pendente");
+}
+
+function labelPaymentMethod(method?: string) {
+  const labels: Record<string, string> = {
+    pix: "Pix",
+    credit_card: "Cartao de credito",
+    debit_card: "Cartao de debito"
+  };
+
+  return labels[method ?? ""] ?? (method || "-");
+}
+
+function labelDelivery(order: Order) {
+  const value = order.delivery_method ?? order.tipo_entrega;
+  if (value === "digital") return "digital";
+  if (value === "fisica" || value === "fisico") return "fisica";
+  if (value === "presencial") return "presencial";
+  return value ?? "-";
 }
 
 function InfoPanel({ title, children }: { title: string; children: ReactNode }) {

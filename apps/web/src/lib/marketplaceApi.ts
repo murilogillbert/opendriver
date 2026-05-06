@@ -61,8 +61,26 @@ export type Order = {
   voucher_code?: string;
   status: string;
   payment_status?: string;
+  payment_status_detail?: string;
   payment_method?: string;
+  mercado_pago_status?: string;
+  payment_reference?: string;
+  external_payment_id?: string;
+  last_synced_at?: string;
+  paid_at?: string;
   created_at: string;
+};
+
+export type PaymentStatusSnapshot = {
+  orderId: number | null;
+  paymentId: string | null;
+  paymentReference: string | null;
+  paymentStatus: string;
+  gatewayStatus: string | null;
+  statusDetail: string | null;
+  orderStatus: string | null;
+  voucherCode: string | null;
+  paidAt: string | null;
 };
 
 export type Notification = {
@@ -106,11 +124,22 @@ async function request<T>(path: string, init?: RequestInit) {
     }
   });
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
 
-  return response.json() as Promise<{ data: T }>;
+  if (!response.ok) {
+    const message =
+      typeof payload === "object" && payload && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : `API request failed: ${response.status}`;
+    throw new Error(message);
+  }
+
+  return payload as { data: T };
 }
 
 export function getToken() {
@@ -178,6 +207,7 @@ export const marketplaceApi = {
           id?: string | number;
           status: string;
           status_detail?: string;
+          external_reference?: string;
           qr_code_base64?: string;
           qr_code?: string;
           ticket_url?: string;
@@ -190,6 +220,14 @@ export const marketplaceApi = {
   },
   async myOrders() {
     return (await request<Order[]>("/orders/my")).data;
+  },
+  async getOrderPaymentStatus(orderId: number) {
+    return (
+      await request<{
+        order: Order;
+        payment: PaymentStatusSnapshot;
+      }>(`/orders/${orderId}/payment-status`)
+    ).data;
   },
   async mySavings() {
     return (await request<SavingsSummary>("/savings/my")).data;
