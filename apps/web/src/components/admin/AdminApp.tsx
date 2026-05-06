@@ -1,6 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, isValidElement, useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 
+import logoUrl from "../../assets/driverhub-logo.svg";
+import { assetUrl } from "../../lib/assets";
 import {
   AdminMetrics,
   AdminProduct,
@@ -39,22 +41,29 @@ type AdminTab =
   | "locations"
   | "auditoria";
 
-const tabs: { id: AdminTab; label: string }[] = [
-  { id: "visao", label: "Visao geral" },
-  { id: "usuarios", label: "Usuarios" },
-  { id: "pedidos", label: "Pedidos" },
-  { id: "bot", label: "Bot" },
-  { id: "produtos", label: "Produtos" },
-  { id: "parceiros", label: "Parceiros" },
-  { id: "leads", label: "Leads" },
-  { id: "comissoes", label: "Comissoes" },
-  { id: "validacao", label: "Validacao" },
-  { id: "beneficios", label: "Beneficios" },
-  { id: "alertas", label: "Alertas geo" },
-  { id: "receber", label: "Contas a receber" },
-  { id: "locations", label: "Locais parceiros" },
-  { id: "auditoria", label: "Auditoria" }
+const tabs: { id: AdminTab; label: string; group: string; description: string }[] = [
+  { id: "visao", label: "Dashboard", group: "Geral", description: "Indicadores executivos e alertas da operacao." },
+  { id: "produtos", label: "Catalogo", group: "Vendas", description: "Produtos, servicos, vouchers e beneficios publicados." },
+  { id: "pedidos", label: "Pedidos", group: "Vendas", description: "Compras, pagamentos e entregas dos clientes." },
+  { id: "usuarios", label: "Usuarios", group: "Operacao", description: "Clientes, admins e progresso de nivel." },
+  { id: "leads", label: "Leads", group: "Operacao", description: "Oportunidades captadas pelo bot, campanha ou WhatsApp." },
+  { id: "bot", label: "Bot", group: "Operacao", description: "Historico das conversas e intencoes registradas." },
+  { id: "parceiros", label: "Parceiros", group: "Parceiros", description: "Rede credenciada, servicos e contatos comerciais." },
+  { id: "locations", label: "Locais parceiros", group: "Parceiros", description: "Pontos fisicos usados para alertas de geolocalizacao." },
+  { id: "validacao", label: "Validacao", group: "Beneficios", description: "Validacao operacional de tokens, QR e vouchers." },
+  { id: "beneficios", label: "Beneficios ativos", group: "Beneficios", description: "Beneficios liberados para clientes e limite de resgates." },
+  { id: "alertas", label: "Alertas geo", group: "Beneficios", description: "Combinacoes entre local, usuario e beneficio ativo." },
+  { id: "comissoes", label: "Comissoes", group: "Financeiro", description: "Comissoes geradas por parceiros e servicos." },
+  { id: "receber", label: "Contas a receber", group: "Financeiro", description: "Valores pendentes, fechados e pagos pelos parceiros." },
+  { id: "auditoria", label: "Auditoria", group: "Sistema", description: "Eventos administrativos e webhooks de pagamento." }
 ];
+
+const navGroups = Array.from(new Set(tabs.map((tab) => tab.group))).map((group) => ({
+  group,
+  items: tabs.filter((tab) => tab.group === group)
+}));
+
+const tabMeta = Object.fromEntries(tabs.map((tab) => [tab.id, tab])) as Record<AdminTab, (typeof tabs)[number]>;
 
 const money = (value?: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -427,13 +436,11 @@ function AdminApp() {
 
   if (isCheckingAuth) {
     return (
-      <main className="min-h-screen bg-[#f5f7fb] px-5 py-10 text-[#141820]">
-        <section className="mx-auto max-w-4xl rounded-md border border-[#dfe5ef] bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-            Open Driver
-          </p>
+      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
+        <section className="mx-auto max-w-4xl rounded-md border border-[#e2e8f0] bg-white p-6 shadow-sm">
+          <img src={logoUrl} alt="DriverHub" className="h-16 w-auto" />
           <h1 className="mt-2 font-display text-3xl font-black">Verificando acesso admin</h1>
-          <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">
+          <p className="mt-2 text-sm font-semibold leading-6 text-[#64748b]">
             O painel sera carregado somente depois que a sessao admin for validada.
           </p>
         </section>
@@ -443,26 +450,24 @@ function AdminApp() {
 
   if (!hasAdminToken) {
     return (
-      <main className="min-h-screen bg-[#f5f7fb] px-5 py-10 text-[#141820]">
+      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
         <section className="mx-auto max-w-4xl">
           <div className="mb-6">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-              Open Driver
-            </p>
+            <img src={logoUrl} alt="DriverHub" className="h-20 w-auto" />
             <h1 className="mt-2 font-display text-3xl font-black">Acesso administrativo</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#68748a]">
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#64748b]">
               Entre com uma conta admin para carregar painel, metricas, usuarios, pedidos e catalogo.
             </p>
           </div>
 
           {error && (
-            <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+            <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 shadow-sm">
               {error}
             </div>
           )}
 
           {formMessage && (
-            <div className="mb-5 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-4 py-3 text-sm font-bold text-brand-ink">
+            <div className="mb-5 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
               {formMessage}
             </div>
           )}
@@ -474,35 +479,85 @@ function AdminApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb] text-[#141820]">
-      <header className="border-b border-[#dfe5ef] bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-              Open Driver
+    <main className="min-h-screen bg-[#f6f8fb] text-[#111827] lg:grid lg:grid-cols-[18rem_1fr]">
+      <aside className="border-b border-[#101827] bg-[#050b18] text-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <div className="flex h-full flex-col px-4 py-5">
+          <div className="rounded-md border border-white/10 bg-white/[0.04] p-3">
+            <img src={logoUrl} alt="DriverHub" className="h-14 w-auto" />
+            <p className="mt-3 text-[0.65rem] font-black uppercase tracking-[0.22em] text-[#7dd3fc]">
+              Admin console
             </p>
-            <h1 className="mt-2 font-display text-3xl font-black">Painel admin</h1>
           </div>
-          <nav className="flex flex-wrap gap-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-md px-4 py-2 text-sm font-black transition ${
-                  activeTab === tab.id
-                    ? "bg-brand-ink text-white"
-                    : "border border-[#d8dfeb] bg-white text-[#344055] hover:border-brand-gold"
-                }`}
-              >
-                {tab.label}
-              </button>
+
+          <nav className="mt-5 flex gap-4 overflow-x-auto pb-2 lg:block lg:space-y-5 lg:overflow-visible lg:pb-0">
+            {navGroups.map((group) => (
+              <div key={group.group} className="min-w-52 lg:min-w-0">
+                <p className="mb-2 px-2 text-[0.68rem] font-black uppercase tracking-[0.18em] text-white/38">
+                  {group.group}
+                </p>
+                <div className="grid gap-1">
+                  {group.items.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`rounded-md px-3 py-2.5 text-left text-sm font-black transition ${
+                        activeTab === tab.id
+                          ? "bg-[#0ea5e9] text-white shadow-[0_12px_32px_rgba(14,165,233,0.24)]"
+                          : "text-white/68 hover:bg-white/[0.07] hover:text-white"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </nav>
-        </div>
-      </header>
 
-      <section className="mx-auto max-w-7xl px-5 py-7">
+          <div className="mt-auto hidden rounded-md border border-[#1f2a44] bg-[#071222] p-4 lg:block">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#a3e635]">Operacao</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/68">
+              {alerts.filter((alert) => alert.status === "pendente").length} alertas geo pendentes e{" "}
+              {receivables.filter((item) => item.status === "pendente").length} contas a receber abertas.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8">
+        <header className="mb-6 flex flex-col gap-4 border-b border-[#e2e8f0] pb-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0ea5e9]">
+              {tabMeta[activeTab].group}
+            </p>
+            <h1 className="mt-2 font-display text-3xl font-black tracking-tight text-[#0f172a]">
+              {tabMeta[activeTab].label}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#64748b]">
+              {tabMeta[activeTab].description}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void reload()}
+              className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2.5 text-sm font-black text-[#334155] shadow-sm transition hover:border-[#0ea5e9] hover:text-[#0369a1]"
+            >
+              Atualizar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.localStorage.removeItem("opendriver-admin-token");
+                setHasAdminToken(false);
+              }}
+              className="rounded-md bg-[#050b18] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
+            >
+              Sair
+            </button>
+          </div>
+        </header>
         {error && (
           <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
             {error}
@@ -510,43 +565,72 @@ function AdminApp() {
         )}
 
         {formMessage && (
-          <div className="mb-5 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-4 py-3 text-sm font-bold text-brand-ink">
+          <div className="mb-5 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
             {formMessage}
           </div>
         )}
 
         {isLoading ? (
-          <div className="rounded-md border border-[#dfe5ef] bg-white px-5 py-4 text-sm font-bold">
+          <div className="rounded-md border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold shadow-sm">
             Carregando dados...
           </div>
         ) : (
           <>
             {activeTab === "visao" && overview && (
-              <>
-                <div className="grid gap-4 md:grid-cols-5">
-                  <Metric label="Usuarios" value={metrics?.total_usuarios ?? "-"} />
-                  <Metric label="Produtos ativos" value={metrics?.produtos_ativos ?? "-"} />
-                  <Metric label="Pedidos mes" value={metrics?.pedidos_mes ?? "-"} />
-                  <Metric label="Receita produtos" value={money(metrics?.receita_produtos)} />
-                  <Metric label="Economia gerada" value={money(metrics?.economia_gerada)} />
+              <div className="grid gap-5">
+                <div className="grid gap-4 xl:grid-cols-5">
+                  <Metric label="Receita vendida" value={money(metrics?.receita_produtos)} tone="blue" />
+                  <Metric label="Economia gerada" value={money(metrics?.economia_gerada)} tone="green" />
+                  <Metric label="Pedidos no mes" value={metrics?.pedidos_mes ?? "-"} />
+                  <Metric label="Usuarios cadastrados" value={metrics?.total_usuarios ?? "-"} />
+                  <Metric
+                    label="Conversao home"
+                    value={`${metrics?.home_views ? Math.round(((metrics.home_conversions ?? 0) / metrics.home_views) * 100) : 0}%`}
+                    tone="blue"
+                  />
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-5">
-                  <Metric label="Leads" value={overview.total_leads} />
-                  <Metric label="Convertidos" value={overview.leads_convertidos} />
-                  <Metric label="Servicos" value={overview.servicos_confirmados} />
-                  <Metric label="Usuarios nivel" value={metrics?.usuarios_com_nivel ?? "-"} />
-                  <Metric label="Interacoes bot" value={metrics?.total_interacoes_bot ?? "-"} />
+
+                <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+                  <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">
+                          Receita por tipo
+                        </p>
+                        <h2 className="mt-1 text-xl font-black text-[#0f172a]">Mix comercial</h2>
+                      </div>
+                      <StatusChip value={`${metrics?.pagamentos_aprovados ?? 0} aprovados`} />
+                    </div>
+                    <div className="mt-5 grid gap-3 md:grid-cols-4">
+                      <MiniStat label="Fisico" value={money(metrics?.receita_produto_fisico)} />
+                      <MiniStat label="Digital" value={money(metrics?.receita_produto_digital)} />
+                      <MiniStat label="Servicos" value={money(metrics?.receita_servico)} />
+                      <MiniStat label="Vouchers" value={money(metrics?.receita_voucher)} />
+                    </div>
+                  </section>
+
+                  <section className="rounded-md border border-[#e2e8f0] bg-[#050b18] p-5 text-white shadow-sm">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#a3e635]">
+                      Fila operacional
+                    </p>
+                    <h2 className="mt-1 text-xl font-black">Pontos de atencao</h2>
+                    <div className="mt-5 grid gap-3">
+                      <OperationItem label="Leads ativos" value={activeLeads.length} />
+                      <OperationItem label="Alertas geo pendentes" value={alerts.filter((alert) => alert.status === "pendente").length} />
+                      <OperationItem label="Contas a receber" value={receivables.filter((item) => item.status === "pendente").length} />
+                    </div>
+                  </section>
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-3">
+                  <Metric label="Leads gerados" value={overview.total_leads} />
+                  <Metric label="Leads convertidos" value={overview.leads_convertidos} tone="green" />
                   <Metric label="Ticket medio" value={money(metrics?.ticket_medio)} />
-                  <Metric label="Conversao home" value={`${metrics?.home_views ? Math.round(((metrics.home_conversions ?? 0) / metrics.home_views) * 100) : 0}%`} />
+                  <Metric label="Produtos ativos" value={metrics?.produtos_ativos ?? "-"} />
+                  <Metric label="Usuarios com nivel" value={metrics?.usuarios_com_nivel ?? "-"} />
+                  <Metric label="Interacoes bot" value={metrics?.total_interacoes_bot ?? "-"} />
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-5">
-                  <Metric label="Produto fisico" value={money(metrics?.receita_produto_fisico)} />
-                  <Metric label="Produto digital" value={money(metrics?.receita_produto_digital)} />
-                  <Metric label="Servicos" value={money(metrics?.receita_servico)} />
-                  <Metric label="Vouchers" value={money(metrics?.receita_voucher)} />
-                  <Metric label="Pagamentos" value={`${metrics?.pagamentos_aprovados ?? 0}/${metrics?.pagamentos_pendentes ?? 0}/${metrics?.pagamentos_recusados ?? 0}`} />
-                </div>
-              </>
+              </div>
             )}
 
             {activeTab === "usuarios" && (
@@ -584,7 +668,7 @@ function AdminApp() {
                       key={order.id}
                       value={order.status}
                       onChange={(event) => setOrderStatus(order.id, event.target.value)}
-                      className="rounded-md border border-[#ccd5e2] px-2 py-1 text-xs font-bold"
+                      className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
                     >
                       <option value="pendente_pagamento">Pendente</option>
                       <option value="confirmado">Confirmado</option>
@@ -615,15 +699,32 @@ function AdminApp() {
 
             {activeTab === "produtos" && (
               hasAdminToken ? (
-                <div className="grid gap-6 lg:grid-cols-[25rem_1fr]">
-                  <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
-                    <h2 className="text-lg font-black">
-                      {editingProduct ? "Editar produto" : "Novo produto"}
-                    </h2>
+                <div className="grid gap-6 xl:grid-cols-[26rem_1fr]">
+                  <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0ea5e9]">
+                          Publicacao
+                        </p>
+                        <h2 className="mt-1 text-xl font-black">
+                          {editingProduct ? "Editar oferta" : "Nova oferta"}
+                        </h2>
+                      </div>
+                      {editingProduct && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(null)}
+                          className="rounded-md border border-[#cbd5e1] px-3 py-2 text-xs font-black text-[#475569]"
+                        >
+                          Novo
+                        </button>
+                      )}
+                    </div>
+                    {editingProduct && <ProductPreview product={editingProduct} />}
                     <form onSubmit={submitProduct} className="mt-4 grid gap-3">
                       <label className="grid gap-1 text-sm font-bold">
                         Categoria
-                        <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="">Selecione</option>
                           {categories.map((category) => (
                             <option key={category.id} value={category.id}>{category.nome}</option>
@@ -636,7 +737,7 @@ function AdminApp() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1 text-sm font-bold">
                           Tipo de oferta
-                          <select name="offer_type" defaultValue={editingProduct?.offer_type ?? "produto_digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <select name="offer_type" defaultValue={editingProduct?.offer_type ?? "produto_digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="produto_fisico">Produto fisico</option>
                             <option value="produto_digital">Produto digital</option>
                             <option value="servico">Servico</option>
@@ -648,7 +749,7 @@ function AdminApp() {
                         </label>
                         <label className="grid gap-1 text-sm font-bold">
                           Forma de entrega
-                          <select name="delivery_method" defaultValue={editingProduct?.delivery_method ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <select name="delivery_method" defaultValue={editingProduct?.delivery_method ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="presencial">Presencial</option>
                             <option value="fisica">Fisica</option>
@@ -657,19 +758,19 @@ function AdminApp() {
                       </div>
                       <label className="grid gap-1 text-sm font-bold">
                         Descricao completa
-                        <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-md border border-[#ccd5e2] px-3 py-2" />
+                        <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
                       </label>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1 text-sm font-bold">
                           Tipo
-                          <select name="tipo" defaultValue={editingProduct?.tipo ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <select name="tipo" defaultValue={editingProduct?.tipo ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="fisico">Fisico</option>
                           </select>
                         </label>
                         <label className="grid gap-1 text-sm font-bold">
                           Entrega
-                          <select name="tipo_entrega" defaultValue={editingProduct?.tipo_entrega ?? "digital"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                          <select name="tipo_entrega" defaultValue={editingProduct?.tipo_entrega ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="fisico">Fisica</option>
                             <option value="ambos">Ambos</option>
@@ -690,7 +791,7 @@ function AdminApp() {
                       <Input name="delivery_deadline" label="Prazo de entrega" defaultValue={editingProduct?.delivery_deadline} />
                       <label className="grid gap-1 text-sm font-bold">
                         Regras de uso
-                        <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-md border border-[#ccd5e2] px-3 py-2" />
+                        <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
                       </label>
                       <Input name="estoque" label="Estoque" type="number" defaultValue={editingProduct?.estoque} />
                       <label className="flex items-center gap-2 text-sm font-bold">
@@ -699,33 +800,53 @@ function AdminApp() {
                       </label>
                       <label className="grid gap-1 text-sm font-bold">
                         Status
-                        <select name="status" defaultValue={editingProduct?.status ?? "ativo"} className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <select name="status" defaultValue={editingProduct?.status ?? "ativo"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="ativo">Ativo</option>
                           <option value="pausado">Pausado</option>
                           <option value="esgotado">Esgotado</option>
                           <option value="rascunho">Rascunho</option>
                         </select>
                       </label>
-                      <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+                      <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                         Salvar produto
                       </button>
                     </form>
                   </section>
 
                   <section className="space-y-4">
-                  <div className="flex flex-wrap justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">
+                        Catalogo unificado
+                      </p>
+                      <h2 className="mt-1 text-xl font-black text-[#0f172a]">
+                        {products.length} ofertas cadastradas
+                      </h2>
+                    </div>
                     <button
                       type="button"
                       onClick={activateAllProducts}
-                      className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white"
+                      className="rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
                     >
                       Ativar todos beneficios
                     </button>
                   </div>
                   <DataTable
+                    title="Ofertas publicadas"
+                    description="Use a busca para localizar por nome, categoria, tipo ou status."
                     headers={["Produto", "Categoria", "Preco", "Economia", "Status", "Acoes"]}
                     rows={products.map((product) => [
-                      product.nome,
+                      <div className="flex items-center gap-3" key={`product-${product.id}`}>
+                        <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e2e8f0]">
+                          {product.imagem_url && (
+                            <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-black text-[#0f172a]">{product.nome}</p>
+                          <p className="mt-1 text-xs font-bold text-[#64748b]">{product.offer_type ?? product.tipo}</p>
+                        </div>
+                      </div>,
                       product.categoria_nome ?? "-",
                       money(product.preco_desconto),
                       money(product.economia_mensal_estimada),
@@ -733,7 +854,7 @@ function AdminApp() {
                         key={`${product.id}-status`}
                         value={product.status}
                         onChange={(event) => setProductStatus(product.id, event.target.value)}
-                        className="rounded-md border border-[#ccd5e2] px-2 py-1 text-xs font-bold"
+                        className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
                       >
                         <option value="ativo">Ativo</option>
                         <option value="pausado">Pausado</option>
@@ -741,10 +862,10 @@ function AdminApp() {
                         <option value="rascunho">Rascunho</option>
                       </select>,
                       <div className="flex gap-2" key={product.id}>
-                        <button onClick={() => setEditingProduct(product)} className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black">
+                        <button onClick={() => setEditingProduct(product)} className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]">
                           Editar
                         </button>
-                        <button onClick={() => adminApi.deleteProduct(product.id).then(reload)} className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700">
+                        <button onClick={() => adminApi.deleteProduct(product.id).then(reload)} className="rounded-md bg-[#fee2e2] px-2.5 py-1.5 text-xs font-black text-red-700">
                           Pausar
                         </button>
                       </div>
@@ -759,7 +880,7 @@ function AdminApp() {
 
             {activeTab === "parceiros" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Novo parceiro</h2>
                   <form onSubmit={submitPartner} className="mt-4 grid gap-3">
                     <Input name="razao_social" label="Razao social" required />
@@ -769,19 +890,19 @@ function AdminApp() {
                     <Input name="email" label="Email" />
                     <Input name="cidade" label="Cidade" required />
                     <Input name="estado" label="UF" required maxLength={2} />
-                    <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                       Salvar parceiro
                     </button>
                   </form>
                 </section>
 
                 <section className="space-y-6">
-                  <div className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                  <div className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
                     <h2 className="text-lg font-black">Novo servico</h2>
                     <form onSubmit={submitService} className="mt-4 grid gap-3 md:grid-cols-3">
                       <label className="grid gap-1 text-sm font-bold">
                         Parceiro
-                        <select name="partner_id" required className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="">Selecione</option>
                           {partners.map((partner) => (
                             <option key={partner.id} value={partner.id}>
@@ -792,7 +913,7 @@ function AdminApp() {
                       </label>
                       <label className="grid gap-1 text-sm font-bold">
                         Categoria
-                        <select name="categoria" required className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                        <select name="categoria" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="troca_oleo">Troca de oleo</option>
                           <option value="pneus">Pneus</option>
                           <option value="lava_jato">Lava jato</option>
@@ -802,8 +923,8 @@ function AdminApp() {
                       </label>
                       <Input name="nome_servico" label="Servico" required />
                       <Input name="preco_padrao" label="Preco padrao" type="number" step="0.01" />
-                      <Input name="preco_open_driver" label="Preco Open Driver" type="number" step="0.01" />
-                      <button className="self-end rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white">
+                      <Input name="preco_open_driver" label="Preco DriverHub" type="number" step="0.01" />
+                      <button className="self-end rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
                         Salvar servico
                       </button>
                     </form>
@@ -834,7 +955,7 @@ function AdminApp() {
                     <button onClick={() => updateLead(lead.id, "enviado_ao_parceiro")} className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black">
                       Enviar
                     </button>
-                    <button onClick={() => updateLead(lead.id, "convertido")} className="rounded bg-brand-gold px-2 py-1 text-xs font-black">
+                    <button onClick={() => updateLead(lead.id, "convertido")} className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]">
                       Converter
                     </button>
                     <button onClick={() => updateLead(lead.id, "perdido")} className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700">
@@ -862,9 +983,9 @@ function AdminApp() {
 
             {activeTab === "validacao" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Validar token de beneficio</h2>
-                  <p className="mt-2 text-xs font-semibold text-[#68748a]">
+                  <p className="mt-2 text-xs font-semibold text-[#64748b]">
                     Use o codigo de 12 caracteres exibido no QR ou na area do cliente. A confirmacao gera o
                     resgate e a conta a receber para o parceiro selecionado.
                   </p>
@@ -872,7 +993,7 @@ function AdminApp() {
                     <Input name="redemption_token" label="Token (12 letras)" required maxLength={12} />
                     <label className="grid gap-1 text-sm font-bold">
                       Parceiro
-                      <select name="partner_id" className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                      <select name="partner_id" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="">Auto (do produto)</option>
                         {partners.map((partner) => (
                           <option key={partner.id} value={partner.id}>
@@ -883,7 +1004,7 @@ function AdminApp() {
                     </label>
                     <label className="grid gap-1 text-sm font-bold">
                       Metodo
-                      <select name="confirmation_method" className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                      <select name="confirmation_method" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="token">Token digitado</option>
                         <option value="qr">QR Code</option>
                         <option value="partner">Confirmado por parceiro</option>
@@ -893,12 +1014,12 @@ function AdminApp() {
                     </label>
                     <Input name="valor_referencia" label="Valor de referencia" type="number" step="0.01" />
                     <Input name="notes" label="Observacao" />
-                    <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                       Confirmar resgate
                     </button>
                   </form>
                   {redeemResult && (
-                    <div className="mt-4 rounded-md border border-brand-gold/40 bg-brand-gold/10 px-3 py-2 text-xs font-bold text-brand-ink">
+                    <div className="mt-4 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-3 py-2 text-xs font-bold text-[#075985]">
                       {redeemResult}
                     </div>
                   )}
@@ -959,7 +1080,7 @@ function AdminApp() {
                     </button>
                     <button
                       onClick={() => updateAlert(alert.id, "confirmado")}
-                      className="rounded bg-brand-gold px-2 py-1 text-xs font-black"
+                      className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
                     >
                       Confirmar
                     </button>
@@ -993,7 +1114,7 @@ function AdminApp() {
                     </button>
                     <button
                       onClick={() => updateReceivable(receivable.id, "pago")}
-                      className="rounded bg-brand-gold px-2 py-1 text-xs font-black"
+                      className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
                     >
                       Marcar pago
                     </button>
@@ -1010,16 +1131,16 @@ function AdminApp() {
 
             {activeTab === "locations" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Novo local de parceiro</h2>
-                  <p className="mt-2 text-xs font-semibold text-[#68748a]">
+                  <p className="mt-2 text-xs font-semibold text-[#64748b]">
                     Locais ativos sao usados para gerar alertas de presenca quando o usuario consente
                     rastreio de localizacao.
                   </p>
                   <form onSubmit={submitPartnerLocation} className="mt-4 grid gap-3">
                     <label className="grid gap-1 text-sm font-bold">
                       Parceiro
-                      <select name="partner_id" required className="rounded-md border border-[#ccd5e2] px-3 py-2">
+                      <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="">Selecione</option>
                         {partners.map((partner) => (
                           <option key={partner.id} value={partner.id}>
@@ -1033,7 +1154,7 @@ function AdminApp() {
                     <Input name="latitude" label="Latitude" type="number" step="0.0000001" required />
                     <Input name="longitude" label="Longitude" type="number" step="0.0000001" required />
                     <Input name="raio_metros" label="Raio (m)" type="number" min={20} max={5000} defaultValue={120} />
-                    <button className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white">
+                    <button className="rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
                       Salvar local
                     </button>
                   </form>
@@ -1064,7 +1185,7 @@ function AdminApp() {
                   ])}
                 />
                 <div>
-                  <h3 className="mb-3 text-sm font-black uppercase tracking-[0.18em] text-[#68748a]">
+                  <h3 className="mb-3 text-sm font-black uppercase tracking-[0.18em] text-[#64748b]">
                     Webhooks de pagamento
                   </h3>
                   <DataTable
@@ -1103,11 +1224,97 @@ function AdminApp() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({
+  label,
+  value,
+  tone = "default"
+}: {
+  label: string;
+  value: string | number;
+  tone?: "default" | "blue" | "green";
+}) {
+  const toneClass =
+    tone === "blue"
+      ? "border-[#bae6fd] bg-[#f0f9ff]"
+      : tone === "green"
+        ? "border-[#d9f99d] bg-[#f7fee7]"
+        : "border-[#e2e8f0] bg-white";
+
   return (
-    <div className="rounded-md border border-[#dfe5ef] bg-white p-5">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#68748a]">{label}</p>
-      <strong className="mt-3 block text-2xl font-black">{value}</strong>
+    <div className={`rounded-md border p-5 shadow-sm ${toneClass}`}>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">{label}</p>
+      <strong className="mt-3 block text-2xl font-black text-[#0f172a]">{value}</strong>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748b]">{label}</p>
+      <p className="mt-2 text-lg font-black text-[#0f172a]">{value}</p>
+    </div>
+  );
+}
+
+function OperationItem({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.05] px-4 py-3">
+      <span className="text-sm font-bold text-white/72">{label}</span>
+      <strong className="text-lg font-black text-[#a3e635]">{value}</strong>
+    </div>
+  );
+}
+
+function StatusChip({ value }: { value: string | number | boolean }) {
+  const text = String(value);
+  const normalized = text.toLowerCase();
+  const className =
+    normalized.includes("inativo") ||
+    normalized.includes("cancel") ||
+    normalized.includes("perd") ||
+    normalized.includes("recus") ||
+    normalized.includes("descart")
+      ? "border-[#fecaca] bg-[#fef2f2] text-[#991b1b]"
+      : normalized.includes("ativo") ||
+    normalized.includes("aprov") ||
+    normalized.includes("confirm") ||
+    normalized.includes("convert") ||
+    normalized.includes("pago") ||
+    normalized === "sim"
+      ? "border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]"
+      : normalized.includes("pend") ||
+          normalized.includes("novo") ||
+          normalized.includes("rascunho") ||
+          normalized.includes("fechado")
+        ? "border-[#fde68a] bg-[#fffbeb] text-[#92400e]"
+        : "border-[#bae6fd] bg-[#f0f9ff] text-[#075985]";
+
+  return (
+    <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-black uppercase tracking-[0.08em] ${className}`}>
+      {text}
+    </span>
+  );
+}
+
+function ProductPreview({ product }: { product: AdminProduct }) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-md border border-[#e2e8f0] bg-[#f8fafc]">
+      <div className="aspect-[16/9] bg-[#e2e8f0]">
+        {product.imagem_url && <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover" />}
+      </div>
+      <div className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip value={product.status} />
+          {product.offer_type && <StatusChip value={product.offer_type} />}
+        </div>
+        <h3 className="mt-3 font-black text-[#0f172a]">{product.nome}</h3>
+        <p className="mt-1 text-sm font-semibold leading-6 text-[#64748b]">{product.descricao_curta}</p>
+        <div className="mt-3 flex items-end justify-between">
+          <span className="text-sm font-bold text-[#94a3b8] line-through">{money(product.preco_original)}</span>
+          <strong className="text-xl font-black text-[#0369a1]">{money(product.preco_desconto)}</strong>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1118,7 +1325,10 @@ function Input(props: InputHTMLAttributes<HTMLInputElement> & { label: string; n
   return (
     <label className="grid gap-1 text-sm font-bold">
       {label}
-      <input {...inputProps} className="rounded-md border border-[#ccd5e2] px-3 py-2" />
+      <input
+        {...inputProps}
+        className="rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
+      />
     </label>
   );
 }
@@ -1133,13 +1343,13 @@ function AdminAuthCard({
   includeName?: boolean;
 }) {
   return (
-    <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
+    <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
       <h2 className="text-lg font-black">{title}</h2>
       <form onSubmit={onSubmit} className="mt-4 grid gap-3">
         {includeName && <Input name="nome" label="Nome" required />}
         <Input name="email" label="Email" type="email" required />
         <Input name="senha" label="Senha" type="password" required minLength={8} />
-        <button className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black text-brand-ink">
+        <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
           Continuar
         </button>
       </form>
@@ -1162,12 +1372,59 @@ function AdminLoginPrompt({
   );
 }
 
-function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
+function DataTable({
+  headers,
+  rows,
+  title,
+  description
+}: {
+  headers: string[];
+  rows: ReactNode[][];
+  title?: string;
+  description?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const cellText = (cell: ReactNode): string => {
+    if (typeof cell === "string" || typeof cell === "number") return String(cell);
+    if (Array.isArray(cell)) return cell.map(cellText).join(" ");
+    if (isValidElement<{ children?: ReactNode }>(cell)) return cellText(cell.props.children);
+    return "";
+  };
+
+  const visibleRows = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return rows;
+
+    return rows.filter((row) =>
+      row
+        .map(cellText)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized)
+    );
+  }, [query, rows]);
+
   return (
-    <div className="overflow-hidden rounded-md border border-[#dfe5ef] bg-white">
+    <div className="overflow-hidden rounded-md border border-[#e2e8f0] bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          {title ? (
+            <h3 className="text-base font-black text-[#0f172a]">{title}</h3>
+          ) : (
+            <h3 className="text-base font-black text-[#0f172a]">Registros</h3>
+          )}
+          {description && <p className="mt-1 text-sm font-semibold text-[#64748b]">{description}</p>}
+        </div>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar..."
+          className="w-full rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10 md:w-64"
+        />
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-[#eef2f7] text-xs font-black uppercase tracking-[0.12em] text-[#68748a]">
+          <thead className="bg-[#f8fafc] text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
             <tr>
               {headers.map((header) => (
                 <th key={header} className="px-4 py-3">
@@ -1177,18 +1434,24 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={headers.length} className="px-4 py-5 font-bold text-[#68748a]">
+                <td colSpan={headers.length} className="px-4 py-8 text-center font-bold text-[#64748b]">
                   Nenhum registro encontrado.
                 </td>
               </tr>
             ) : (
-              rows.map((row, rowIndex) => (
-                <tr key={rowIndex} className="border-t border-[#edf1f6]">
+              visibleRows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="border-t border-[#edf1f6] transition hover:bg-[#f8fafc]">
                   {row.map((cell, cellIndex) => (
-                    <td key={cellIndex} className="px-4 py-3 align-middle font-semibold">
-                      {cell}
+                    <td key={cellIndex} className="px-4 py-3 align-middle font-semibold text-[#334155]">
+                      {typeof cell === "string" &&
+                      (headers[cellIndex]?.toLowerCase().includes("status") ||
+                        headers[cellIndex]?.toLowerCase().includes("ativo")) ? (
+                        <StatusChip value={cell} />
+                      ) : (
+                        cell
+                      )}
                     </td>
                   ))}
                 </tr>
