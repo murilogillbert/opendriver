@@ -1021,7 +1021,16 @@ function AdminApp() {
                       )}
                     </div>
                     {editingProduct && <ProductPreview product={editingProduct} />}
-                    <form onSubmit={submitProduct} className="mt-4 grid gap-3">
+                    <form
+                      key={editingProduct?.id ?? "new-product"}
+                      onSubmit={submitProduct}
+                      className="mt-4 grid gap-3"
+                    >
+                      {editingProduct && (
+                        <p className="rounded-md bg-[#e0f2fe] px-3 py-2 text-xs font-bold text-[#0369a1]">
+                          Editando produto #{editingProduct.id}: {editingProduct.nome}
+                        </p>
+                      )}
                       <label className="grid gap-1 text-sm font-bold">
                         Categoria
                         <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
