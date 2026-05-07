@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
 import {
@@ -12,6 +12,7 @@ import {
   Order,
   SavingsSummary
 } from "../../lib/marketplaceApi";
+import VoucherCard from "./VoucherCard";
 
 const defaultSavings: SavingsSummary = {
   economia_total: 0,
@@ -85,37 +86,66 @@ function AccountPage() {
     }
   };
 
-  const pendingOrders = orders.filter((order) => order.payment_status === "pending");
+  const navigate = (path: string) => {
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
 
-  const vouchers = orders.filter((order) => order.offer_type === "voucher" || Boolean(order.voucher_code));
-  const services = orders.filter((order) => order.offer_type === "servico");
-  const digitalProducts = orders.filter(
-    (order) => order.offer_type === "produto_digital" || order.delivery_method === "digital"
+  // Vouchers digitais — orders aprovadas que tem voucher_code mas sem activation presencial.
+  const digitalVouchers = useMemo(
+    () =>
+      orders.filter(
+        (order) =>
+          order.payment_status === "approved" &&
+          Boolean(order.voucher_code) &&
+          (order.delivery_method === "digital" || order.offer_type === "voucher" || order.offer_type === "produto_digital")
+      ),
+    [orders]
   );
+
+  // Beneficios presenciais — benefit_activations ainda utilizaveis.
+  const usableBenefits = useMemo(
+    () =>
+      benefits.filter(
+        (benefit) =>
+          benefit.status !== "cancelado" &&
+          benefit.status !== "expirado" &&
+          benefit.status !== "esgotado"
+      ),
+    [benefits]
+  );
+  const expiredOrUsedBenefits = useMemo(
+    () =>
+      benefits.filter(
+        (benefit) =>
+          benefit.status === "cancelado" || benefit.status === "expirado" || benefit.status === "esgotado"
+      ),
+    [benefits]
+  );
+
+  const pendingOrders = orders.filter((order) => order.payment_status === "pending");
   const approvedPayments = orders.filter((order) => order.payment_status === "approved").length;
-  const activeBenefits = benefits.filter((benefit) => benefit.status === "active");
   const fullAddress = profile
     ? [profile.endereco, profile.numero, profile.complemento, profile.bairro, profile.cidade, profile.estado, profile.cep]
         .filter(Boolean)
         .join(", ")
     : "";
 
+  const cashbackBalance = cashback?.balance ?? 0;
+
   return (
     <main className="min-h-screen bg-[#f6f8fb] px-5 py-8 text-[#111827]">
       <section className="mx-auto max-w-7xl">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">
-              Minha conta
-            </p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Minha conta</p>
             <h1 className="mt-2 font-display text-3xl font-black">Ola, {profile?.nome ?? "Cliente"}</h1>
           </div>
           <button
             type="button"
             onClick={() => {
               clearToken();
-              window.history.pushState(null, "", "/");
-              window.dispatchEvent(new PopStateEvent("popstate"));
+              navigate("/");
             }}
             className="rounded-md border border-[#ccd5e2] bg-white px-4 py-2 text-sm font-black"
           >
@@ -123,265 +153,260 @@ function AccountPage() {
           </button>
         </header>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
-          <Metric label="Economia acumulada" value={money(savings.economia_total)} />
-          <Metric label="Pedidos" value={savings.pedidos} />
-          <Metric label="Nivel" value={savings.nivel_atual} />
-          <Metric label="Cashback disponivel" value={money(cashback?.balance ?? 0)} />
-        </div>
-
-        {cashback && (
-          <section className="mt-6 rounded-md border border-brand-gold/40 bg-brand-gold/10 p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-gold">
-                  Carteira de cashback
-                </p>
-                <h2 className="mt-2 text-2xl font-black">{money(cashback.balance)}</h2>
-                <p className="mt-2 text-sm font-semibold leading-6 text-[#5a3f00]">
-                  Voce ganha <strong>{cashback.effective_rate}%</strong> de cashback (nivel {cashback.tier}) em cada compra.
-                  Use no checkout como desconto direto.
-                </p>
-                {cashback.expiring_soon > 0 && (
-                  <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">
-                    {money(cashback.expiring_soon)} expira nos proximos 30 dias se nao for usado.
-                  </p>
-                )}
-              </div>
-              <div className="grid w-full max-w-sm gap-2 rounded-md bg-white p-4 text-xs font-bold">
-                <p className="text-[0.7rem] font-black uppercase tracking-[0.14em] text-[#7a8496]">Ultimas movimentacoes</p>
-                {cashback.transactions.length === 0 ? (
-                  <span className="text-[#68748a]">Nenhuma movimentacao ainda.</span>
-                ) : (
-                  cashback.transactions.slice(0, 5).map((tx) => (
-                    <div key={tx.id} className="flex items-center justify-between gap-3 border-t border-[#edf1f6] pt-2 first:border-t-0 first:pt-0">
-                      <span className="capitalize text-[#425166]">{tx.tipo}</span>
-                      <span className={tx.tipo === "credito" || tx.tipo === "estornado" ? "text-emerald-700" : "text-red-700"}>
-                        {tx.tipo === "credito" || tx.tipo === "estornado" ? "+" : "-"}{money(Number(tx.valor))}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
+        {/* Hero do cashback — destaque maximo, com CTA explicito de uso. */}
+        <section className="mt-6 grid gap-4 rounded-md border border-brand-gold/40 bg-gradient-to-br from-brand-gold/15 to-white p-6 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Sua carteira de cashback</p>
+            <strong className="mt-2 block font-display text-5xl font-black tabular-nums">
+              {money(cashbackBalance)}
+            </strong>
+            <p className="mt-3 max-w-md text-sm font-bold leading-6 text-[#5a3f00]">
+              Voce ganha <strong>{cashback?.effective_rate ?? 2}%</strong> de cashback (nivel {cashback?.tier ?? "Bronze"}) em
+              cada compra. Use como desconto direto no proximo pedido.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                disabled={cashbackBalance <= 0}
+                className="rounded-md bg-brand-ink px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Usar agora no catalogo
+              </button>
+              <a
+                href="#como-funciona"
+                className="rounded-md border border-brand-gold bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-brand-ink"
+              >
+                Como funciona
+              </a>
             </div>
-          </section>
-        )}
-
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
-          <Metric label="Meus vouchers" value={vouchers.length} />
-          <Metric label="Servicos adquiridos" value={services.length} />
-          <Metric label="Digitais liberados" value={digitalProducts.length} />
-          <Metric label="Pagamentos aprovados" value={approvedPayments} />
-          <Metric label="Beneficios ativos" value={activeBenefits.length} />
-        </div>
-
-        <section className="mt-6 rounded-md border border-[#dfe5ef] bg-white p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-gold">
-                Regra de nivel mensal
+          </div>
+          <div className="rounded-md bg-white p-4">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7788]">Expira nos proximos 30 dias</p>
+            <strong className="mt-2 block text-2xl font-black">
+              {money(cashback?.expiring_soon ?? 0)}
+            </strong>
+            {(cashback?.expiring_soon ?? 0) > 0 && (
+              <p className="mt-2 text-xs font-bold text-amber-700">
+                Use antes de expirar para nao perder.
               </p>
-              <h2 className="mt-2 text-xl font-black">
-                Adquira 5 produtos e/ou beneficios no mes para passar de nivel.
-              </h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">
-                Seu nivel e calculado automaticamente com base nos pedidos confirmados, enviados ou entregues dentro do mes atual.
-              </p>
-            </div>
-            <div className="rounded-md bg-[#f6f8fb] p-4 md:min-w-64">
-              <div className="flex items-center justify-between text-sm font-black">
-                <span>{savings.aquisicoes_mes}/{savings.meta_mensal}</span>
-                <span>{savings.nivel_status === "nivel_liberado" ? "Nivel liberado" : `Faltam ${savings.faltam_para_subir}`}</span>
-              </div>
-              <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#e1e7f0]">
-                <span
-                  className="block h-full rounded-full bg-brand-gold"
-                  style={{
-                    width: `${Math.min((savings.aquisicoes_mes / savings.meta_mensal) * 100, 100)}%`
-                  }}
-                />
-              </div>
-              <p className="mt-3 text-xs font-bold uppercase tracking-[0.12em] text-[#68748a]">
-                Proximo nivel: {savings.proximo_nivel}
-              </p>
+            )}
+          </div>
+          <div className="rounded-md bg-white p-4">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7788]">Movimentacoes recentes</p>
+            <div className="mt-2 grid gap-1 text-xs font-bold">
+              {(cashback?.transactions ?? []).slice(0, 4).map((tx) => (
+                <div key={tx.id} className="flex items-center justify-between gap-2 border-t border-[#edf1f6] pt-1 first:border-t-0 first:pt-0">
+                  <span className="capitalize text-[#425166]">{tx.tipo}</span>
+                  <span className={tx.tipo === "credito" || tx.tipo === "estornado" ? "text-emerald-700" : "text-red-700"}>
+                    {tx.tipo === "credito" || tx.tipo === "estornado" ? "+" : "−"}
+                    {money(Number(tx.valor))}
+                  </span>
+                </div>
+              ))}
+              {(cashback?.transactions ?? []).length === 0 && (
+                <span className="text-[#68748a]">Sem movimentacoes ainda. Faca uma compra para comecar.</span>
+              )}
             </div>
           </div>
         </section>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
-          <section className="rounded-md border border-[#dfe5ef] bg-white">
-            <div className="flex flex-col gap-3 border-b border-[#edf1f6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-lg font-black">Meus pedidos</h2>
-              {pendingOrders.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void Promise.all(pendingOrders.slice(0, 5).map((order) => refreshOrderPayment(order.id)))}
-                  className="rounded-md bg-brand-ink px-4 py-2 text-sm font-black text-white"
-                >
-                  Atualizar pagamentos pendentes
-                </button>
-              )}
-            </div>
-            <div className="divide-y divide-[#edf1f6]">
-              {orders.length === 0 ? (
-                <p className="px-5 py-5 text-sm font-bold text-[#68748a]">
-                  Nenhum pedido ainda.
-                </p>
-              ) : (
-                orders.map((order) => (
-                  <article key={order.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
-                    <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
-                      {order.imagem_url && <img src={assetUrl(order.imagem_url)} alt="" className="h-full w-full object-cover" />}
-                    </div>
-                    <div>
-                      <h3 className="font-black">{order.produto_nome}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        {labelOrderType(order)} | {labelOrderStatus(order.status)} | entrega {labelDelivery(order)}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        Pagamento {labelPaymentStatus(order.payment_status)} via {labelPaymentMethod(order.payment_method)} | economia {money(order.economia_total)}
-                      </p>
-                      {order.payment_status_detail && (
-                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#8b95a5]">
-                          {order.payment_status_detail}
-                        </p>
-                      )}
-                      {order.voucher_code && (
-                        <p className="mt-2 inline-block rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black">
-                          Voucher {order.voucher_code}
-                        </p>
-                      )}
-                    </div>
-                    <div className="justify-self-end text-right">
-                      <strong>{money(order.valor_pago_total)}</strong>
-                      {order.payment_status === "pending" && (
-                        <button
-                          type="button"
-                          onClick={() => void refreshOrderPayment(order.id)}
-                          disabled={syncingOrders.includes(order.id)}
-                          className="mt-3 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
-                        >
-                          {syncingOrders.includes(order.id) ? "Verificando..." : "Verificar pagamento"}
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
-
-          <div className="grid gap-6">
-            <InfoPanel title="Dados cadastrais">
-              <p>{profile?.nome}</p>
-              <p>{profile?.email}</p>
-              <p>{profile?.telefone}</p>
-              <p>CPF {profile?.cpf ?? "-"}</p>
-            </InfoPanel>
-            <InfoPanel title="Endereco">
-              <p>{fullAddress || "Endereco nao localizado."}</p>
-            </InfoPanel>
-          </div>
+        {/* KPIs gerais — reais, calculados das compras. */}
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          <Metric label="Economia acumulada" value={money(savings.economia_total)} />
+          <Metric label="Pedidos" value={savings.pedidos} />
+          <Metric label="Pagamentos aprovados" value={approvedPayments} />
+          <Metric label="Nivel" value={savings.nivel_atual} />
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          <OrderGroup title="Meus vouchers" orders={vouchers} empty="Nenhum voucher liberado ainda." />
-          <OrderGroup title="Meus servicos adquiridos" orders={services} empty="Nenhum servico adquirido ainda." />
-          <OrderGroup title="Produtos digitais liberados" orders={digitalProducts} empty="Nenhum produto digital liberado ainda." />
-        </div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
-          <section className="rounded-md border border-[#dfe5ef] bg-white">
-            <div className="border-b border-[#edf1f6] px-5 py-4">
-              <h2 className="text-lg font-black">Beneficios ativos</h2>
+        {/* Vouchers digitais — protagonistas se existem. */}
+        <section className="mt-8">
+          <header className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Vouchers digitais</p>
+              <h2 className="mt-1 font-display text-2xl font-black">
+                {digitalVouchers.length > 0
+                  ? `${digitalVouchers.length} voucher${digitalVouchers.length === 1 ? "" : "s"} para usar`
+                  : "Voce ainda nao tem vouchers digitais"}
+              </h2>
             </div>
-            <div className="divide-y divide-[#edf1f6]">
-              {benefits.length === 0 ? (
-                <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nenhum beneficio ativado ainda.</p>
-              ) : (
-                benefits.map((benefit) => (
-                  <div key={benefit.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
-                    <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
-                      {benefit.imagem_url && <img src={assetUrl(benefit.imagem_url)} alt="" className="h-full w-full object-cover" />}
-                    </div>
-                    <div>
-                      <h3 className="font-black">{benefit.product_nome}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        Codigo {benefit.activation_code} | {benefit.status}
-                      </p>
-                    </div>
-                    <span className="rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black">
-                      {benefit.offer_type ?? "beneficio"}
+            <p className="text-xs font-bold text-[#68748a] sm:text-right sm:max-w-md">
+              Copie o codigo OD-XXXX e use no parceiro conforme as regras do produto.
+            </p>
+          </header>
+          {digitalVouchers.length === 0 ? (
+            <div className="mt-4 rounded-md border border-dashed border-[#dfe5ef] bg-white p-6 text-center text-sm font-bold text-[#68748a]">
+              Quando comprar um voucher digital, ele aparece aqui pronto pra uso.
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              {digitalVouchers.map((order) => (
+                <VoucherCard
+                  key={`voucher-${order.id}`}
+                  produtoNome={order.produto_nome}
+                  imagemUrl={order.imagem_url}
+                  voucherCode={order.voucher_code}
+                  redemptionToken={null}
+                  status="ativo"
+                  redemptionLimit={null}
+                  redemptionCount={0}
+                  expiresAt={null}
+                  offerType={order.offer_type}
+                  deliveryMethod={order.delivery_method}
+                  orderPublicCode={order.public_code}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Beneficios de resgate presencial — QR + token. */}
+        <section className="mt-8">
+          <header className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Beneficios para resgate</p>
+              <h2 className="mt-1 font-display text-2xl font-black">
+                {usableBenefits.length > 0
+                  ? `${usableBenefits.length} beneficio${usableBenefits.length === 1 ? "" : "s"} ativo${usableBenefits.length === 1 ? "" : "s"}`
+                  : "Sem beneficios ativos no momento"}
+              </h2>
+            </div>
+            <p className="text-xs font-bold text-[#68748a] sm:text-right sm:max-w-md">
+              Mostre o QR ou diga o token de 12 letras ao parceiro. Ele valida na hora.
+            </p>
+          </header>
+          {usableBenefits.length === 0 ? (
+            <div className="mt-4 rounded-md border border-dashed border-[#dfe5ef] bg-white p-6 text-center text-sm font-bold text-[#68748a]">
+              Compre um servico ou voucher presencial para ver o QR de resgate aqui.
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              {usableBenefits.map((benefit) => (
+                <VoucherCard
+                  key={`benefit-${benefit.id}`}
+                  produtoNome={benefit.produto_nome}
+                  imagemUrl={benefit.imagem_url}
+                  voucherCode={benefit.voucher_code}
+                  redemptionToken={benefit.redemption_token}
+                  status={benefit.status}
+                  redemptionLimit={benefit.redemption_limit}
+                  redemptionCount={benefit.redemption_count}
+                  expiresAt={benefit.expires_at}
+                  usageRules={benefit.usage_rules}
+                  offerType={benefit.offer_type}
+                  deliveryMethod={benefit.delivery_method}
+                />
+              ))}
+            </div>
+          )}
+          {expiredOrUsedBenefits.length > 0 && (
+            <details className="mt-3 rounded-md border border-[#dfe5ef] bg-white p-4">
+              <summary className="cursor-pointer text-sm font-black text-[#475569]">
+                Mostrar beneficios usados ou expirados ({expiredOrUsedBenefits.length})
+              </summary>
+              <ul className="mt-3 grid gap-2 text-sm font-semibold text-[#5f6b7b]">
+                {expiredOrUsedBenefits.map((benefit) => (
+                  <li key={`exp-${benefit.id}`} className="flex items-center justify-between border-t border-[#edf1f6] pt-2 first:border-t-0 first:pt-0">
+                    <span>{benefit.produto_nome}</span>
+                    <span className="rounded-md bg-[#f1f5f9] px-2 py-1 text-xs font-black uppercase tracking-[0.1em]">
+                      {benefit.status}
                     </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+
+        {/* Como funciona */}
+        <section id="como-funciona" className="mt-8 rounded-md border border-[#dfe5ef] bg-white p-6">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Guia rapido</p>
+          <h2 className="mt-1 font-display text-2xl font-black">Como cashback e vouchers funcionam</h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <Step
+              number="1"
+              title="Cashback acumula"
+              text="Cada compra aprovada credita uma porcentagem (Bronze 2% / Prata 5% / Ouro 8%) na sua carteira. Vence em 90 dias."
+            />
+            <Step
+              number="2"
+              title="Use no checkout"
+              text="No proximo pedido, marque 'Usar meu cashback' para abater o valor. Se cobrir 100%, nao passa pelo Mercado Pago."
+            />
+            <Step
+              number="3"
+              title="Voucher e QR"
+              text="Compras digitais ja vem com um codigo OD-XXXX. Compras presenciais geram um token + QR para o parceiro escanear."
+            />
+          </div>
+        </section>
+
+        {/* Pedidos */}
+        <section className="mt-8 rounded-md border border-[#dfe5ef] bg-white">
+          <div className="flex flex-col gap-3 border-b border-[#edf1f6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-black">Meus pedidos</h2>
+            {pendingOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void Promise.all(pendingOrders.slice(0, 5).map((order) => refreshOrderPayment(order.id)))}
+                className="rounded-md bg-brand-ink px-4 py-2 text-sm font-black text-white"
+              >
+                Atualizar pagamentos pendentes
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-[#edf1f6]">
+            {orders.length === 0 ? (
+              <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nenhum pedido ainda.</p>
+            ) : (
+              orders.map((order) => (
+                <article key={order.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
+                  <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
+                    {order.imagem_url && <img src={assetUrl(order.imagem_url)} alt="" className="h-full w-full object-cover" />}
                   </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <InfoPanel title="Localizacao">
-            <p>Ative para receber alertas quando houver beneficio disponivel em parceiro proximo.</p>
-            <div className="mt-3 grid gap-2">
-              <button
-                type="button"
-                onClick={() => marketplaceApi.setLocationConsent("granted")}
-                className="rounded-md bg-brand-gold px-3 py-2 text-sm font-black text-brand-ink"
-              >
-                Permitir alertas por localizacao
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!navigator.geolocation) return;
-                  navigator.geolocation.getCurrentPosition((position) => {
-                    void marketplaceApi.sendLocationEvent({
-                      latitude: position.coords.latitude,
-                      longitude: position.coords.longitude,
-                      accuracy_meters: Math.round(position.coords.accuracy),
-                      event_type: "nearby"
-                    });
-                  });
-                }}
-                className="rounded-md bg-brand-ink px-3 py-2 text-sm font-black text-white"
-              >
-                Detectar parceiro proximo
-              </button>
-              <button
-                type="button"
-                onClick={() => marketplaceApi.setLocationConsent("revoked")}
-                className="rounded-md border border-[#ccd5e2] px-3 py-2 text-sm font-black"
-              >
-                Revogar permissao
-              </button>
-            </div>
-          </InfoPanel>
-        </div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_24rem]">
-          <section className="rounded-md border border-[#dfe5ef] bg-white">
-            <div className="border-b border-[#edf1f6] px-5 py-4">
-              <h2 className="text-lg font-black">Historico de pagamentos</h2>
-            </div>
-            <div className="divide-y divide-[#edf1f6]">
-              {orders.length === 0 ? (
-                <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nenhum pagamento registrado.</p>
-              ) : (
-                orders.map((order) => (
-                  <div key={`payment-${order.id}`} className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div>
-                      <h3 className="text-sm font-black">{order.public_code}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                        {labelPaymentMethod(order.payment_method)} | {labelPaymentStatus(order.payment_status)}
+                  <div>
+                    <h3 className="font-black">{order.produto_nome}</h3>
+                    <p className="mt-1 text-sm font-semibold text-[#68748a]">
+                      {labelOrderType(order)} · {labelOrderStatus(order.status)} · pagamento {labelPaymentStatus(order.payment_status)}
+                    </p>
+                    {(order.cashback_aplicado ?? 0) > 0 && (
+                      <p className="mt-1 text-xs font-bold text-emerald-700">
+                        Usou {money(order.cashback_aplicado ?? 0)} de cashback
                       </p>
-                    </div>
-                    <strong>{money(order.valor_pago_total)}</strong>
+                    )}
+                    {(order.cashback_creditado ?? 0) > 0 && (
+                      <p className="mt-1 text-xs font-bold text-brand-ink">
+                        Ganhou {money(order.cashback_creditado ?? 0)} de cashback
+                      </p>
+                    )}
+                    {order.voucher_code && (
+                      <p className="mt-2 inline-flex items-center gap-2 rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black text-brand-ink">
+                        Voucher {order.voucher_code}
+                      </p>
+                    )}
                   </div>
-                ))
-              )}
-            </div>
-          </section>
+                  <div className="justify-self-end text-right">
+                    <strong>{money(order.valor_pago_total)}</strong>
+                    {order.payment_status === "pending" && (
+                      <button
+                        type="button"
+                        onClick={() => void refreshOrderPayment(order.id)}
+                        disabled={syncingOrders.includes(order.id)}
+                        className="mt-3 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
+                      >
+                        {syncingOrders.includes(order.id) ? "Verificando..." : "Verificar pagamento"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
 
-          <aside className="rounded-md border border-[#dfe5ef] bg-white">
+        {/* Cadastro + notificacoes */}
+        <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_24rem]">
+          <section className="rounded-md border border-[#dfe5ef] bg-white">
             <div className="border-b border-[#edf1f6] px-5 py-4">
               <h2 className="text-lg font-black">Notificacoes</h2>
             </div>
@@ -399,7 +424,38 @@ function AccountPage() {
                 ))
               )}
             </div>
-          </aside>
+          </section>
+
+          <div className="grid gap-4">
+            <InfoPanel title="Dados cadastrais">
+              <p>{profile?.nome}</p>
+              <p>{profile?.email}</p>
+              <p>{profile?.telefone}</p>
+              <p>CPF {profile?.cpf ?? "-"}</p>
+            </InfoPanel>
+            <InfoPanel title="Endereco">
+              <p>{fullAddress || "Endereco nao localizado."}</p>
+            </InfoPanel>
+            <InfoPanel title="Localizacao">
+              <p>Ative para receber alertas de beneficios proximos.</p>
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => marketplaceApi.setLocationConsent("granted")}
+                  className="rounded-md bg-brand-gold px-3 py-2 text-sm font-black text-brand-ink"
+                >
+                  Permitir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => marketplaceApi.setLocationConsent("revoked")}
+                  className="rounded-md border border-[#ccd5e2] px-3 py-2 text-sm font-black"
+                >
+                  Revogar
+                </button>
+              </div>
+            </InfoPanel>
+          </div>
         </div>
       </section>
     </main>
@@ -416,7 +472,6 @@ function labelOrderType(order: Order) {
     assinatura: "Assinatura",
     combo: "Combo"
   };
-
   return labels[order.offer_type ?? ""] ?? order.tipo_entrega;
 }
 
@@ -428,38 +483,18 @@ function labelOrderStatus(status?: string) {
     entregue: "Entregue",
     cancelado: "Cancelado"
   };
-
   return labels[status ?? ""] ?? (status || "Pendente");
 }
 
 function labelPaymentStatus(status?: string) {
   const labels: Record<string, string> = {
-    pending: "Aguardando confirmacao",
-    approved: "Aprovado",
-    rejected: "Recusado",
-    refunded: "Estornado",
-    cancelled: "Cancelado"
+    pending: "aguardando confirmacao",
+    approved: "aprovado",
+    rejected: "recusado",
+    refunded: "estornado",
+    cancelled: "cancelado"
   };
-
-  return labels[status ?? ""] ?? (status || "Pendente");
-}
-
-function labelPaymentMethod(method?: string) {
-  const labels: Record<string, string> = {
-    pix: "Pix",
-    credit_card: "Cartao de credito",
-    debit_card: "Cartao de debito"
-  };
-
-  return labels[method ?? ""] ?? (method || "-");
-}
-
-function labelDelivery(order: Order) {
-  const value = order.delivery_method ?? order.tipo_entrega;
-  if (value === "digital") return "digital";
-  if (value === "fisica" || value === "fisico") return "fisica";
-  if (value === "presencial") return "presencial";
-  return value ?? "-";
+  return labels[status ?? ""] ?? (status || "pendente");
 }
 
 function InfoPanel({ title, children }: { title: string; children: ReactNode }) {
@@ -471,27 +506,13 @@ function InfoPanel({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-function OrderGroup({ title, orders, empty }: { title: string; orders: Order[]; empty: string }) {
+function Step({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <section className="rounded-md border border-[#dfe5ef] bg-white">
-      <div className="border-b border-[#edf1f6] px-5 py-4">
-        <h2 className="text-lg font-black">{title}</h2>
-      </div>
-      <div className="divide-y divide-[#edf1f6]">
-        {orders.length === 0 ? (
-          <p className="px-5 py-5 text-sm font-bold text-[#68748a]">{empty}</p>
-        ) : (
-          orders.slice(0, 5).map((order) => (
-            <div key={`${title}-${order.id}`} className="px-5 py-4">
-              <h3 className="text-sm font-black">{order.produto_nome}</h3>
-              <p className="mt-1 text-sm font-semibold text-[#68748a]">
-                {order.status} | {order.payment_status ?? "pendente"}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
+    <div className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] p-4">
+      <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-ink font-black text-white">{number}</span>
+      <h3 className="mt-3 text-base font-black">{title}</h3>
+      <p className="mt-2 text-sm font-semibold leading-6 text-[#5f6b7b]">{text}</p>
+    </div>
   );
 }
 

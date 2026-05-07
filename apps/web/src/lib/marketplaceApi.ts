@@ -97,13 +97,20 @@ export type Notification = {
 
 export type BenefitActivation = {
   id: number;
-  activation_code: string;
-  product_nome: string;
-  offer_type?: string;
-  delivery_method?: string;
-  imagem_url?: string;
+  product_id: number;
+  order_id: number | null;
+  voucher_code: string | null;
+  redemption_token: string;
   status: string;
-  created_at: string;
+  activated_at: string;
+  expires_at: string | null;
+  redemption_limit: number | null;
+  redemption_count: number;
+  produto_nome: string;
+  imagem_url: string | null;
+  offer_type: string | null;
+  delivery_method: string | null;
+  usage_rules: string | null;
 };
 
 export type CashbackTier = "Bronze" | "Prata" | "Ouro";
