@@ -2,8 +2,9 @@ import { randomBytes } from "crypto";
 
 import { writeAuditLog } from "./audit.js";
 import { ensureActivationForOrder } from "./benefits.js";
+import { clawbackCashbackCredit, ensureOrderCashbackCredit, refundCashbackDebit } from "./cashback.js";
 import { config } from "./config.js";
-import { execute, query, sqlTypes } from "./db.js";
+import { execute, query, sqlTypes, withTransaction } from "./db.js";
 
 export type MercadoPagoPaymentRecord = Record<string, unknown>;
 
@@ -37,6 +38,10 @@ type OrderPaymentRow = {
   delivery_method: string | null;
   limite_resgates: number | null;
   valor_pago_total: number;
+  cashback_aplicado: number;
+  cashback_creditado: number;
+  product_cashback_percent: number | null;
+  product_estoque: number | null;
 };
 
 const paymentApprovedStatuses = new Set(["approved"]);
@@ -313,7 +318,11 @@ async function loadOrderPaymentRow(input: {
       `SELECT TOP 1 o.id, o.user_id, o.product_id, p.nome AS product_name, o.tipo_entrega,
               o.voucher_code, o.payment_status, o.payment_method, o.payment_reference,
               o.mercado_pago_payment_id, o.mercado_pago_status, o.paid_at, o.status,
-              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total
+              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total,
+              COALESCE(o.cashback_aplicado, 0) AS cashback_aplicado,
+              COALESCE(o.cashback_creditado, 0) AS cashback_creditado,
+              p.cashback_percent AS product_cashback_percent,
+              p.estoque AS product_estoque
          FROM dbo.product_orders o
          JOIN dbo.products p ON p.id = o.product_id
         WHERE o.id = @order_id`,
@@ -328,7 +337,11 @@ async function loadOrderPaymentRow(input: {
       `SELECT TOP 1 o.id, o.user_id, o.product_id, p.nome AS product_name, o.tipo_entrega,
               o.voucher_code, o.payment_status, o.payment_method, o.payment_reference,
               o.mercado_pago_payment_id, o.mercado_pago_status, o.paid_at, o.status,
-              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total
+              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total,
+              COALESCE(o.cashback_aplicado, 0) AS cashback_aplicado,
+              COALESCE(o.cashback_creditado, 0) AS cashback_creditado,
+              p.cashback_percent AS product_cashback_percent,
+              p.estoque AS product_estoque
          FROM dbo.product_orders o
          JOIN dbo.products p ON p.id = o.product_id
         WHERE o.mercado_pago_payment_id = @payment_id
@@ -344,7 +357,11 @@ async function loadOrderPaymentRow(input: {
       `SELECT TOP 1 o.id, o.user_id, o.product_id, p.nome AS product_name, o.tipo_entrega,
               o.voucher_code, o.payment_status, o.payment_method, o.payment_reference,
               o.mercado_pago_payment_id, o.mercado_pago_status, o.paid_at, o.status,
-              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total
+              p.offer_type, p.delivery_method, p.limite_resgates, o.valor_pago_total,
+              COALESCE(o.cashback_aplicado, 0) AS cashback_aplicado,
+              COALESCE(o.cashback_creditado, 0) AS cashback_creditado,
+              p.cashback_percent AS product_cashback_percent,
+              p.estoque AS product_estoque
          FROM dbo.product_orders o
          JOIN dbo.products p ON p.id = o.product_id
         WHERE o.payment_reference = @payment_reference
@@ -463,39 +480,113 @@ export async function reconcileOrderPaymentStatus(input: {
     throw Object.assign(new Error("payment_order_not_found"), { statusCode: 404 });
   }
 
-  const wasApproved = order.payment_status === "approved";
-  const voucherCode =
-    paymentApprovedStatuses.has(normalizedStatus) && !order.voucher_code && order.tipo_entrega === "digital"
-      ? generateVoucherCode()
-      : order.voucher_code;
+  // Idempotência: re-read the row inside a transaction with UPDLOCK so concurrent
+  // webhook deliveries can't both flip pendente -> approved and double-fire benefits.
+  const transition = await withTransaction(async (tx) => {
+    const lockedRows = await tx.query<{
+      payment_status: string | null;
+      voucher_code: string | null;
+      cashback_aplicado: number;
+      cashback_creditado: number;
+    }>(
+      `SELECT payment_status, voucher_code,
+              COALESCE(cashback_aplicado, 0) AS cashback_aplicado,
+              COALESCE(cashback_creditado, 0) AS cashback_creditado
+         FROM dbo.product_orders WITH (UPDLOCK, ROWLOCK)
+        WHERE id = @id`,
+      (request) => request.input("id", sqlTypes.BigInt, order.id)
+    );
+    const locked = lockedRows[0];
+    if (!locked) return { changed: false, alreadyApproved: false, alreadyCancelled: false };
 
-  await execute(
-    `UPDATE dbo.product_orders
-        SET payment_status = @payment_status,
-            mercado_pago_status = @mercado_pago_status,
-            mercado_pago_payment_id = COALESCE(mercado_pago_payment_id, @mercado_pago_payment_id),
-            payment_reference = COALESCE(payment_reference, @payment_reference),
-            voucher_code = COALESCE(voucher_code, @voucher_code),
-            status = CASE
-                       WHEN @payment_status = 'approved' AND status = 'pendente_pagamento' THEN 'confirmado'
-                       WHEN @payment_status IN ('rejected', 'cancelled', 'refunded') AND status = 'pendente_pagamento' THEN 'cancelado'
-                       ELSE status
-                     END,
-            paid_at = CASE
-                        WHEN @payment_status = 'approved' THEN COALESCE(paid_at, SYSUTCDATETIME())
-                        ELSE paid_at
-                      END,
-            updated_at = SYSUTCDATETIME()
-      WHERE id = @id`,
-    (request) =>
-      request
-        .input("id", sqlTypes.BigInt, order.id)
-        .input("payment_status", sqlTypes.VarChar(30), normalizedStatus)
-        .input("mercado_pago_status", sqlTypes.NVarChar(80), remoteStatus)
-        .input("mercado_pago_payment_id", sqlTypes.NVarChar(80), paymentId)
-        .input("payment_reference", sqlTypes.NVarChar(120), externalReference)
-        .input("voucher_code", sqlTypes.VarChar(40), voucherCode)
-  );
+    const wasApprovedBefore = locked.payment_status === "approved";
+    const wasCancelledBefore = locked.payment_status != null && paymentCancelledStatuses.has(locked.payment_status);
+
+    const voucherCode =
+      paymentApprovedStatuses.has(normalizedStatus) && !locked.voucher_code && order.tipo_entrega === "digital"
+        ? generateVoucherCode()
+        : locked.voucher_code;
+
+    await tx.execute(
+      `UPDATE dbo.product_orders
+          SET payment_status = @payment_status,
+              mercado_pago_status = @mercado_pago_status,
+              mercado_pago_payment_id = COALESCE(mercado_pago_payment_id, @mercado_pago_payment_id),
+              payment_reference = COALESCE(payment_reference, @payment_reference),
+              voucher_code = COALESCE(voucher_code, @voucher_code),
+              status = CASE
+                         WHEN @payment_status = 'approved' AND status = 'pendente_pagamento' THEN 'confirmado'
+                         WHEN @payment_status IN ('rejected', 'cancelled', 'refunded') AND status IN ('pendente_pagamento', 'confirmado') THEN 'cancelado'
+                         ELSE status
+                       END,
+              paid_at = CASE
+                          WHEN @payment_status = 'approved' THEN COALESCE(paid_at, SYSUTCDATETIME())
+                          ELSE paid_at
+                        END,
+              updated_at = SYSUTCDATETIME()
+        WHERE id = @id`,
+      (request) =>
+        request
+          .input("id", sqlTypes.BigInt, order.id)
+          .input("payment_status", sqlTypes.VarChar(30), normalizedStatus)
+          .input("mercado_pago_status", sqlTypes.NVarChar(80), remoteStatus)
+          .input("mercado_pago_payment_id", sqlTypes.NVarChar(80), paymentId)
+          .input("payment_reference", sqlTypes.NVarChar(120), externalReference)
+          .input("voucher_code", sqlTypes.VarChar(40), voucherCode)
+    );
+
+    // Refund / cancellation: restore stock, undo cashback, expire vouchers/activations.
+    const becameCancelled =
+      !wasCancelledBefore && paymentCancelledStatuses.has(normalizedStatus);
+
+    if (becameCancelled) {
+      // Restore stock for products that ship from finite inventory.
+      await tx.execute(
+        `UPDATE dbo.products
+            SET estoque = estoque + 1,
+                updated_at = SYSUTCDATETIME()
+          WHERE id = @id AND estoque IS NOT NULL`,
+        (request) => request.input("id", sqlTypes.BigInt, order.product_id)
+      );
+
+      // Refund the cashback the user spent at checkout.
+      if (Number(order.cashback_aplicado) > 0) {
+        await refundCashbackDebit(tx, {
+          userId: order.user_id,
+          orderId: order.id,
+          valor: Number(order.cashback_aplicado),
+          descricao: `Estorno do cashback usado no pedido cancelado de ${order.product_name}.`
+        });
+      }
+
+      // Claw back the cashback we credited when the order was previously approved.
+      if (wasApprovedBefore && Number(locked.cashback_creditado) > 0) {
+        await clawbackCashbackCredit(tx, {
+          userId: order.user_id,
+          orderId: order.id,
+          valor: Number(locked.cashback_creditado),
+          descricao: `Cancelamento do cashback creditado pelo pedido de ${order.product_name}.`
+        });
+      }
+
+      // Invalidate any benefit activation that was tied to this order.
+      await tx.execute(
+        `UPDATE dbo.benefit_activations
+            SET status = 'cancelado',
+                updated_at = SYSUTCDATETIME()
+          WHERE order_id = @id AND status IN ('ativo', 'esgotado')`,
+        (request) => request.input("id", sqlTypes.BigInt, order.id)
+      );
+    }
+
+    return {
+      changed: true,
+      alreadyApproved: wasApprovedBefore,
+      alreadyCancelled: wasCancelledBefore,
+      becameApproved: !wasApprovedBefore && paymentApprovedStatuses.has(normalizedStatus),
+      becameCancelled
+    };
+  });
 
   await updatePaymentTransactionSnapshot({
     orderId: order.id,
@@ -510,9 +601,21 @@ export async function reconcileOrderPaymentStatus(input: {
     responsePayload: remote
   });
 
-  if (!wasApproved && paymentApprovedStatuses.has(normalizedStatus)) {
+  if (transition.becameApproved) {
     await ensureActivationForOrder(order.id).catch((error) => {
       console.error("ensure_activation_failed", error);
+    });
+
+    // Issue cashback. The function is internally idempotent (no-op if already credited for this order).
+    await ensureOrderCashbackCredit({
+      userId: order.user_id,
+      orderId: order.id,
+      // Cashback is calculated on the actual cash paid, not on the discounted price minus cashback used.
+      paidAmount: Number(order.valor_pago_total),
+      productCashbackPercent: order.product_cashback_percent,
+      productName: order.product_name
+    }).catch((error) => {
+      console.error("ensure_cashback_credit_failed", error);
     });
 
     await execute(
@@ -526,6 +629,22 @@ export async function reconcileOrderPaymentStatus(input: {
             "mensagem",
             sqlTypes.NVarChar(700),
             `Recebemos a confirmacao do pagamento de ${order.product_name}. Seu pedido ja esta sendo liberado.`
+          )
+    );
+  }
+
+  if (transition.becameCancelled) {
+    await execute(
+      `INSERT INTO dbo.notifications (user_id, titulo, mensagem, canal)
+       VALUES (@user_id, @titulo, @mensagem, 'interno')`,
+      (request) =>
+        request
+          .input("user_id", sqlTypes.BigInt, order.user_id)
+          .input("titulo", sqlTypes.NVarChar(160), "Pagamento estornado")
+          .input(
+            "mensagem",
+            sqlTypes.NVarChar(700),
+            `O pagamento de ${order.product_name} foi cancelado/estornado. Devolvemos o cashback usado, se houver.`
           )
     );
   }
@@ -573,7 +692,127 @@ export async function reconcileOrderPaymentStatus(input: {
     gatewayStatus: syncedOrder?.mercado_pago_status ?? remoteStatus,
     statusDetail: snapshot?.status_detail ?? statusDetail,
     orderStatus: syncedOrder?.status ?? paymentStatusToOrderStatus(normalizedStatus),
-    voucherCode: syncedOrder?.voucher_code ?? voucherCode,
+    voucherCode: syncedOrder?.voucher_code ?? syncedOrder?.voucher_code ?? null,
     paidAt: syncedOrder?.paid_at ? new Date(syncedOrder.paid_at).toISOString() : null
   } satisfies PaymentSyncResult;
+}
+
+// Returns orders that are still pending confirmation past a grace period and look
+// like the webhook may have been lost. Used by the reconciliation worker.
+export async function findStalePendingOrders(opts: { olderThanMinutes: number; limit: number }) {
+  return query<{ id: number; payment_reference: string | null; mercado_pago_payment_id: string | null }>(
+    `SELECT TOP (@limit) o.id, o.payment_reference, o.mercado_pago_payment_id
+       FROM dbo.product_orders o
+      WHERE o.payment_status = 'pending'
+        AND o.created_at < DATEADD(MINUTE, -@olderThan, SYSUTCDATETIME())
+        AND (o.payment_reference IS NOT NULL OR o.mercado_pago_payment_id IS NOT NULL)
+      ORDER BY o.created_at ASC`,
+    (request) =>
+      request
+        .input("limit", sqlTypes.Int, opts.limit)
+        .input("olderThan", sqlTypes.Int, opts.olderThanMinutes)
+  );
+}
+
+// Manual admin-triggered cancel/refund. Marks the order as refunded; the cashback/stock
+// rollback happens through the same reconcile path so the rules stay in one place.
+export async function refundOrderManually(input: { orderId: number; actorId: number; reason?: string | null }) {
+  // Stamp the order as refunded immediately (no remote MP call assumed) and rerun the
+  // standard reconcile so notifications/cashback/stock rules apply.
+  const order = await loadOrderPaymentRow({ orderId: input.orderId });
+  if (!order) {
+    throw Object.assign(new Error("order_not_found"), { statusCode: 404 });
+  }
+  if (paymentCancelledStatuses.has(order.payment_status ?? "")) {
+    return { alreadyCancelled: true, orderId: order.id };
+  }
+
+  await withTransaction(async (tx) => {
+    const lockedRows = await tx.query<{
+      payment_status: string | null;
+      cashback_aplicado: number;
+      cashback_creditado: number;
+    }>(
+      `SELECT payment_status,
+              COALESCE(cashback_aplicado, 0) AS cashback_aplicado,
+              COALESCE(cashback_creditado, 0) AS cashback_creditado
+         FROM dbo.product_orders WITH (UPDLOCK, ROWLOCK)
+        WHERE id = @id`,
+      (request) => request.input("id", sqlTypes.BigInt, order.id)
+    );
+    const locked = lockedRows[0];
+    if (!locked) throw Object.assign(new Error("order_not_found"), { statusCode: 404 });
+    if (locked.payment_status && paymentCancelledStatuses.has(locked.payment_status)) {
+      return;
+    }
+
+    const wasApproved = locked.payment_status === "approved";
+
+    await tx.execute(
+      `UPDATE dbo.product_orders
+          SET payment_status = 'refunded',
+              status = 'cancelado',
+              updated_at = SYSUTCDATETIME()
+        WHERE id = @id`,
+      (request) => request.input("id", sqlTypes.BigInt, order.id)
+    );
+
+    await tx.execute(
+      `UPDATE dbo.products
+          SET estoque = estoque + 1,
+              updated_at = SYSUTCDATETIME()
+        WHERE id = @id AND estoque IS NOT NULL`,
+      (request) => request.input("id", sqlTypes.BigInt, order.product_id)
+    );
+
+    if (Number(order.cashback_aplicado) > 0) {
+      await refundCashbackDebit(tx, {
+        userId: order.user_id,
+        orderId: order.id,
+        valor: Number(order.cashback_aplicado),
+        descricao: `Reembolso administrativo do pedido de ${order.product_name}.`
+      });
+    }
+
+    if (wasApproved && Number(locked.cashback_creditado) > 0) {
+      await clawbackCashbackCredit(tx, {
+        userId: order.user_id,
+        orderId: order.id,
+        valor: Number(locked.cashback_creditado),
+        descricao: `Cancelamento do cashback creditado pelo pedido de ${order.product_name}.`
+      });
+    }
+
+    await tx.execute(
+      `UPDATE dbo.benefit_activations
+          SET status = 'cancelado',
+              updated_at = SYSUTCDATETIME()
+        WHERE order_id = @id AND status IN ('ativo', 'esgotado')`,
+      (request) => request.input("id", sqlTypes.BigInt, order.id)
+    );
+  });
+
+  await execute(
+    `INSERT INTO dbo.notifications (user_id, titulo, mensagem, canal)
+     VALUES (@user_id, @titulo, @mensagem, 'interno')`,
+    (request) =>
+      request
+        .input("user_id", sqlTypes.BigInt, order.user_id)
+        .input("titulo", sqlTypes.NVarChar(160), "Pedido reembolsado")
+        .input(
+          "mensagem",
+          sqlTypes.NVarChar(700),
+          `Seu pedido de ${order.product_name} foi reembolsado pela equipe. ${input.reason ?? ""}`.trim()
+        )
+  );
+
+  await writeAuditLog({
+    actorId: input.actorId,
+    action: "order.refunded_manual",
+    entityType: "product_order",
+    entityId: order.id,
+    payload: { reason: input.reason ?? null }
+  });
+
+  return { alreadyCancelled: false, orderId: order.id };
 }

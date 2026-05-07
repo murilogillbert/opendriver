@@ -169,13 +169,15 @@ export const productSchema = z.object({
   estoque: z.coerce.number().int().nonnegative().optional().nullable(),
   limite_resgates: z.coerce.number().int().nonnegative().optional().nullable(),
   destaque_home: z.boolean().default(false),
-  status: z.enum(["ativo", "pausado", "esgotado", "rascunho"]).default("ativo")
+  status: z.enum(["ativo", "pausado", "esgotado", "rascunho"]).default("ativo"),
+  cashback_percent: z.coerce.number().min(0).max(100).optional().nullable()
 });
 
 export const createOrderSchema = z.object({
   product_id: z.coerce.number().int().positive(),
   quantidade: z.coerce.number().int().positive().default(1),
-  tipo_entrega: z.enum(["digital", "fisico"]).optional()
+  tipo_entrega: z.enum(["digital", "fisico"]).optional(),
+  checkin_token: z.string().uuid().optional().nullable()
 });
 
 export const processPaymentSchema = z.object({
@@ -184,5 +186,25 @@ export const processPaymentSchema = z.object({
   token: z.string().optional().nullable(),
   installments: z.coerce.number().int().positive().default(1),
   payment_method_id: z.string().optional().nullable(),
-  issuer_id: z.string().optional().nullable()
+  issuer_id: z.string().optional().nullable(),
+  cashback_amount: z.coerce.number().nonnegative().optional().default(0),
+  checkin_token: z.string().uuid().optional().nullable()
+});
+
+export const fullCashbackOrderSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  cashback_amount: z.coerce.number().positive(),
+  checkin_token: z.string().uuid().optional().nullable()
+});
+
+export const checkinQrcodeSchema = z.object({
+  partner_id: z.coerce.number().int().positive(),
+  partner_location_id: z.coerce.number().int().positive().optional().nullable(),
+  label: z.string().trim().min(1).max(140).optional().nullable(),
+  product_ids: z.array(z.coerce.number().int().positive()).min(1),
+  status: z.enum(["ativo", "pausado"]).default("ativo")
+});
+
+export const refundOrderSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional().nullable()
 });

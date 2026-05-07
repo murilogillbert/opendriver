@@ -1,0 +1,112 @@
+import { FastifyBaseLogger } from "fastify";
+
+import { expireCashbackForAllUsers } from "./cashback.js";
+import { findStalePendingOrders, reconcileOrderPaymentStatus } from "./payments.js";
+import { execute, sqlTypes } from "./db.js";
+
+type JobHandle = {
+  stop: () => void;
+};
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+// Looks for orders still pending well after creation and asks Mercado Pago for the
+// authoritative status. Catches the case where a webhook was lost or never delivered.
+function startWebhookRetryJob(logger: FastifyBaseLogger): JobHandle {
+  const intervalMs = HOUR_MS;
+  let stopped = false;
+
+  const run = async () => {
+    if (stopped) return;
+    try {
+      const stale = await findStalePendingOrders({ olderThanMinutes: 15, limit: 50 });
+      for (const order of stale) {
+        if (stopped) break;
+        await reconcileOrderPaymentStatus({
+          orderId: order.id,
+          paymentId: order.mercado_pago_payment_id,
+          externalReference: order.payment_reference,
+          eventType: "scheduled_retry"
+        }).catch((err) => {
+          logger.warn({ err, orderId: order.id }, "webhook_retry_reconcile_failed");
+        });
+      }
+      if (stale.length > 0) {
+        logger.info({ scanned: stale.length }, "webhook_retry_job_completed");
+      }
+    } catch (err) {
+      logger.error({ err }, "webhook_retry_job_failed");
+    }
+  };
+
+  const interval = setInterval(() => void run(), intervalMs);
+  // Run once shortly after boot so we don't have to wait an hour after a deploy.
+  setTimeout(() => void run(), 30_000);
+  return { stop: () => { stopped = true; clearInterval(interval); } };
+}
+
+// Daily sweep: per-user, expire any cashback balance that came from credits older than the TTL.
+function startCashbackExpirationJob(logger: FastifyBaseLogger): JobHandle {
+  const intervalMs = DAY_MS;
+  let stopped = false;
+
+  const run = async () => {
+    if (stopped) return;
+    try {
+      const result = await expireCashbackForAllUsers();
+      if (result.totalExpired > 0 || result.usersAffected > 0) {
+        logger.info(result, "cashback_expiration_completed");
+      }
+    } catch (err) {
+      logger.error({ err }, "cashback_expiration_failed");
+    }
+  };
+
+  const interval = setInterval(() => void run(), intervalMs);
+  setTimeout(() => void run(), 60_000);
+  return { stop: () => { stopped = true; clearInterval(interval); } };
+}
+
+// Daily: mark benefit_activations as expired once their expires_at passes.
+function startBenefitExpirationJob(logger: FastifyBaseLogger): JobHandle {
+  const intervalMs = 6 * HOUR_MS;
+  let stopped = false;
+
+  const run = async () => {
+    if (stopped) return;
+    try {
+      const result = await execute<{ id: number }>(
+        `UPDATE dbo.benefit_activations
+            SET status = 'expirado', updated_at = SYSUTCDATETIME()
+          OUTPUT INSERTED.id
+          WHERE status = 'ativo' AND expires_at IS NOT NULL AND expires_at < SYSUTCDATETIME()`
+      );
+      if (result.recordset.length > 0) {
+        logger.info({ expired: result.recordset.length }, "benefit_expiration_completed");
+      }
+    } catch (err) {
+      logger.error({ err }, "benefit_expiration_failed");
+    }
+  };
+
+  const interval = setInterval(() => void run(), intervalMs);
+  setTimeout(() => void run(), 90_000);
+  return { stop: () => { stopped = true; clearInterval(interval); } };
+}
+
+export function startBackgroundJobs(logger: FastifyBaseLogger): JobHandle {
+  const handles = [
+    startWebhookRetryJob(logger),
+    startCashbackExpirationJob(logger),
+    startBenefitExpirationJob(logger)
+  ];
+  return {
+    stop: () => handles.forEach((handle) => handle.stop())
+  };
+}
+
+// Re-exported for ad-hoc execution (admin endpoints, scripts).
+export { findStalePendingOrders, expireCashbackForAllUsers };
+
+void sqlTypes; // keep import in case a future job uses parameterised queries directly

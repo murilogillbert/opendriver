@@ -13,6 +13,8 @@ import {
   BenefitActivation,
   BenefitAlert,
   BotInteraction,
+  CashbackSummary,
+  CheckinQrcode,
   Commission,
   Lead,
   Overview,
@@ -39,6 +41,8 @@ type AdminTab =
   | "alertas"
   | "receber"
   | "locations"
+  | "checkin"
+  | "cashback"
   | "auditoria";
 
 const tabs: { id: AdminTab; label: string; group: string; description: string }[] = [
@@ -50,6 +54,8 @@ const tabs: { id: AdminTab; label: string; group: string; description: string }[
   { id: "bot", label: "Bot", group: "Operacao", description: "Historico das conversas e intencoes registradas." },
   { id: "parceiros", label: "Parceiros", group: "Parceiros", description: "Rede credenciada, servicos e contatos comerciais." },
   { id: "locations", label: "Locais parceiros", group: "Parceiros", description: "Pontos fisicos usados para alertas de geolocalizacao." },
+  { id: "checkin", label: "Check-in QR", group: "Parceiros", description: "QR codes que abrem a vitrine do parceiro e liberam cashback no checkout." },
+  { id: "cashback", label: "Cashback", group: "Financeiro", description: "Saldo distribuido, top usuarios e movimentacoes." },
   { id: "validacao", label: "Validacao", group: "Beneficios", description: "Validacao operacional de tokens, QR e vouchers." },
   { id: "beneficios", label: "Beneficios ativos", group: "Beneficios", description: "Beneficios liberados para clientes e limite de resgates." },
   { id: "alertas", label: "Alertas geo", group: "Beneficios", description: "Combinacoes entre local, usuario e beneficio ativo." },
@@ -92,6 +98,8 @@ function AdminApp() {
   const [partnerLocations, setPartnerLocations] = useState<PartnerLocation[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
+  const [checkinQrcodes, setCheckinQrcodes] = useState<CheckinQrcode[]>([]);
+  const [cashbackSummary, setCashbackSummary] = useState<CashbackSummary | null>(null);
   const [redeemResult, setRedeemResult] = useState<string | null>(null);
   const [hasAdminToken, setHasAdminToken] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -127,7 +135,9 @@ function AdminApp() {
         alertsData,
         locationsData,
         auditData,
-        paymentEventsData
+        paymentEventsData,
+        checkinData,
+        cashbackData
       ] = await Promise.all([
         adminApi.overview(),
         adminApi.partners(),
@@ -146,7 +156,9 @@ function AdminApp() {
         adminApi.benefitAlerts().catch(() => []),
         adminApi.partnerLocations().catch(() => []),
         adminApi.auditLogs().catch(() => []),
-        adminApi.paymentEvents().catch(() => [])
+        adminApi.paymentEvents().catch(() => []),
+        adminApi.listCheckinQrcodes().catch(() => []),
+        adminApi.cashbackSummary().catch(() => null)
       ]);
 
       setOverview(overviewData);
@@ -167,6 +179,8 @@ function AdminApp() {
       setPartnerLocations(locationsData);
       setAuditLogs(auditData);
       setPaymentEvents(paymentEventsData);
+      setCheckinQrcodes(checkinData);
+      setCashbackSummary(cashbackData);
     } catch {
       window.localStorage.removeItem("opendriver-admin-token");
       setHasAdminToken(false);
@@ -346,7 +360,8 @@ function AdminApp() {
       delivery_deadline: String(formData.get("delivery_deadline") ?? "") || undefined,
       estoque: formData.get("estoque") ? Number(formData.get("estoque")) : undefined,
       destaque_home: formData.get("destaque_home") === "on",
-      status: String(formData.get("status"))
+      status: String(formData.get("status")),
+      cashback_percent: formData.get("cashback_percent") ? Number(formData.get("cashback_percent")) : undefined
     };
 
     try {
@@ -372,6 +387,57 @@ function AdminApp() {
 
   const setOrderStatus = async (id: number, status: string) => {
     await adminApi.updateOrderStatus(id, status);
+    await reload();
+  };
+
+  const refundOrder = async (id: number) => {
+    const reason = window.prompt("Motivo do reembolso (opcional):") ?? "";
+    if (!window.confirm(`Confirmar reembolso do pedido #${id}? Esta acao restaura estoque e estorna cashback.`)) {
+      return;
+    }
+    try {
+      await adminApi.refundOrder(id, reason);
+      setFormMessage(`Pedido #${id} reembolsado.`);
+      await reload();
+    } catch (err) {
+      setFormMessage(err instanceof Error ? err.message : "Falha ao reembolsar.");
+    }
+  };
+
+  const submitCheckinQrcode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const productIds = String(values.product_ids ?? "")
+      .split(",")
+      .map((entry) => Number(entry.trim()))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    if (productIds.length === 0) {
+      setFormMessage("Informe pelo menos um produto valido para o QR code.");
+      return;
+    }
+
+    try {
+      const created = await adminApi.createCheckinQrcode({
+        partner_id: Number(values.partner_id),
+        partner_location_id: values.partner_location_id ? Number(values.partner_location_id) : undefined,
+        label: values.label ? String(values.label) : null,
+        product_ids: productIds,
+        status: "ativo"
+      });
+      setFormMessage(`QR criado. URL: ${window.location.origin}${created.url}`);
+      form.reset();
+      await reload();
+    } catch (err) {
+      setFormMessage(err instanceof Error ? err.message : "Falha ao criar QR.");
+    }
+  };
+
+  const toggleCheckinStatus = async (qr: CheckinQrcode) => {
+    await adminApi.updateCheckinQrcode(qr.id, {
+      status: qr.status === "ativo" ? "pausado" : "ativo"
+    });
     await reload();
   };
 
@@ -660,13 +726,13 @@ function AdminApp() {
             {activeTab === "pedidos" && (
               hasAdminToken ? (
                 <DataTable
-                  headers={["Pedido", "Usuario", "Produto", "Valor", "Economia", "Voucher", "Status"]}
+                  headers={["Pedido", "Usuario", "Produto", "Valor", "Cashback", "Voucher", "Status", "Acoes"]}
                   rows={orders.map((order) => [
                     order.public_code,
                     `${order.usuario_nome} (${order.usuario_email})`,
                     `${order.produto_nome} · ${order.offer_type ?? "-"}`,
                     money(order.valor_pago_total),
-                    money(order.economia_total),
+                    `${money(order.cashback_aplicado)} usado / ${money(order.cashback_creditado)} ganho`,
                     order.voucher_code ?? "-",
                     <select
                       key={order.id}
@@ -679,12 +745,127 @@ function AdminApp() {
                       <option value="enviado">Enviado</option>
                       <option value="entregue">Entregue</option>
                       <option value="cancelado">Cancelado</option>
-                    </select>
+                    </select>,
+                    order.payment_status === "approved" || order.status === "confirmado" ? (
+                      <button
+                        key={`refund-${order.id}`}
+                        type="button"
+                        onClick={() => void refundOrder(order.id)}
+                        className="rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-black text-red-700"
+                      >
+                        Reembolsar
+                      </button>
+                    ) : (
+                      "-"
+                    )
                   ])}
                 />
               ) : (
                 <AdminLoginPrompt onLogin={loginAdmin} onBootstrap={bootstrapAdmin} />
               )
+            )}
+
+            {activeTab === "checkin" && (
+              <div className="grid gap-6 lg:grid-cols-[26rem_1fr]">
+                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                  <h2 className="text-lg font-black">Novo QR de check-in</h2>
+                  <p className="mt-2 text-xs font-semibold text-[#64748b]">
+                    Vincule um QR a um parceiro e a um conjunto de produtos. Os clientes que escanearem
+                    abrem a vitrine direta com cashback automatico.
+                  </p>
+                  <form onSubmit={submitCheckinQrcode} className="mt-4 grid gap-3">
+                    <label className="grid gap-1 text-sm font-bold">
+                      Parceiro
+                      <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <option value="">Selecione</option>
+                        {partners.map((partner) => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.nome_fantasia}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-sm font-bold">
+                      Local (opcional)
+                      <select name="partner_location_id" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <option value="">Sem local especifico</option>
+                        {partnerLocations.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.partner_nome} — {loc.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Input name="label" label="Etiqueta interna" />
+                    <Input
+                      name="product_ids"
+                      label="IDs de produto (separados por virgula)"
+                      placeholder="ex: 12, 17"
+                      required
+                    />
+                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+                      Gerar QR code
+                    </button>
+                  </form>
+                </section>
+                <DataTable
+                  headers={["Parceiro", "Local", "Etiqueta", "URL", "Produtos", "Scans", "Status", "Acoes"]}
+                  rows={checkinQrcodes.map((qr) => [
+                    qr.partner_nome,
+                    qr.location_nome ?? "-",
+                    qr.label ?? "-",
+                    <a
+                      key={`url-${qr.id}`}
+                      href={`/c/${qr.token}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs text-[#0369a1] underline"
+                    >
+                      /c/{qr.token.slice(0, 8)}…
+                    </a>,
+                    qr.product_count,
+                    qr.event_count,
+                    qr.status,
+                    <button
+                      key={`toggle-${qr.id}`}
+                      type="button"
+                      onClick={() => void toggleCheckinStatus(qr)}
+                      className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]"
+                    >
+                      {qr.status === "ativo" ? "Pausar" : "Ativar"}
+                    </button>
+                  ])}
+                />
+              </div>
+            )}
+
+            {activeTab === "cashback" && (
+              <div className="grid gap-5">
+                {cashbackSummary ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+                      <Metric label="Saldo total" value={money(cashbackSummary.totals.saldo_total)} tone="green" />
+                      <Metric label="Total creditado" value={money(cashbackSummary.totals.total_creditado)} />
+                      <Metric label="Total debitado" value={money(cashbackSummary.totals.total_debitado)} />
+                      <Metric label="Total expirado" value={money(cashbackSummary.totals.total_expirado)} />
+                      <Metric label="Usuarios" value={cashbackSummary.totals.usuarios_com_cashback} />
+                    </div>
+                    <DataTable
+                      title="Top usuarios"
+                      headers={["Usuario", "Email", "Saldo"]}
+                      rows={cashbackSummary.top_users.map((user) => [
+                        user.nome,
+                        user.email ?? "-",
+                        money(user.cashback_balance)
+                      ])}
+                    />
+                  </>
+                ) : (
+                  <div className="rounded-md border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold">
+                    Sem dados de cashback ainda.
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab === "bot" && (
@@ -798,6 +979,15 @@ function AdminApp() {
                         <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
                       </label>
                       <Input name="estoque" label="Estoque" type="number" defaultValue={editingProduct?.estoque} />
+                      <Input
+                        name="cashback_percent"
+                        label="Cashback do produto (% — sobrescreve nivel se maior)"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={100}
+                        defaultValue={editingProduct?.cashback_percent ?? 0}
+                      />
                       <label className="flex items-center gap-2 text-sm font-bold">
                         <input name="destaque_home" type="checkbox" defaultChecked={Boolean(editingProduct?.destaque_home)} />
                         Destaque na home

@@ -5,6 +5,7 @@ import { friendlyPaymentError, getToken, marketplaceApi, money, Order, Product }
 
 type CheckoutPageProps = {
   productId: number;
+  checkinToken?: string | null;
 };
 
 type CardFormData = {
@@ -59,10 +60,13 @@ const loadMercadoPagoScript = () =>
     document.head.appendChild(script);
   });
 
-function CheckoutPage({ productId }: CheckoutPageProps) {
+function CheckoutPage({ productId, checkinToken = null }: CheckoutPageProps) {
   const [product, setProduct] = useState<Product | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit_card" | "debit_card">("pix");
   const [publicKey, setPublicKey] = useState("");
+  const [cashbackBalance, setCashbackBalance] = useState(0);
+  const [useCashback, setUseCashback] = useState(false);
+  const [cashbackAmount, setCashbackAmount] = useState(0);
   const [result, setResult] = useState<{
     order: { id: number; public_code: string; voucher_code?: string } & Partial<Order>;
     payment: {
@@ -108,7 +112,26 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
       .paymentConfig()
       .then((config) => setPublicKey(config.public_key ?? ""))
       .catch(() => setPublicKey(""));
+
+    if (getToken()) {
+      void marketplaceApi
+        .myCashback()
+        .then((summary) => setCashbackBalance(summary.balance))
+        .catch(() => setCashbackBalance(0));
+    }
   }, [productId]);
+
+  // Cap the cashback request at min(balance, price). Triggered when the user toggles or edits.
+  const maxCashback = useMemo(() => {
+    if (!product) return 0;
+    return Math.min(cashbackBalance, Number(product.preco_desconto));
+  }, [product, cashbackBalance]);
+
+  const effectiveCashback = useCashback ? Math.min(cashbackAmount, maxCashback) : 0;
+  const remainingCash = product
+    ? Number(Math.max(0, Number(product.preco_desconto) - effectiveCashback).toFixed(2))
+    : 0;
+  const fullyCovered = product ? remainingCash <= 0.0099 : false;
 
   useEffect(() => {
     if (!product || !publicKey || paymentMethod === "pix" || result) {
@@ -129,7 +152,7 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
 
         brickController.current = await bricksBuilder.create("cardPayment", "cardPaymentBrick_container", {
           initialization: {
-            amount: Number(product.preco_desconto)
+            amount: remainingCash || Number(product.preco_desconto)
           },
           customization: {
             paymentMethods: {
@@ -341,7 +364,9 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
         token: formData.token,
         installments: Number(formData.installments ?? 1),
         payment_method_id: formData.payment_method_id ?? formData.paymentMethodId,
-        issuer_id: formData.issuer_id ?? formData.issuerId
+        issuer_id: formData.issuer_id ?? formData.issuerId,
+        cashback_amount: effectiveCashback,
+        checkin_token: checkinToken
       });
       finishPayment(response);
       return Promise.resolve();
@@ -369,7 +394,9 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
       const response = await marketplaceApi.processPayment({
         product_id: product.id,
         payment_method: "pix",
-        payment_method_id: "pix"
+        payment_method_id: "pix",
+        cashback_amount: effectiveCashback,
+        checkin_token: checkinToken
       });
       finishPayment(response);
     } catch (paymentError) {
@@ -494,40 +521,104 @@ function CheckoutPage({ productId }: CheckoutPageProps) {
             </div>
           ) : (
             <div className="mt-6 grid gap-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(["pix", "credit_card", "debit_card"] as const).map((method) => (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => setPaymentMethod(method)}
-                    className={`rounded-md border px-4 py-3 text-sm font-black ${
-                      paymentMethod === method ? "border-brand-gold bg-brand-gold text-brand-ink" : "border-[#ccd5e2] bg-white"
-                    }`}
-                  >
-                    {method === "pix" ? "Pix" : method === "credit_card" ? "Credito" : "Debito"}
-                  </button>
-                ))}
-              </div>
+              {cashbackBalance > 0 && (
+                <div className="rounded-md border border-brand-gold/40 bg-brand-gold/10 p-4">
+                  <label className="flex items-start gap-3 text-sm font-bold">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={useCashback}
+                      onChange={(event) => {
+                        const next = event.target.checked;
+                        setUseCashback(next);
+                        setCashbackAmount(next ? maxCashback : 0);
+                      }}
+                    />
+                    <span className="flex-1">
+                      Usar meu cashback (saldo disponivel: {money(cashbackBalance)}).
+                      {useCashback && (
+                        <span className="mt-2 grid gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={maxCashback}
+                            step={0.01}
+                            value={cashbackAmount}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                setCashbackAmount(Math.max(0, Math.min(value, maxCashback)));
+                              }
+                            }}
+                            className="w-32 rounded-md border border-[#ccd5e2] px-3 py-2"
+                          />
+                          <span className="text-xs font-semibold text-[#5a3f00]">
+                            Aplicado: {money(effectiveCashback)} (max {money(maxCashback)}).
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                </div>
+              )}
 
-              {paymentMethod === "pix" ? (
+              {fullyCovered ? (
                 <form onSubmit={submitPixPayment}>
+                  <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900">
+                    Cashback cobre o pedido inteiro. Sem cobranca no Mercado Pago.
+                  </p>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full rounded-md bg-emerald-600 px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSubmitting ? "Gerando codigo Pix..." : "Gerar Pix copia e cola"}
+                    {isSubmitting ? "Confirmando..." : `Confirmar pedido com cashback (${money(effectiveCashback)})`}
                   </button>
                 </form>
-              ) : publicKey ? (
-                <div className="rounded-md border border-[#dfe5ef] p-4">
-                  {!cardReady && <p className="text-sm font-bold text-[#68748a]">Carregando pagamento seguro...</p>}
-                  <div id="cardPaymentBrick_container" />
-                </div>
               ) : (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                  Configure VITE/MERCADO_PAGO_PUBLIC_KEY para liberar cartao.
-                </div>
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {(["pix", "credit_card", "debit_card"] as const).map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setPaymentMethod(method)}
+                        className={`rounded-md border px-4 py-3 text-sm font-black ${
+                          paymentMethod === method ? "border-brand-gold bg-brand-gold text-brand-ink" : "border-[#ccd5e2] bg-white"
+                        }`}
+                      >
+                        {method === "pix" ? "Pix" : method === "credit_card" ? "Credito" : "Debito"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {effectiveCashback > 0 && (
+                    <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
+                      Pagara {money(remainingCash)} pelo Mercado Pago e {money(effectiveCashback)} sai do cashback.
+                    </p>
+                  )}
+
+                  {paymentMethod === "pix" ? (
+                    <form onSubmit={submitPixPayment}>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isSubmitting ? "Gerando codigo Pix..." : `Gerar Pix de ${money(remainingCash)}`}
+                      </button>
+                    </form>
+                  ) : publicKey ? (
+                    <div className="rounded-md border border-[#dfe5ef] p-4">
+                      {!cardReady && <p className="text-sm font-bold text-[#68748a]">Carregando pagamento seguro...</p>}
+                      <div id="cardPaymentBrick_container" />
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                      Configure VITE/MERCADO_PAGO_PUBLIC_KEY para liberar cartao.
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

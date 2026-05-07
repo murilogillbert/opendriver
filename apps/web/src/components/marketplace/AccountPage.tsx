@@ -4,6 +4,7 @@ import { assetUrl } from "../../lib/assets";
 import {
   AuthUser,
   BenefitActivation,
+  CashbackSummary,
   clearToken,
   marketplaceApi,
   money,
@@ -30,6 +31,7 @@ function AccountPage() {
   const [savings, setSavings] = useState<SavingsSummary>(defaultSavings);
   const [profile, setProfile] = useState<(AuthUser & Record<string, string>) | null>(null);
   const [syncingOrders, setSyncingOrders] = useState<number[]>([]);
+  const [cashback, setCashback] = useState<CashbackSummary | null>(null);
 
   const loadAccountData = () => {
     void Promise.all([
@@ -37,14 +39,16 @@ function AccountPage() {
       marketplaceApi.myOrders(),
       marketplaceApi.myBenefits(),
       marketplaceApi.mySavings(),
-      marketplaceApi.myNotifications()
+      marketplaceApi.myNotifications(),
+      marketplaceApi.myCashback().catch(() => null)
     ])
-      .then(([me, orderData, benefitData, savingsData, notificationData]) => {
+      .then(([me, orderData, benefitData, savingsData, notificationData, cashbackData]) => {
         setProfile(me);
         setOrders(orderData);
         setBenefits(benefitData);
         setSavings(savingsData);
         setNotifications(notificationData);
+        setCashback(cashbackData);
       })
       .catch(() => {
         window.history.pushState(null, "", "/entrar");
@@ -119,11 +123,49 @@ function AccountPage() {
           </button>
         </header>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
           <Metric label="Economia acumulada" value={money(savings.economia_total)} />
           <Metric label="Pedidos" value={savings.pedidos} />
           <Metric label="Nivel" value={savings.nivel_atual} />
+          <Metric label="Cashback disponivel" value={money(cashback?.balance ?? 0)} />
         </div>
+
+        {cashback && (
+          <section className="mt-6 rounded-md border border-brand-gold/40 bg-brand-gold/10 p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-gold">
+                  Carteira de cashback
+                </p>
+                <h2 className="mt-2 text-2xl font-black">{money(cashback.balance)}</h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-[#5a3f00]">
+                  Voce ganha <strong>{cashback.effective_rate}%</strong> de cashback (nivel {cashback.tier}) em cada compra.
+                  Use no checkout como desconto direto.
+                </p>
+                {cashback.expiring_soon > 0 && (
+                  <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">
+                    {money(cashback.expiring_soon)} expira nos proximos 30 dias se nao for usado.
+                  </p>
+                )}
+              </div>
+              <div className="grid w-full max-w-sm gap-2 rounded-md bg-white p-4 text-xs font-bold">
+                <p className="text-[0.7rem] font-black uppercase tracking-[0.14em] text-[#7a8496]">Ultimas movimentacoes</p>
+                {cashback.transactions.length === 0 ? (
+                  <span className="text-[#68748a]">Nenhuma movimentacao ainda.</span>
+                ) : (
+                  cashback.transactions.slice(0, 5).map((tx) => (
+                    <div key={tx.id} className="flex items-center justify-between gap-3 border-t border-[#edf1f6] pt-2 first:border-t-0 first:pt-0">
+                      <span className="capitalize text-[#425166]">{tx.tipo}</span>
+                      <span className={tx.tipo === "credito" || tx.tipo === "estornado" ? "text-emerald-700" : "text-red-700"}>
+                        {tx.tipo === "credito" || tx.tipo === "estornado" ? "+" : "-"}{money(Number(tx.valor))}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           <Metric label="Meus vouchers" value={vouchers.length} />

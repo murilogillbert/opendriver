@@ -9,7 +9,9 @@ import { ZodError } from "zod";
 
 import { config } from "./config.js";
 import { registerBenefitRoutes } from "./benefitRoutes.js";
+import { registerCheckinRoutes } from "./checkinRoutes.js";
 import { registerGeoRoutes } from "./geoRoutes.js";
+import { startBackgroundJobs } from "./jobs.js";
 import { registerMarketplaceRoutes } from "./marketplaceRoutes.js";
 import { registerPaymentWebhookRoutes } from "./paymentWebhooks.js";
 import { registerRoutes } from "./routes.js";
@@ -81,8 +83,13 @@ await registerMarketplaceRoutes(app);
 await registerPaymentWebhookRoutes(app);
 await registerBenefitRoutes(app);
 await registerGeoRoutes(app);
+await registerCheckinRoutes(app);
 
 await app.listen({
   port: config.port,
   host: "0.0.0.0"
 });
+
+if (process.env.DISABLE_BACKGROUND_JOBS !== "1") {
+  startBackgroundJobs(app.log);
+}

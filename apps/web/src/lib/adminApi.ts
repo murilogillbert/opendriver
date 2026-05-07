@@ -70,6 +70,33 @@ export type AdminProduct = {
   estoque?: number;
   destaque_home: boolean;
   status: string;
+  cashback_percent?: number | null;
+};
+
+export type CheckinQrcode = {
+  id: number;
+  partner_id: number;
+  partner_nome: string;
+  partner_location_id?: number | null;
+  location_nome?: string | null;
+  token: string;
+  label?: string | null;
+  status: "ativo" | "pausado";
+  product_count: number;
+  event_count: number;
+  created_at: string;
+};
+
+export type CashbackSummary = {
+  totals: {
+    saldo_total: number;
+    total_creditado: number;
+    total_debitado: number;
+    total_expirado: number;
+    total_estornado: number;
+    usuarios_com_cashback: number;
+  };
+  top_users: Array<{ id: number; nome: string; email: string; cashback_balance: number }>;
 };
 
 export type AdminUser = {
@@ -106,6 +133,8 @@ export type AdminOrder = {
   payment_status?: string;
   payment_method?: string;
   created_at: string;
+  cashback_aplicado?: number;
+  cashback_creditado?: number;
 };
 
 export type Overview = {
@@ -442,6 +471,45 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify(payload)
     });
+  },
+  async listCheckinQrcodes() {
+    return (await request<CheckinQrcode[]>("/admin/checkin-qrcodes")).data;
+  },
+  async createCheckinQrcode(payload: {
+    partner_id: number;
+    partner_location_id?: number | null;
+    label?: string | null;
+    product_ids: number[];
+    status?: "ativo" | "pausado";
+  }) {
+    return (
+      await request<{ id: number; token: string; url: string }>("/admin/checkin-qrcodes", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      })
+    ).data;
+  },
+  async updateCheckinQrcode(
+    id: number,
+    payload: { status?: "ativo" | "pausado"; label?: string | null; product_ids?: number[] }
+  ) {
+    return (
+      await request<{ id: number }>(`/admin/checkin-qrcodes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      })
+    ).data;
+  },
+  async cashbackSummary() {
+    return (await request<CashbackSummary>("/admin/cashback-summary")).data;
+  },
+  async refundOrder(orderId: number, reason?: string) {
+    return (
+      await request<{ orderId: number; alreadyCancelled: boolean }>(`/admin/orders/${orderId}/refund`, {
+        method: "POST",
+        body: JSON.stringify({ reason })
+      })
+    ).data;
   },
   async redeemBenefit(payload: {
     redemption_token: string;

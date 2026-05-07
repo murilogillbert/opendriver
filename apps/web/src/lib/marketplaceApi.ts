@@ -69,6 +69,8 @@ export type Order = {
   last_synced_at?: string;
   paid_at?: string;
   created_at: string;
+  cashback_aplicado?: number;
+  cashback_creditado?: number;
 };
 
 export type PaymentStatusSnapshot = {
@@ -100,6 +102,48 @@ export type BenefitActivation = {
   imagem_url?: string;
   status: string;
   created_at: string;
+};
+
+export type CashbackTier = "Bronze" | "Prata" | "Ouro";
+
+export type CashbackTransaction = {
+  id: number;
+  order_id: number | null;
+  tipo: "credito" | "debito" | "expirado" | "estornado";
+  valor: number;
+  saldo_apos: number;
+  descricao: string | null;
+  expires_at: string | null;
+  created_at: string;
+};
+
+export type CashbackSummary = {
+  balance: number;
+  tier: CashbackTier;
+  tier_rate: number;
+  monthly_acquisitions: number;
+  expiring_soon: number;
+  effective_rate: number;
+  transactions: CashbackTransaction[];
+};
+
+export type CheckinPageData = {
+  qrcode: { id: number; token: string; label: string | null };
+  partner: { id: number; nome: string; cidade: string; estado: string };
+  location: { id: number; nome: string | null; endereco: string | null } | null;
+  products: Array<{
+    id: number;
+    nome: string;
+    slug: string;
+    descricao_curta: string;
+    preco_original: number;
+    preco_desconto: number;
+    economia_estimada: number;
+    imagem_url?: string | null;
+    cashback_percent?: number | null;
+    offer_type?: string;
+    delivery_method?: string;
+  }>;
 };
 
 export type SavingsSummary = {
@@ -229,22 +273,39 @@ export const marketplaceApi = {
     installments?: number;
     payment_method_id?: string;
     issuer_id?: string;
+    cashback_amount?: number;
+    checkin_token?: string | null;
   }) {
     return (
       await request<{
         order: { id: number; public_code: string; voucher_code?: string };
         payment: {
-          id?: string | number;
+          id?: string | number | null;
           status: string;
           status_detail?: string;
           external_reference?: string;
           qr_code_base64?: string;
           qr_code?: string;
           ticket_url?: string;
+          cashback_used?: number;
         };
       }>("/payments/process_payment", {
         method: "POST",
         body: JSON.stringify(input)
+      })
+    ).data;
+  },
+  async myCashback() {
+    return (await request<CashbackSummary>("/cashback/my")).data;
+  },
+  async loadCheckin(token: string) {
+    return (await request<CheckinPageData>(`/checkin/${encodeURIComponent(token)}`)).data;
+  },
+  async trackCheckin(token: string) {
+    return (
+      await request<{ tracked: boolean }>(`/checkin/${encodeURIComponent(token)}/track`, {
+        method: "POST",
+        body: JSON.stringify({})
       })
     ).data;
   },

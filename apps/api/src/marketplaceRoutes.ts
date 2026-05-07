@@ -6,8 +6,15 @@ import { z } from "zod";
 import { clientIp, hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
 import { writeAuditLog } from "./audit.js";
 import { createBenefitActivation, shouldCreateActivationFor } from "./benefits.js";
+import {
+  debitCashback,
+  ensureOrderCashbackCredit,
+  effectiveCashbackPercent,
+  listCashbackTransactions,
+  loadCashbackBalance
+} from "./cashback.js";
 import { config } from "./config.js";
-import { execute, query, sqlTypes } from "./db.js";
+import { execute, query, sqlTypes, withTransaction } from "./db.js";
 import {
   createMercadoPagoPayment,
   generatePaymentReference,
@@ -16,15 +23,18 @@ import {
   normalizeMercadoPagoStatus,
   paymentStatusToOrderStatus,
   recordPaymentTransaction,
-  reconcileOrderPaymentStatus
+  reconcileOrderPaymentStatus,
+  refundOrderManually
 } from "./payments.js";
 import { saveUpload } from "./upload.js";
 import {
+  checkinQrcodeSchema,
   createOrderSchema,
   forgotPasswordSchema,
   loginSchema,
   processPaymentSchema,
   productSchema,
+  refundOrderSchema,
   registerSchema
 } from "./schemas.js";
 
@@ -69,14 +79,57 @@ async function getProductForCheckout(productId: number) {
     economia_estimada: number;
     status: string;
     limite_resgates: number | null;
+    cashback_percent: number | null;
   }>(
-    `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto, economia_estimada, status, limite_resgates
+    `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto, economia_estimada, status, limite_resgates, cashback_percent
        FROM dbo.products
       WHERE id = @id AND status = 'ativo'`,
     (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, productId)
   );
 
   return products[0];
+}
+
+// Records a check-in event for the given QR token (if present and active) and returns its id
+// so the order created next can be linked back to the partner location.
+async function resolveCheckinEventId(
+  token: string | null | undefined,
+  userId: number,
+  request: import("fastify").FastifyRequest
+): Promise<number | null> {
+  if (!token) return null;
+  const qrcodes = await query<{ id: number; status: string }>(
+    `SELECT TOP 1 id, status FROM dbo.checkin_qrcodes WHERE token = @token`,
+    (sqlRequest) => sqlRequest.input("token", sqlTypes.UniqueIdentifier, token)
+  );
+  const qr = qrcodes[0];
+  if (!qr || qr.status !== "ativo") return null;
+
+  const result = await execute<{ id: number }>(
+    `INSERT INTO dbo.checkin_events (qrcode_id, user_id, ip_address, user_agent)
+     OUTPUT INSERTED.id
+     VALUES (@qrcode_id, @user_id, @ip, @ua)`,
+    (sqlRequest) =>
+      sqlRequest
+        .input("qrcode_id", sqlTypes.BigInt, qr.id)
+        .input("user_id", sqlTypes.BigInt, userId)
+        .input("ip", sqlTypes.VarChar(64), clientIp(request))
+        .input("ua", sqlTypes.NVarChar(240), (request.headers["user-agent"] as string | undefined) ?? null)
+  );
+  return result.recordset[0]?.id ?? null;
+}
+
+// Atomic stock decrement: returns false if the product has finite stock and is depleted.
+async function tryDecrementStock(productId: number) {
+  const result = await execute<{ id: number }>(
+    `UPDATE dbo.products
+        SET estoque = estoque - 1,
+            updated_at = SYSUTCDATETIME()
+       OUTPUT INSERTED.id
+      WHERE id = @id AND (estoque IS NULL OR estoque > 0)`,
+    (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, productId)
+  );
+  return result.recordset.length > 0;
 }
 
 async function createOrderRecord(input: {
@@ -97,6 +150,9 @@ async function createOrderRecord(input: {
   paymentReference?: string | null;
   mercadoPagoPaymentId?: string | number | null;
   mercadoPagoStatus?: string | null;
+  cashbackApplied?: number;
+  paidTotalOverride?: number | null;
+  checkinEventId?: number | null;
 }) {
   const userRows = await query<{
     email: string;
@@ -121,24 +177,28 @@ async function createOrderRecord(input: {
   const orderStatus = paymentStatusToOrderStatus(paymentStatus);
   const code = deliveryType === "digital" && paymentStatus === "approved" ? generateVoucherCode() : null;
 
+  const paidTotal = input.paidTotalOverride != null ? input.paidTotalOverride : Number(input.product.preco_desconto);
+
   const result = await execute<{ id: number; public_code: string; voucher_code: string | null }>(
     `INSERT INTO dbo.product_orders (
         user_id, product_id, quantidade, valor_original_total, valor_pago_total,
         economia_total, tipo_entrega, email_entrega, endereco_entrega, voucher_code, status, payment_reference,
-        payment_status, payment_method, mercado_pago_payment_id, mercado_pago_status, paid_at
+        payment_status, payment_method, mercado_pago_payment_id, mercado_pago_status, paid_at,
+        cashback_aplicado, checkin_event_id
       )
       OUTPUT INSERTED.id, INSERTED.public_code, INSERTED.voucher_code
       VALUES (
         @user_id, @product_id, 1, @valor_original_total, @valor_pago_total,
         @economia_total, @tipo_entrega, @email_entrega, @endereco_entrega, @voucher_code, @status, @payment_reference,
-        @payment_status, @payment_method, @mercado_pago_payment_id, @mercado_pago_status, @paid_at
+        @payment_status, @payment_method, @mercado_pago_payment_id, @mercado_pago_status, @paid_at,
+        @cashback_aplicado, @checkin_event_id
       )`,
     (sqlRequest) =>
       sqlRequest
         .input("user_id", sqlTypes.BigInt, input.userId)
         .input("product_id", sqlTypes.BigInt, input.product.id)
         .input("valor_original_total", sqlTypes.Decimal(12, 2), input.product.preco_original)
-        .input("valor_pago_total", sqlTypes.Decimal(12, 2), input.product.preco_desconto)
+        .input("valor_pago_total", sqlTypes.Decimal(12, 2), paidTotal)
         .input("economia_total", sqlTypes.Decimal(12, 2), input.product.economia_estimada)
         .input("tipo_entrega", sqlTypes.VarChar(20), deliveryType)
         .input("email_entrega", sqlTypes.NVarChar(180), deliveryType === "digital" ? profile.email : null)
@@ -151,6 +211,8 @@ async function createOrderRecord(input: {
         .input("mercado_pago_payment_id", sqlTypes.NVarChar(80), input.mercadoPagoPaymentId ? String(input.mercadoPagoPaymentId) : null)
         .input("mercado_pago_status", sqlTypes.NVarChar(80), input.mercadoPagoStatus ?? null)
         .input("paid_at", sqlTypes.DateTime2, paymentStatus === "approved" ? new Date() : null)
+        .input("cashback_aplicado", sqlTypes.Decimal(12, 2), input.cashbackApplied ?? 0)
+        .input("checkin_event_id", sqlTypes.BigInt, input.checkinEventId ?? null)
   );
 
   const orderRow = result.recordset[0];
@@ -763,14 +825,16 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           category_id, partner_id, nome, slug, descricao_curta, descricao, tipo, tipo_entrega,
           preco_original, preco_desconto, economia_estimada, economia_mensal_estimada,
           imagem_url, gallery_urls, video_url, usage_rules, delivery_deadline,
-          estoque, limite_resgates, destaque_home, status, offer_type, delivery_method
+          estoque, limite_resgates, destaque_home, status, offer_type, delivery_method,
+          cashback_percent
         )
         OUTPUT INSERTED.id
         VALUES (
           @category_id, @partner_id, @nome, @slug, @descricao_curta, @descricao, @tipo, @tipo_entrega,
           @preco_original, @preco_desconto, @economia_estimada, @economia_mensal_estimada,
           @imagem_url, @gallery_urls, @video_url, @usage_rules, @delivery_deadline,
-          @estoque, @limite_resgates, @destaque_home, @status, @offer_type, @delivery_method
+          @estoque, @limite_resgates, @destaque_home, @status, @offer_type, @delivery_method,
+          @cashback_percent
         )`,
       (sqlRequest) =>
         sqlRequest
@@ -797,6 +861,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("limite_resgates", sqlTypes.Int, body.limite_resgates ?? null)
           .input("destaque_home", sqlTypes.Bit, body.destaque_home)
           .input("status", sqlTypes.VarChar(20), body.status)
+          .input("cashback_percent", sqlTypes.Decimal(5, 2), body.cashback_percent ?? null)
     );
 
     return reply.code(201).send({ data: result.recordset[0] });
@@ -834,6 +899,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
               limite_resgates = @limite_resgates,
               destaque_home = @destaque_home,
               status = @status,
+              cashback_percent = @cashback_percent,
               updated_at = SYSUTCDATETIME()
         WHERE id = @id`,
       (sqlRequest) =>
@@ -862,6 +928,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("limite_resgates", sqlTypes.Int, body.limite_resgates ?? null)
           .input("destaque_home", sqlTypes.Bit, body.destaque_home)
           .input("status", sqlTypes.VarChar(20), body.status)
+          .input("cashback_percent", sqlTypes.Decimal(5, 2), body.cashback_percent ?? null)
     );
 
     return { data: { id: Number(params.id) } };
@@ -1001,6 +1068,11 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "invalid_delivery_type" });
     }
 
+    const stockOk = await tryDecrementStock(product.id);
+    if (!stockOk) {
+      return reply.code(409).send({ error: "out_of_stock" });
+    }
+
     const userRows = await query<{
       email: string;
       endereco: string;
@@ -1101,11 +1173,101 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "user_profile_incomplete" });
     }
 
-    const transactionAmount = Number(product.preco_desconto);
+    const productPrice = Number(product.preco_desconto);
+    const requestedCashback = Number((body.cashback_amount ?? 0).toFixed(2));
+    if (requestedCashback > productPrice + 0.0001) {
+      return reply.code(400).send({ error: "cashback_amount_exceeds_total" });
+    }
+
+    // Resolve check-in association up front so a stock failure doesn't leave a dangling event.
+    const checkinEventId = await resolveCheckinEventId(body.checkin_token, user.id, request);
+
+    // Reserve stock immediately. Restored later if the order ends up cancelled/refunded.
+    const stockOk = await tryDecrementStock(product.id);
+    if (!stockOk) {
+      return reply.code(409).send({ error: "out_of_stock" });
+    }
+
+    const cashAmount = Number((productPrice - requestedCashback).toFixed(2));
+    const fullyCovered = cashAmount <= 0.0099;
     const paymentReference = generatePaymentReference(user.id, product.id);
+
+    // 100% paid with cashback: skip MP entirely and approve immediately.
+    if (fullyCovered) {
+      const debitResult = requestedCashback > 0
+        ? await withTransaction((tx) =>
+            debitCashback(tx, {
+              userId: user.id,
+              orderId: null,
+              valor: requestedCashback,
+              descricao: `Pagamento integral em cashback de ${product.nome}.`
+            })
+          )
+        : ({ ok: true, saldoApos: 0, valor: 0 } as const);
+
+      if (!debitResult.ok) {
+        // Restore the stock we just reserved.
+        await execute(
+          `UPDATE dbo.products SET estoque = estoque + 1 WHERE id = @id AND estoque IS NOT NULL`,
+          (req) => req.input("id", sqlTypes.BigInt, product.id)
+        );
+        return reply.code(409).send({ error: "insufficient_cashback_balance" });
+      }
+
+      const order = await createOrderRecord({
+        userId: user.id,
+        product,
+        paymentStatus: "approved",
+        paymentMethod: "cashback",
+        paymentReference,
+        mercadoPagoPaymentId: null,
+        mercadoPagoStatus: "approved",
+        cashbackApplied: requestedCashback,
+        paidTotalOverride: 0,
+        checkinEventId
+      });
+
+      // Re-key the cashback debit transaction to the order id (created after the debit).
+      await execute(
+        `UPDATE dbo.cashback_transactions
+            SET order_id = @order_id
+          WHERE id = (SELECT TOP 1 id FROM dbo.cashback_transactions
+                       WHERE user_id = @user_id AND order_id IS NULL AND tipo = 'debito'
+                       ORDER BY created_at DESC)`,
+        (req) =>
+          req
+            .input("order_id", sqlTypes.BigInt, order.id)
+            .input("user_id", sqlTypes.BigInt, user.id)
+      );
+
+      // Issue any tier-based cashback on this purchase too. Computed on cashAmount=0,
+      // so it credits 0; harmless. Kept for symmetry/idempotency.
+      await ensureOrderCashbackCredit({
+        userId: user.id,
+        orderId: order.id,
+        paidAmount: 0,
+        productCashbackPercent: product.cashback_percent ?? null,
+        productName: product.nome
+      }).catch((err) => request.log.error({ err }, "ensure_cashback_credit_failed"));
+
+      return reply.code(201).send({
+        data: {
+          order,
+          payment: {
+            id: null,
+            status: "approved",
+            status_detail: "fully_paid_with_cashback",
+            external_reference: paymentReference,
+            cashback_used: requestedCashback
+          }
+        }
+      });
+    }
+
+    // Mixed cashback + Mercado Pago, or cashback=0 + Mercado Pago.
     const paymentMethodId = body.payment_method === "pix" ? "pix" : body.payment_method_id;
     const mpBody: Record<string, unknown> = {
-      transaction_amount: transactionAmount,
+      transaction_amount: cashAmount,
       description: product.nome,
       payment_method_id: paymentMethodId,
       external_reference: paymentReference,
@@ -1124,9 +1286,17 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
     if (body.payment_method !== "pix") {
       if (!body.token) {
+        await execute(
+          `UPDATE dbo.products SET estoque = estoque + 1 WHERE id = @id AND estoque IS NOT NULL`,
+          (req) => req.input("id", sqlTypes.BigInt, product.id)
+        );
         return reply.code(400).send({ error: "card_token_required" });
       }
       if (!paymentMethodId) {
+        await execute(
+          `UPDATE dbo.products SET estoque = estoque + 1 WHERE id = @id AND estoque IS NOT NULL`,
+          (req) => req.input("id", sqlTypes.BigInt, product.id)
+        );
         return reply.code(400).send({ error: "card_payment_method_required" });
       }
 
@@ -1137,7 +1307,51 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       }
     }
 
-    const mpPayment = await createMercadoPagoPayment(mpBody);
+    // Debit the cashback portion BEFORE talking to MP, so a payment that succeeds is fully
+    // backed. If MP fails afterwards we refund the cashback and restore the stock.
+    let cashbackDebited = 0;
+    if (requestedCashback > 0) {
+      const debit = await withTransaction((tx) =>
+        debitCashback(tx, {
+          userId: user.id,
+          orderId: null,
+          valor: requestedCashback,
+          descricao: `Pagamento parcial em cashback de ${product.nome}.`
+        })
+      );
+      if (!debit.ok) {
+        await execute(
+          `UPDATE dbo.products SET estoque = estoque + 1 WHERE id = @id AND estoque IS NOT NULL`,
+          (req) => req.input("id", sqlTypes.BigInt, product.id)
+        );
+        return reply.code(409).send({ error: "insufficient_cashback_balance" });
+      }
+      cashbackDebited = requestedCashback;
+    }
+
+    let mpPayment: Awaited<ReturnType<typeof createMercadoPagoPayment>>;
+    try {
+      mpPayment = await createMercadoPagoPayment(mpBody);
+    } catch (err) {
+      // Rollback both reservations.
+      if (cashbackDebited > 0) {
+        await withTransaction((tx) =>
+          tx.execute(
+            `UPDATE dbo.users SET cashback_balance = cashback_balance + @valor, updated_at = SYSUTCDATETIME() WHERE id = @id`,
+            (req) =>
+              req
+                .input("id", sqlTypes.BigInt, user.id)
+                .input("valor", sqlTypes.Decimal(12, 2), cashbackDebited)
+          )
+        ).catch((rollbackErr) => request.log.error({ rollbackErr }, "cashback_rollback_failed"));
+      }
+      await execute(
+        `UPDATE dbo.products SET estoque = estoque + 1 WHERE id = @id AND estoque IS NOT NULL`,
+        (req) => req.input("id", sqlTypes.BigInt, product.id)
+      );
+      throw err;
+    }
+
     const mpStatus = String(mpPayment.status ?? "pending");
     const paymentStatus = normalizeMercadoPagoStatus(mpStatus);
     const order = await createOrderRecord({
@@ -1147,8 +1361,25 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       paymentMethod: body.payment_method,
       paymentReference,
       mercadoPagoPaymentId: mpPayment.id as string | number | undefined,
-      mercadoPagoStatus: mpStatus
+      mercadoPagoStatus: mpStatus,
+      cashbackApplied: cashbackDebited,
+      paidTotalOverride: cashAmount,
+      checkinEventId
     });
+
+    if (cashbackDebited > 0) {
+      await execute(
+        `UPDATE dbo.cashback_transactions
+            SET order_id = @order_id
+          WHERE id = (SELECT TOP 1 id FROM dbo.cashback_transactions
+                       WHERE user_id = @user_id AND order_id IS NULL AND tipo = 'debito'
+                       ORDER BY created_at DESC)`,
+        (req) =>
+          req
+            .input("order_id", sqlTypes.BigInt, order.id)
+            .input("user_id", sqlTypes.BigInt, user.id)
+      );
+    }
 
     await recordPaymentTransaction({
       orderId: order.id,
@@ -1158,12 +1389,23 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       externalPaymentId:
         typeof mpPayment.id === "number" || typeof mpPayment.id === "string" ? String(mpPayment.id) : null,
       paymentMethod: body.payment_method,
-      amount: transactionAmount,
+      amount: cashAmount,
       status: paymentStatus,
       statusDetail: typeof mpPayment.status_detail === "string" ? mpPayment.status_detail : null,
       requestPayload: mpBody,
       responsePayload: mpPayment
     });
+
+    // If MP returned approved synchronously (rare for Pix, common for cards), fire cashback credit now.
+    if (paymentStatus === "approved") {
+      await ensureOrderCashbackCredit({
+        userId: user.id,
+        orderId: order.id,
+        paidAmount: cashAmount,
+        productCashbackPercent: product.cashback_percent ?? null,
+        productName: product.nome
+      }).catch((err) => request.log.error({ err }, "ensure_cashback_credit_failed"));
+    }
 
     const pointOfInteraction = mpPayment.point_of_interaction as
       | {
@@ -1185,7 +1427,8 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           external_reference: paymentReference,
           qr_code_base64: pointOfInteraction?.transaction_data?.qr_code_base64,
           qr_code: pointOfInteraction?.transaction_data?.qr_code,
-          ticket_url: pointOfInteraction?.transaction_data?.ticket_url
+          ticket_url: pointOfInteraction?.transaction_data?.ticket_url,
+          cashback_used: cashbackDebited
         }
       }
     });
@@ -1340,6 +1583,44 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
         nivel_status: monthlyAcquisitions >= 5 ? "nivel_liberado" : "em_progresso"
       }
     };
+  });
+
+  app.get("/api/cashback/my", async (request) => {
+    const user = await requireUser(request);
+    const [balance, transactions, percent] = await Promise.all([
+      loadCashbackBalance(user.id),
+      listCashbackTransactions(user.id, 30),
+      effectiveCashbackPercent({ userId: user.id, productCashbackPercent: null })
+    ]);
+    return {
+      data: {
+        balance: balance.balance,
+        tier: balance.tier,
+        tier_rate: balance.tierRate,
+        monthly_acquisitions: balance.monthlyAcquisitions,
+        expiring_soon: balance.expiringSoon,
+        effective_rate: percent,
+        transactions
+      }
+    };
+  });
+
+  app.post("/api/admin/orders/:id/refund", async (request, reply) => {
+    const admin = await requireAdmin(request);
+    const params = request.params as { id: string };
+    const body = refundOrderSchema.parse(request.body ?? {});
+    const orderId = Number(params.id);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      return reply.code(400).send({ error: "invalid_order_id" });
+    }
+
+    const result = await refundOrderManually({
+      orderId,
+      actorId: admin.id,
+      reason: body.reason ?? null
+    });
+
+    return reply.code(200).send({ data: result });
   });
 
   app.get("/api/notifications/my", async (request) => {

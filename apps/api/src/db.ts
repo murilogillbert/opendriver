@@ -49,3 +49,46 @@ export async function execute<T = unknown>(
 
   return request.query<T>(text);
 }
+
+export type TxRunner = {
+  query: <T = unknown>(text: string, bind?: (request: sql.Request) => sql.Request) => Promise<T[]>;
+  execute: <T = unknown>(text: string, bind?: (request: sql.Request) => sql.Request) => Promise<sql.IResult<T>>;
+  raw: sql.Transaction;
+};
+
+export async function withTransaction<T>(
+  fn: (tx: TxRunner) => Promise<T>,
+  isolation: sql.IIsolationLevel = sqlTypes.ISOLATION_LEVEL.READ_COMMITTED
+): Promise<T> {
+  const pool = await getPool();
+  const tx = new sqlTypes.Transaction(pool);
+  await tx.begin(isolation);
+
+  const runner: TxRunner = {
+    raw: tx,
+    async query<U>(text: string, bind?: (request: sql.Request) => sql.Request) {
+      const request = new sqlTypes.Request(tx);
+      const bound = bind ? bind(request) : request;
+      const result = await bound.query<U>(text);
+      return result.recordset;
+    },
+    async execute<U>(text: string, bind?: (request: sql.Request) => sql.Request) {
+      const request = new sqlTypes.Request(tx);
+      const bound = bind ? bind(request) : request;
+      return bound.query<U>(text);
+    }
+  };
+
+  try {
+    const result = await fn(runner);
+    await tx.commit();
+    return result;
+  } catch (error) {
+    try {
+      await tx.rollback();
+    } catch {
+      // Rollback can fail if the transaction was already aborted by SQL Server (e.g. XACT_ABORT). Swallow to surface the original error.
+    }
+    throw error;
+  }
+}
