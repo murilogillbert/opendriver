@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { writeAuditLog } from "./audit.js";
-import { requireAdmin, requireUser } from "./auth.js";
+import { requireAdmin, requirePartner, requireUser } from "./auth.js";
 import { ensureActivationForOrder } from "./benefits.js";
 import { execute, query, sqlTypes } from "./db.js";
 
@@ -107,6 +107,9 @@ export async function registerBenefitRoutes(app: FastifyInstance) {
     if (actor.tipo_usuario !== "admin" && actor.tipo_usuario !== "parceiro") {
       return reply.code(403).send({ error: "forbidden" });
     }
+    if (actor.password_must_change) {
+      return reply.code(409).send({ error: "password_change_required" });
+    }
 
     const body = redeemSchema.parse(request.body);
     const activation = await loadActivationByToken(body.redemption_token);
@@ -124,7 +127,20 @@ export async function registerBenefitRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "activation_exhausted" });
     }
 
-    const partnerId = body.partner_id ?? activation.partner_id ?? null;
+    // For partner accounts the partner_id is forced from the JWT to prevent a partner
+    // from validating someone else's voucher and routing the receivable to themselves.
+    // Admins keep the freedom to override (e.g. helping a partner over the phone).
+    const partnerId =
+      actor.tipo_usuario === "parceiro"
+        ? Number(actor.partner_id)
+        : body.partner_id ?? activation.partner_id ?? null;
+    if (
+      actor.tipo_usuario === "parceiro" &&
+      activation.partner_id != null &&
+      Number(activation.partner_id) !== Number(actor.partner_id)
+    ) {
+      return reply.code(403).send({ error: "voucher_belongs_to_another_partner" });
+    }
     const valor = body.valor_referencia ?? Number(activation.economia_estimada ?? 0);
 
     const insert = await execute<{ id: number }>(

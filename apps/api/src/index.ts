@@ -13,6 +13,7 @@ import { registerCheckinRoutes } from "./checkinRoutes.js";
 import { registerGeoRoutes } from "./geoRoutes.js";
 import { startBackgroundJobs } from "./jobs.js";
 import { registerMarketplaceRoutes } from "./marketplaceRoutes.js";
+import { registerPartnerRoutes } from "./partnerRoutes.js";
 import { registerPaymentWebhookRoutes } from "./paymentWebhooks.js";
 import { registerRoutes } from "./routes.js";
 
@@ -84,6 +85,7 @@ await registerPaymentWebhookRoutes(app);
 await registerBenefitRoutes(app);
 await registerGeoRoutes(app);
 await registerCheckinRoutes(app);
+await registerPartnerRoutes(app);
 
 await app.listen({
   port: config.port,

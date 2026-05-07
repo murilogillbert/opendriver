@@ -11,6 +11,8 @@ export type AuthUser = {
   nome: string;
   tipo_usuario: "motorista" | "passageiro" | "parceiro" | "admin";
   token_version?: number;
+  partner_id?: number | null;
+  password_must_change?: boolean;
 };
 
 type JwtPayload = {
@@ -60,8 +62,11 @@ export async function requireUser(request: FastifyRequest) {
     throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
   }
 
-  const users = await query<AuthUser & { token_version: number }>(
-    `SELECT id, email, nome, tipo_usuario, COALESCE(token_version, 0) AS token_version
+  const users = await query<AuthUser & { token_version: number; password_must_change: boolean }>(
+    `SELECT id, email, nome, tipo_usuario,
+            COALESCE(token_version, 0) AS token_version,
+            partner_id,
+            COALESCE(password_must_change, 0) AS password_must_change
        FROM dbo.users
       WHERE id = @id AND status = 'ativo'`,
     (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, payload.sub)
@@ -79,7 +84,11 @@ export async function requireUser(request: FastifyRequest) {
     throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
   }
 
-  return user;
+  return {
+    ...user,
+    password_must_change: Boolean(user.password_must_change),
+    partner_id: user.partner_id == null ? null : Number(user.partner_id)
+  };
 }
 
 export async function requireAdmin(request: FastifyRequest) {
@@ -90,6 +99,19 @@ export async function requireAdmin(request: FastifyRequest) {
   }
 
   return user;
+}
+
+// Requires the caller to be authenticated as a partner with a valid partner_id link.
+// Used by the partner terminal endpoints — admins should hit the regular /api/admin/* routes.
+export async function requirePartner(request: FastifyRequest) {
+  const user = await requireUser(request);
+  if (user.tipo_usuario !== "parceiro") {
+    throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  }
+  if (user.partner_id == null) {
+    throw Object.assign(new Error("partner_account_unlinked"), { statusCode: 409 });
+  }
+  return user as AuthUser & { partner_id: number };
 }
 
 export function clientIp(request: FastifyRequest): string | null {

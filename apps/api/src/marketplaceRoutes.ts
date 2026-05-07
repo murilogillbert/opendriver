@@ -474,11 +474,15 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
         token_version: number;
         failed_login_count: number;
         lockout_until: Date | null;
+        partner_id: number | null;
+        password_must_change: boolean | number;
       }>(
         `SELECT id, email, nome, tipo_usuario, password_hash, status,
                 COALESCE(token_version, 0) AS token_version,
                 COALESCE(failed_login_count, 0) AS failed_login_count,
-                lockout_until
+                lockout_until,
+                partner_id,
+                COALESCE(password_must_change, 0) AS password_must_change
            FROM dbo.users
           WHERE email = @email`,
         (sqlRequest) => sqlRequest.input("email", sqlTypes.NVarChar(180), emailLower)
@@ -560,11 +564,94 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
             id: user.id,
             email: user.email,
             nome: user.nome,
-            tipo_usuario: user.tipo_usuario
+            tipo_usuario: user.tipo_usuario,
+            partner_id: user.partner_id == null ? null : Number(user.partner_id),
+            password_must_change: Boolean(user.password_must_change)
           },
-          token: signToken(user)
+          token: signToken({
+            id: user.id,
+            email: user.email,
+            nome: user.nome,
+            tipo_usuario: user.tipo_usuario,
+            token_version: user.token_version
+          })
         }
       };
+    }
+  );
+
+  // Authenticated user changes their own password. Used by the partner terminal to
+  // clear password_must_change after the initial '123456' was assigned by the admin.
+  app.post(
+    "/api/auth/change-password",
+    {
+      config: {
+        rateLimit: { max: 10, timeWindow: "10 minutes" }
+      }
+    },
+    async (request, reply) => {
+      const actor = await requireUser(request);
+      const body = z
+        .object({
+          current_password: z.string().min(1),
+          new_password: z.string().min(6).max(120)
+        })
+        .parse(request.body);
+
+      const rows = await query<{ password_hash: string | null }>(
+        `SELECT password_hash FROM dbo.users WHERE id = @id`,
+        (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, actor.id)
+      );
+      const ok = rows[0]?.password_hash
+        ? await verifyPassword(body.current_password, rows[0].password_hash)
+        : false;
+      if (!ok) {
+        await writeAuditLog({
+          actorId: actor.id,
+          action: "auth.change_password_failed",
+          entityType: "user",
+          entityId: actor.id,
+          ipAddress: clientIp(request)
+        });
+        return reply.code(401).send({ error: "invalid_current_password" });
+      }
+      if (body.new_password === body.current_password) {
+        return reply.code(400).send({ error: "new_password_same_as_current" });
+      }
+
+      const newHash = await hashPassword(body.new_password);
+      await execute(
+        `UPDATE dbo.users
+            SET password_hash = @hash,
+                password_must_change = 0,
+                token_version = COALESCE(token_version, 0) + 1,
+                updated_at = SYSUTCDATETIME()
+          WHERE id = @id`,
+        (sqlRequest) =>
+          sqlRequest
+            .input("id", sqlTypes.BigInt, actor.id)
+            .input("hash", sqlTypes.NVarChar(255), newHash)
+      );
+
+      await writeAuditLog({
+        actorId: actor.id,
+        action: "auth.change_password",
+        entityType: "user",
+        entityId: actor.id,
+        ipAddress: clientIp(request)
+      });
+
+      // Re-issue a fresh token reflecting the bumped token_version so the client doesn't 401.
+      const freshUser = {
+        ...actor,
+        token_version: (actor.token_version ?? 0) + 1
+      };
+      return reply.send({
+        data: {
+          token: signToken(freshUser),
+          password_must_change: false
+        }
+      });
     }
   );
 
@@ -631,7 +718,8 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
     const user = await requireUser(request);
     const profile = await query(
       `SELECT id, nome, cpf, email, telefone, tipo_usuario, cidade, estado, endereco, numero,
-              complemento, bairro, cep
+              complemento, bairro, cep, partner_id,
+              CAST(COALESCE(password_must_change, 0) AS BIT) AS password_must_change
          FROM dbo.users
         WHERE id = @id`,
       (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, user.id)

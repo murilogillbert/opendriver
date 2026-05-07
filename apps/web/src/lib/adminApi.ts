@@ -453,9 +453,19 @@ export const adminApi = {
     });
   },
   async createPartner(input: Record<string, FormDataEntryValue>) {
-    return request<{ id: number }>("/admin/partners", {
+    return request<{
+      id: number;
+      partner_login: { user_id: number; email: string; initial_password: string | null; created: boolean } | null;
+    }>("/admin/partners", {
       method: "POST",
       body: JSON.stringify(input)
+    });
+  },
+  async generatePartnerLogin(partnerId: number) {
+    return request<{
+      partner_login: { user_id: number; email: string; initial_password: string | null; created: boolean };
+    }>(`/admin/partners/${partnerId}/generate-login`, {
+      method: "POST"
     });
   },
   async createService(input: Record<string, unknown>) {

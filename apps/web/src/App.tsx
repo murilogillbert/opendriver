@@ -7,12 +7,14 @@ import CartCheckoutPage from "./components/marketplace/CartCheckoutPage";
 import CheckinPage from "./components/marketplace/CheckinPage";
 import CheckoutPage from "./components/marketplace/CheckoutPage";
 import MarketplaceHome from "./components/marketplace/MarketplaceHome";
+import PartnerApp from "./components/partner/PartnerApp";
 import FloatingAssistant from "./components/FloatingAssistant";
 
 function App() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [path, setPath] = useState(window.location.pathname);
   const isAdmin = path.startsWith("/admin");
+  const isPartner = path.startsWith("/parceiros");
 
   const openAssistant = () => {
     setIsAssistantOpen(true);
@@ -27,6 +29,10 @@ function App() {
 
   if (isAdmin) {
     return <AdminApp />;
+  }
+
+  if (isPartner) {
+    return <PartnerApp />;
   }
 
   if (path.startsWith("/entrar")) {

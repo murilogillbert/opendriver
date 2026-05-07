@@ -237,12 +237,43 @@ function AdminApp() {
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(form));
 
-    await adminApi.createPartner({
-      ...values,
-      status: "ativo"
-    });
-    form.reset();
-    await reload();
+    try {
+      const response = await adminApi.createPartner({
+        ...values,
+        status: "ativo"
+      });
+      const login = response.data.partner_login;
+      if (login?.initial_password) {
+        setFormMessage(
+          `Parceiro criado. Login do terminal: ${login.email} | senha inicial ${login.initial_password} (parceiro vai ser obrigado a trocar no primeiro acesso em /parceiros).`
+        );
+      } else if (login?.email) {
+        setFormMessage(`Parceiro criado e vinculado ao usuario existente ${login.email}.`);
+      } else {
+        setFormMessage("Parceiro criado. Sem email — ainda nao tem acesso ao terminal /parceiros.");
+      }
+      form.reset();
+      await reload();
+    } catch (err) {
+      setFormMessage(err instanceof Error ? err.message : "Falha ao criar parceiro.");
+    }
+  };
+
+  const generatePartnerLogin = async (partnerId: number, partnerName: string) => {
+    if (!window.confirm(`Gerar/Resetar a senha do terminal para "${partnerName}"? A senha volta a ser 123456 e o parceiro ficara obrigado a trocar.`)) {
+      return;
+    }
+    try {
+      const response = await adminApi.generatePartnerLogin(partnerId);
+      const login = response.data.partner_login;
+      if (login.initial_password) {
+        setFormMessage(`Login para ${partnerName}: ${login.email} | senha ${login.initial_password}.`);
+      } else {
+        setFormMessage(`Login vinculado ao usuario ${login.email}.`);
+      }
+    } catch (err) {
+      setFormMessage(err instanceof Error ? err.message : "Falha ao gerar login.");
+    }
   };
 
   const submitService = async (event: FormEvent<HTMLFormElement>) => {
@@ -1348,12 +1379,20 @@ function AdminApp() {
                   </div>
 
                   <DataTable
-                    headers={["Parceiro", "Cidade", "WhatsApp", "Status"]}
+                    headers={["Parceiro", "Cidade", "WhatsApp", "Status", "Acesso ao terminal"]}
                     rows={partners.map((partner) => [
                       partner.nome_fantasia,
                       `${partner.cidade}/${partner.estado}`,
                       partner.whatsapp ?? "-",
-                      partner.status
+                      partner.status,
+                      <button
+                        key={`partner-login-${partner.id}`}
+                        type="button"
+                        onClick={() => void generatePartnerLogin(partner.id, partner.nome_fantasia)}
+                        className="rounded-md bg-[#fef3c7] px-2.5 py-1.5 text-xs font-black text-[#854d0e]"
+                      >
+                        Gerar/Resetar senha
+                      </button>
                     ])}
                   />
                 </section>

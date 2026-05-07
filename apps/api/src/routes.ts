@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 
-import { requireAdmin } from "./auth.js";
+import { hashPassword, requireAdmin } from "./auth.js";
 import { writeAuditLog } from "./audit.js";
 import { generateOpenDriverCommission } from "./commission.js";
 import { execute, getPool, query, sqlTypes } from "./db.js";
@@ -26,6 +26,81 @@ const pageQuery = (requestQuery: unknown) => {
     offset: Number.isNaN(offset) ? 0 : offset
   };
 };
+
+const PARTNER_DEFAULT_PASSWORD = "123456";
+
+// Returns metadata about the user account that operates this partner. If the partner has
+// an email, we plant a parceiro user with the default password (or just link to an
+// existing matching user). Idempotent — safe to call from POST and from the legacy
+// "gerar login" admin button.
+async function ensurePartnerUser(input: {
+  partnerId: number;
+  email: string | null;
+  nome: string;
+}): Promise<{
+  user_id: number;
+  email: string;
+  initial_password: string | null;
+  created: boolean;
+} | null> {
+  if (!input.email) return null;
+  const emailLower = input.email.trim().toLowerCase();
+  if (!emailLower) return null;
+
+  const existing = await query<{ id: number; password_hash: string | null; partner_id: number | null }>(
+    `SELECT id, password_hash, partner_id FROM dbo.users WHERE email = @email`,
+    (req) => req.input("email", sqlTypes.NVarChar(180), emailLower)
+  );
+
+  if (existing[0]) {
+    const updates: string[] = [];
+    if (existing[0].partner_id !== input.partnerId) {
+      updates.push("partner_id = @partner_id");
+      updates.push("tipo_usuario = 'parceiro'");
+    }
+    if (updates.length > 0) {
+      await execute(
+        `UPDATE dbo.users SET ${updates.join(", ")}, updated_at = SYSUTCDATETIME() WHERE id = @id`,
+        (req) =>
+          req
+            .input("id", sqlTypes.BigInt, existing[0].id)
+            .input("partner_id", sqlTypes.BigInt, input.partnerId)
+      );
+    }
+    return {
+      user_id: existing[0].id,
+      email: emailLower,
+      initial_password: null,
+      created: false
+    };
+  }
+
+  const hash = await hashPassword(PARTNER_DEFAULT_PASSWORD);
+  const result = await execute<{ id: number }>(
+    `INSERT INTO dbo.users (
+        nome, email, tipo_usuario, status, password_hash, password_must_change, telefone,
+        endereco, numero, bairro, cidade, estado, cep, partner_id
+      )
+      OUTPUT INSERTED.id
+      VALUES (
+        @nome, @email, 'parceiro', 'ativo', @password_hash, 1, '',
+        'Endereco do parceiro', '0', 'Centro', 'Brasilia', 'DF', '00000000', @partner_id
+      )`,
+    (req) =>
+      req
+        .input("nome", sqlTypes.NVarChar(140), input.nome)
+        .input("email", sqlTypes.NVarChar(180), emailLower)
+        .input("password_hash", sqlTypes.NVarChar(255), hash)
+        .input("partner_id", sqlTypes.BigInt, input.partnerId)
+  );
+
+  return {
+    user_id: result.recordset[0].id,
+    email: emailLower,
+    initial_password: PARTNER_DEFAULT_PASSWORD,
+    created: true
+  };
+}
 
 const clientIp = (request: FastifyRequest) => {
   const forwarded = request.headers["x-forwarded-for"];
@@ -147,16 +222,109 @@ export async function registerRoutes(app: FastifyInstance) {
           .input("status", sqlTypes.VarChar(20), body.status)
     );
 
+    const partnerLogin = await ensurePartnerUser({
+      partnerId: result.recordset[0].id,
+      email: body.email ?? null,
+      nome: body.nome_fantasia
+    });
+
     await writeAuditLog({
       actorId: admin.id,
       action: "partner.created",
       entityType: "partner",
       entityId: result.recordset[0].id,
-      payload: { nome_fantasia: body.nome_fantasia, cidade: body.cidade, estado: body.estado },
+      payload: {
+        nome_fantasia: body.nome_fantasia,
+        cidade: body.cidade,
+        estado: body.estado,
+        partner_login_email: partnerLogin?.email ?? null,
+        partner_login_created: partnerLogin?.created ?? false
+      },
       ipAddress: clientIp(request)
     });
 
-    return reply.code(201).send({ data: result.recordset[0] });
+    return reply.code(201).send({
+      data: {
+        id: result.recordset[0].id,
+        partner_login: partnerLogin
+      }
+    });
+  });
+
+  // Generates (or rotates) the partner login for an existing partner. Used to give
+  // legacy partners a working terminal account or to reset the default password.
+  app.post("/api/admin/partners/:id/generate-login", async (request, reply) => {
+    const admin = await requireAdmin(request);
+    const params = request.params as { id: string };
+    const partnerId = Number(params.id);
+    const partners = await query<{ id: number; nome_fantasia: string; email: string | null }>(
+      `SELECT id, nome_fantasia, email FROM dbo.partners WHERE id = @id`,
+      (req) => req.input("id", sqlTypes.BigInt, partnerId)
+    );
+    const partner = partners[0];
+    if (!partner) return reply.code(404).send({ error: "partner_not_found" });
+    if (!partner.email) return reply.code(400).send({ error: "partner_email_missing" });
+
+    const emailLower = partner.email.trim().toLowerCase();
+    const existing = await query<{ id: number }>(
+      `SELECT id FROM dbo.users WHERE email = @email`,
+      (req) => req.input("email", sqlTypes.NVarChar(180), emailLower)
+    );
+
+    if (existing[0]) {
+      // Reset the password to the default and force a change on next login.
+      const hash = await hashPassword(PARTNER_DEFAULT_PASSWORD);
+      await execute(
+        `UPDATE dbo.users
+            SET password_hash = @hash,
+                password_must_change = 1,
+                tipo_usuario = 'parceiro',
+                partner_id = @partner_id,
+                token_version = COALESCE(token_version, 0) + 1,
+                updated_at = SYSUTCDATETIME()
+          WHERE id = @id`,
+        (req) =>
+          req
+            .input("id", sqlTypes.BigInt, existing[0].id)
+            .input("hash", sqlTypes.NVarChar(255), hash)
+            .input("partner_id", sqlTypes.BigInt, partnerId)
+      );
+      await writeAuditLog({
+        actorId: admin.id,
+        action: "partner.login_reset",
+        entityType: "user",
+        entityId: existing[0].id,
+        payload: { partner_id: partnerId, email: emailLower },
+        ipAddress: clientIp(request)
+      });
+      return reply.send({
+        data: {
+          partner_login: {
+            user_id: existing[0].id,
+            email: emailLower,
+            initial_password: PARTNER_DEFAULT_PASSWORD,
+            created: false
+          }
+        }
+      });
+    }
+
+    const created = await ensurePartnerUser({
+      partnerId,
+      email: partner.email,
+      nome: partner.nome_fantasia
+    });
+
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "partner.login_created",
+      entityType: "user",
+      entityId: created?.user_id ?? null,
+      payload: { partner_id: partnerId, email: emailLower },
+      ipAddress: clientIp(request)
+    });
+
+    return reply.send({ data: { partner_login: created } });
   });
 
   app.get("/api/admin/partner-services", async (request) => {
