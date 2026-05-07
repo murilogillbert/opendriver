@@ -132,6 +132,32 @@ export async function fetchMercadoPagoPayment(paymentId: string) {
   return (await response.json()) as MercadoPagoPaymentRecord;
 }
 
+// Issues a refund (full or partial) at Mercado Pago. Mercado Pago will charge back
+// the customer's card / Pix automatically. Returns the refund record on success.
+// `amount` is the BRL value to refund — omit for a full refund.
+export async function refundMercadoPagoPayment(paymentId: string, amount?: number) {
+  const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getMercadoPagoAccessToken()}`,
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": randomBytes(16).toString("hex")
+    },
+    body: amount && amount > 0 ? JSON.stringify({ amount: Number(amount.toFixed(2)) }) : "{}"
+  });
+
+  const data = (await response.json().catch(() => null)) as MercadoPagoPaymentRecord | null;
+
+  if (!response.ok) {
+    const errorCode = (data && typeof data === "object" && "error" in data && typeof data.error === "string"
+      ? data.error
+      : null) ?? "mercado_pago_refund_failed";
+    throw Object.assign(new Error(errorCode), { statusCode: 502, details: data });
+  }
+
+  return data ?? {};
+}
+
 export async function findMercadoPagoPaymentByExternalReference(externalReference: string) {
   const response = await fetch(
     `https://api.mercadopago.com/v1/payments/search?sort=date_last_updated&criteria=desc&external_reference=${encodeURIComponent(externalReference)}`,
@@ -714,17 +740,58 @@ export async function findStalePendingOrders(opts: { olderThanMinutes: number; l
   );
 }
 
-// Manual admin-triggered cancel/refund. Marks the order as refunded; the cashback/stock
-// rollback happens through the same reconcile path so the rules stay in one place.
-export async function refundOrderManually(input: { orderId: number; actorId: number; reason?: string | null }) {
-  // Stamp the order as refunded immediately (no remote MP call assumed) and rerun the
-  // standard reconcile so notifications/cashback/stock rules apply.
+// Manual admin-triggered cancel/refund. Calls Mercado Pago to actually return the
+// money to the customer's card/Pix, then mirrors the refund locally (status, stock,
+// cashback rollback, activations, notification, audit log).
+//
+// `skipGateway` is reserved for callers that already know MP returned the money on
+// its own (e.g. webhook-driven refunds reusing this path).
+export async function refundOrderManually(input: { orderId: number; actorId: number; reason?: string | null; skipGateway?: boolean }) {
   const order = await loadOrderPaymentRow({ orderId: input.orderId });
   if (!order) {
     throw Object.assign(new Error("order_not_found"), { statusCode: 404 });
   }
   if (paymentCancelledStatuses.has(order.payment_status ?? "")) {
-    return { alreadyCancelled: true, orderId: order.id };
+    return { alreadyCancelled: true, orderId: order.id, gatewayRefundId: null };
+  }
+
+  // Step 1: ask Mercado Pago to return the cash portion of the order. We refund only the
+  // amount the customer actually paid through MP (valor_pago_total already excludes the
+  // cashback the user spent at checkout). If the order was 100% paid with cashback,
+  // there's no MP payment to refund — skip straight to the local rollback.
+  let gatewayRefundId: string | null = null;
+  let gatewayPayload: MercadoPagoPaymentRecord | null = null;
+  const cashAmount = Number(order.valor_pago_total);
+  if (!input.skipGateway && order.mercado_pago_payment_id && cashAmount > 0 && order.payment_status === "approved") {
+    try {
+      gatewayPayload = await refundMercadoPagoPayment(order.mercado_pago_payment_id, cashAmount);
+      const id = gatewayPayload && typeof gatewayPayload === "object" && "id" in gatewayPayload ? gatewayPayload.id : null;
+      gatewayRefundId = id != null ? String(id) : null;
+    } catch (err) {
+      // Persist the failure for diagnostics, then surface it so the admin sees the real reason.
+      await execute(
+        `INSERT INTO dbo.payment_events (provider, event_type, payment_id, order_id, status, status_detail, raw_payload)
+         VALUES ('mercado_pago', 'refund_failed', @payment_id, @order_id, 'error', @detail, @raw)`,
+        (request) =>
+          request
+            .input("payment_id", sqlTypes.NVarChar(80), order.mercado_pago_payment_id)
+            .input("order_id", sqlTypes.BigInt, order.id)
+            .input("detail", sqlTypes.NVarChar(120), err instanceof Error ? err.message.slice(0, 120) : "refund_error")
+            .input("raw", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify({ error: String(err), details: (err as { details?: unknown })?.details ?? null }))
+      ).catch(() => undefined);
+      throw err;
+    }
+
+    await execute(
+      `INSERT INTO dbo.payment_events (provider, event_type, payment_id, order_id, status, status_detail, raw_payload)
+       VALUES ('mercado_pago', 'refund_requested', @payment_id, @order_id, 'refunded', @detail, @raw)`,
+      (request) =>
+        request
+          .input("payment_id", sqlTypes.NVarChar(80), order.mercado_pago_payment_id)
+          .input("order_id", sqlTypes.BigInt, order.id)
+          .input("detail", sqlTypes.NVarChar(120), gatewayRefundId ? `refund_id=${gatewayRefundId}` : null)
+          .input("raw", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify(gatewayPayload ?? {}))
+    ).catch(() => undefined);
   }
 
   await withTransaction(async (tx) => {
@@ -802,7 +869,21 @@ export async function refundOrderManually(input: { orderId: number; actorId: num
         .input(
           "mensagem",
           sqlTypes.NVarChar(700),
-          `Seu pedido de ${order.product_name} foi reembolsado pela equipe. ${input.reason ?? ""}`.trim()
+          (() => {
+            const parts: string[] = [`Seu pedido de ${order.product_name} foi reembolsado pela equipe.`];
+            if (cashAmount > 0 && order.mercado_pago_payment_id) {
+              parts.push(
+                `O valor de R$ ${cashAmount.toFixed(2)} sera devolvido no mesmo meio de pagamento usado na compra. Pix volta em poucos minutos; cartao pode levar ate 2 faturas.`
+              );
+            }
+            if (Number(order.cashback_aplicado) > 0) {
+              parts.push(`Devolvemos tambem R$ ${Number(order.cashback_aplicado).toFixed(2)} de cashback usado.`);
+            }
+            if (input.reason) {
+              parts.push(`Motivo: ${input.reason}`);
+            }
+            return parts.join(" ");
+          })()
         )
   );
 
@@ -811,8 +892,13 @@ export async function refundOrderManually(input: { orderId: number; actorId: num
     action: "order.refunded_manual",
     entityType: "product_order",
     entityId: order.id,
-    payload: { reason: input.reason ?? null }
+    payload: {
+      reason: input.reason ?? null,
+      gateway_refund_id: gatewayRefundId,
+      cash_refunded: cashAmount,
+      gateway_skipped: input.skipGateway === true
+    }
   });
 
-  return { alreadyCancelled: false, orderId: order.id };
+  return { alreadyCancelled: false, orderId: order.id, gatewayRefundId };
 }
