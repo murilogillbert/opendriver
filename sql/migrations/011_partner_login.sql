@@ -13,11 +13,33 @@ SET XACT_ABORT ON;
 IF COL_LENGTH('dbo.users', 'partner_id') IS NULL
   ALTER TABLE dbo.users ADD partner_id BIGINT NULL;
 
+GO
+
+-- The FK and filtered index below reference partner_id; SQL Server compiles
+-- the entire batch up front, so the column has to be visible — hence the GO.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET XACT_ABORT ON;
+
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_users_partners')
   ALTER TABLE dbo.users ADD CONSTRAINT fk_users_partners FOREIGN KEY (partner_id) REFERENCES dbo.partners(id);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_users_partner' AND object_id = OBJECT_ID('dbo.users'))
   CREATE INDEX ix_users_partner ON dbo.users(partner_id) WHERE partner_id IS NOT NULL;
+
+GO
+
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET XACT_ABORT ON;
 
 -- 2. Forca troca de senha no primeiro login -----------------------------
 -- Senha inicial '123456' e plantada quando o admin cria o parceiro. Antes
