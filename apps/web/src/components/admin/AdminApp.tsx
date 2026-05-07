@@ -2,6 +2,7 @@ import { FormEvent, isValidElement, useEffect, useMemo, useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 
 import logoUrl from "../../assets/driverhub-logo.svg";
+import QrCodePreview from "./QrCodePreview";
 import { assetUrl } from "../../lib/assets";
 import {
   AdminMetrics,
@@ -809,32 +810,37 @@ function AdminApp() {
                   </form>
                 </section>
                 <DataTable
-                  headers={["Parceiro", "Local", "Etiqueta", "URL", "Produtos", "Scans", "Status", "Acoes"]}
-                  rows={checkinQrcodes.map((qr) => [
-                    qr.partner_nome,
-                    qr.location_nome ?? "-",
-                    qr.label ?? "-",
-                    <a
-                      key={`url-${qr.id}`}
-                      href={`/c/${qr.token}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-xs text-[#0369a1] underline"
-                    >
-                      /c/{qr.token.slice(0, 8)}…
-                    </a>,
-                    qr.product_count,
-                    qr.event_count,
-                    qr.status,
-                    <button
-                      key={`toggle-${qr.id}`}
-                      type="button"
-                      onClick={() => void toggleCheckinStatus(qr)}
-                      className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]"
-                    >
-                      {qr.status === "ativo" ? "Pausar" : "Ativar"}
-                    </button>
-                  ])}
+                  headers={["Parceiro", "Local", "Etiqueta", "QR / URL", "Produtos", "Scans", "Status", "Acoes"]}
+                  rows={checkinQrcodes.map((qr) => {
+                    const fullUrl = `${window.location.origin}/c/${qr.token}`;
+                    return [
+                      qr.partner_nome,
+                      qr.location_nome ?? "-",
+                      qr.label ?? "-",
+                      <div key={`qr-${qr.id}`} className="grid gap-2">
+                        <QrCodePreview url={fullUrl} filename={`checkin-${qr.id}`} />
+                        <a
+                          href={`/c/${qr.token}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-xs text-[#0369a1] underline"
+                        >
+                          /c/{qr.token.slice(0, 8)}…
+                        </a>
+                      </div>,
+                      qr.product_count,
+                      qr.event_count,
+                      qr.status,
+                      <button
+                        key={`toggle-${qr.id}`}
+                        type="button"
+                        onClick={() => void toggleCheckinStatus(qr)}
+                        className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]"
+                      >
+                        {qr.status === "ativo" ? "Pausar" : "Ativar"}
+                      </button>
+                    ];
+                  })}
                 />
               </div>
             )}
