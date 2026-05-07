@@ -4,81 +4,49 @@ import { assetUrl } from "../../lib/assets";
 import { getToken, marketplaceApi, money, Product } from "../../lib/marketplaceApi";
 import logoUrl from "../../assets/driverhub-logo.svg";
 
-const savingsItems = [
-  { label: "Combustivel", value: 180 },
-  { label: "Alimentacao", value: 120 },
-  { label: "Farmacia", value: 80 },
-  { label: "Apps e cursos", value: 90 },
-  { label: "Viagens e auto", value: 130 }
-];
+type Partner = {
+  id: number;
+  nome_fantasia: string;
+  cidade: string;
+  estado: string;
+  total_produtos: number;
+};
 
-const fallbackProducts: Product[] = [
-  {
-    id: 1,
-    nome: "Voucher Combustivel R$100",
-    slug: "voucher-combustivel-100",
-    descricao_curta: "Credito digital para abastecer em parceiros selecionados.",
-    descricao: "Use o voucher em postos parceiros e reduza o custo mensal com abastecimento.",
-    tipo: "digital",
-    tipo_entrega: "digital",
-    offer_type: "voucher",
-    delivery_method: "digital",
-    preco_original: 100,
-    preco_desconto: 90,
-    economia_estimada: 10,
-    economia_mensal_estimada: 180,
-    categoria_nome: "Combustivel",
-    imagem_url:
-      "https://images.unsplash.com/photo-1542362567-b07e54358753?auto=format&fit=crop&w=900&q=80",
-    destaque_home: true,
-    status: "ativo"
-  },
-  {
-    id: 2,
-    nome: "Clube Farmacia",
-    slug: "clube-farmacia",
-    descricao_curta: "Beneficio recorrente para medicamentos, higiene e saude.",
-    descricao: "Acesso a descontos recorrentes em farmacias parceiras para compras do mes.",
-    tipo: "digital",
-    tipo_entrega: "digital",
-    offer_type: "beneficio_recorrente",
-    delivery_method: "digital",
-    preco_original: 49,
-    preco_desconto: 19,
-    economia_estimada: 30,
-    economia_mensal_estimada: 80,
-    categoria_nome: "Farmacia",
-    imagem_url:
-      "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=900&q=80",
-    destaque_home: true,
-    status: "ativo"
-  },
-  {
-    id: 3,
-    nome: "Kit Limpeza Automotiva",
-    slug: "kit-limpeza-automotiva",
-    descricao_curta: "Produtos fisicos para manter o carro limpo gastando menos.",
-    descricao: "Kit com itens essenciais de limpeza automotiva enviado para o endereco cadastrado.",
-    tipo: "fisico",
-    tipo_entrega: "fisico",
-    offer_type: "produto_fisico",
-    delivery_method: "fisica",
-    preco_original: 129,
-    preco_desconto: 89,
-    economia_estimada: 40,
-    economia_mensal_estimada: 40,
-    categoria_nome: "Automotivo",
-    imagem_url:
-      "https://images.unsplash.com/photo-1607860108855-64acf2078ed9?auto=format&fit=crop&w=900&q=80",
-    destaque_home: true,
-    status: "ativo"
-  }
-];
+type PartnerLocation = {
+  id: number;
+  partner_id: number;
+  partner_nome: string;
+  nome: string;
+  endereco: string | null;
+  latitude: number;
+  longitude: number;
+  cidade: string;
+  estado: string;
+  checkin_token: string | null;
+  distance_km?: number | null;
+};
+
+// Haversine in km. Used to sort partner locations by proximity to the user.
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 function MarketplaceHome() {
-  const [products, setProducts] = useState<Product[]>(fallbackProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [partnerLocations, setPartnerLocations] = useState<PartnerLocation[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("todos");
+  const [selectedPartner, setSelectedPartner] = useState<number | "todos">("todos");
   const [status, setStatus] = useState<string | null>(null);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "denied" | "ready">("idle");
 
   useEffect(() => {
     void fetch(`${import.meta.env.VITE_API_BASE_URL ?? "/api"}/analytics/page-view`, {
@@ -89,30 +57,51 @@ function MarketplaceHome() {
 
     void marketplaceApi
       .products()
-      .then((data) => setProducts(data.length > 0 ? data : fallbackProducts))
-      .catch(() => setProducts(fallbackProducts));
+      .then(setProducts)
+      .catch(() => setProducts([]));
+    void marketplaceApi
+      .partners()
+      .then(setPartners)
+      .catch(() => setPartners([]));
+    void marketplaceApi
+      .partnerLocations()
+      .then(setPartnerLocations)
+      .catch(() => setPartnerLocations([]));
   }, []);
 
   const categories = useMemo(
-    () => Array.from(new Set(products.map((product) => product.categoria_nome).filter(Boolean))),
+    () => Array.from(new Set(products.map((product) => product.categoria_nome).filter(Boolean))) as string[],
     [products]
   );
 
   const visibleProducts = useMemo(
     () =>
-      selectedCategory === "todos"
-        ? products
-        : products.filter((product) => product.categoria_nome === selectedCategory),
-    [products, selectedCategory]
+      products.filter((product) => {
+        if (selectedCategory !== "todos" && product.categoria_nome !== selectedCategory) {
+          return false;
+        }
+        if (selectedPartner !== "todos" && Number(product.partner_id) !== Number(selectedPartner)) {
+          return false;
+        }
+        return true;
+      }),
+    [products, selectedCategory, selectedPartner]
   );
 
   const featuredProducts = visibleProducts.slice(0, 6);
-  const serviceProducts = products.filter((product) => product.offer_type === "servico").slice(0, 3);
-  const voucherProducts = products.filter((product) => product.offer_type === "voucher").slice(0, 3);
-  const biggestSavings = [...products]
+  const serviceProducts = visibleProducts.filter((product) => product.offer_type === "servico").slice(0, 3);
+  const voucherProducts = visibleProducts.filter((product) => product.offer_type === "voucher").slice(0, 3);
+  const biggestSavings = [...visibleProducts]
     .sort((a, b) => Number(b.economia_estimada) - Number(a.economia_estimada))
     .slice(0, 3);
-  const totalSavings = savingsItems.reduce((sum, item) => sum + item.value, 0);
+
+  // Aggregated metrics computed from real catalog data — no mock numbers.
+  const totalEconomyMonth = products.reduce(
+    (sum, product) => sum + Number(product.economia_mensal_estimada ?? 0),
+    0
+  );
+  const averageEconomy = products.length > 0 ? totalEconomyMonth / products.length : 0;
+  const categoryCount = categories.length;
 
   const navigate = (path: string) => {
     window.history.pushState(null, "", path);
@@ -132,6 +121,42 @@ function MarketplaceHome() {
     navigate(`/checkout/${product.id}`);
   };
 
+  const requestLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus("denied");
+      return;
+    }
+    setGeoStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserPosition({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setGeoStatus("ready");
+      },
+      () => setGeoStatus("denied"),
+      { maximumAge: 5 * 60 * 1000, timeout: 10_000 }
+    );
+  };
+
+  const sortedLocations = useMemo<PartnerLocation[]>(() => {
+    if (!userPosition) return partnerLocations.slice(0, 6);
+    return partnerLocations
+      .map((loc) => ({
+        ...loc,
+        distance_km: haversineKm(userPosition.lat, userPosition.lng, Number(loc.latitude), Number(loc.longitude))
+      }))
+      .sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity))
+      .slice(0, 6);
+  }, [partnerLocations, userPosition]);
+
+  const visitLocation = (location: PartnerLocation) => {
+    if (location.checkin_token) {
+      navigate(`/c/${location.checkin_token}`);
+      return;
+    }
+    setSelectedPartner(location.partner_id);
+    document.getElementById("catalogo")?.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <main className="min-h-screen bg-[#f7f3ea] text-[#101722]">
       <header className="sticky top-0 z-40 border-b border-[#d8caa9]/70 bg-[#f7f3ea]/95 backdrop-blur">
@@ -145,6 +170,9 @@ function MarketplaceHome() {
             </a>
             <a href="#catalogo" className="hidden px-3 py-2 text-sm font-black text-[#465366] sm:inline">
               Produtos
+            </a>
+            <a href="#lojas" className="hidden px-3 py-2 text-sm font-black text-[#465366] sm:inline">
+              Lojas
             </a>
             <button
               type="button"
@@ -173,11 +201,11 @@ function MarketplaceHome() {
               Clube de economia e vouchers
             </p>
             <h1 className="mt-6 max-w-4xl font-display text-4xl font-black leading-[1.02] sm:text-6xl lg:text-7xl">
-              Beneficios reais para economizar R$600 ou mais por mes.
+              Beneficios reais, parceiros de verdade.
             </h1>
             <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-white/76">
-              Vouchers, produtos com desconto, cashback e vantagens recorrentes em combustivel,
-              farmacia, alimentacao, automotivo, viagens e produtos digitais.
+              Vouchers, produtos com desconto, cashback e vantagens recorrentes. Filtre por categoria
+              ou parceiro e descubra as lojas mais proximas de voce.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
@@ -196,37 +224,48 @@ function MarketplaceHome() {
             </div>
 
             <div className="mt-10 grid max-w-3xl gap-3 sm:grid-cols-3">
-              <HeroMetric label="Economia alvo" value={money(totalSavings)} />
-              <HeroMetric label="Entrega digital" value="imediata" />
-              <HeroMetric label="Categorias" value="10+" />
+              <HeroMetric label="Ofertas no catalogo" value={String(products.length)} />
+              <HeroMetric label="Parceiros ativos" value={String(partners.length)} />
+              <HeroMetric label="Categorias" value={String(categoryCount)} />
             </div>
           </div>
 
           <aside className="rounded-md border border-white/10 bg-white/[0.08] p-5 shadow-navy backdrop-blur">
             <div className="flex items-end justify-between gap-4 border-b border-white/10 pb-5">
               <div>
-                <p className="text-sm font-bold text-white/60">Simulacao mensal</p>
+                <p className="text-sm font-bold text-white/60">Economia mensal somada do catalogo</p>
                 <strong className="mt-2 block text-4xl font-black text-brand-gold">
-                  {money(totalSavings)}
+                  {money(totalEconomyMonth)}
                 </strong>
               </div>
               <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-brand-ink">
-                novo alvo
+                ao vivo
               </span>
             </div>
             <div className="mt-5 space-y-3">
-              {savingsItems.map((item) => (
-                <div key={item.label} className="grid grid-cols-[7.5rem_1fr_4.6rem] items-center gap-3">
-                  <span className="text-sm font-black text-white/80">{item.label}</span>
-                  <span className="h-2 overflow-hidden rounded-full bg-white/10">
-                    <span
-                      className="block h-full rounded-full bg-brand-gold"
-                      style={{ width: `${Math.min((item.value / 180) * 100, 100)}%` }}
-                    />
-                  </span>
-                  <span className="text-right text-sm font-black">{money(item.value)}</span>
-                </div>
-              ))}
+              {categories.slice(0, 5).map((category) => {
+                const categoryEconomy = products
+                  .filter((product) => product.categoria_nome === category)
+                  .reduce((sum, product) => sum + Number(product.economia_mensal_estimada ?? 0), 0);
+                const max = totalEconomyMonth > 0 ? totalEconomyMonth : 1;
+                return (
+                  <div key={category} className="grid grid-cols-[7.5rem_1fr_4.6rem] items-center gap-3">
+                    <span className="text-sm font-black text-white/80">{category}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <span
+                        className="block h-full rounded-full bg-brand-gold"
+                        style={{ width: `${Math.min((categoryEconomy / max) * 100, 100)}%` }}
+                      />
+                    </span>
+                    <span className="text-right text-sm font-black">{money(categoryEconomy)}</span>
+                  </div>
+                );
+              })}
+              {categories.length === 0 && (
+                <p className="text-sm font-bold text-white/68">
+                  Nenhuma categoria publicada ainda.
+                </p>
+              )}
             </div>
           </aside>
         </div>
@@ -243,10 +282,10 @@ function MarketplaceHome() {
 
       <section className="bg-white">
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-10 md:grid-cols-4">
-          <Highlight title="Economia media mensal" value="R$600+" />
-          <Highlight title="Mais comprados" value={products[0]?.nome ?? "Combustivel"} />
-          <Highlight title="Servicos utilizados" value={serviceProducts[0]?.nome ?? "Lavagem"} />
-          <Highlight title="Economia dos usuarios" value={money(products.reduce((sum, product) => sum + Number(product.economia_mensal_estimada ?? 0), 0))} />
+          <Highlight label="Ofertas no catalogo" value={String(products.length)} />
+          <Highlight label="Parceiros ativos" value={String(partners.length)} />
+          <Highlight label="Economia media por oferta" value={money(averageEconomy)} />
+          <Highlight label="Lojas fisicas mapeadas" value={String(partnerLocations.length)} />
         </div>
       </section>
 
@@ -260,19 +299,40 @@ function MarketplaceHome() {
               Comece pelos descontos que mais pesam no mes.
             </h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <FilterButton active={selectedCategory === "todos"} onClick={() => setSelectedCategory("todos")}>
-              Todos
-            </FilterButton>
-            {categories.map((category) => (
-              <FilterButton
-                key={category}
-                active={selectedCategory === category}
-                onClick={() => setSelectedCategory(category ?? "todos")}
-              >
-                {category}
+          <div className="flex flex-col gap-3 lg:items-end">
+            <div className="flex flex-wrap gap-2">
+              <FilterButton active={selectedCategory === "todos"} onClick={() => setSelectedCategory("todos")}>
+                Todas categorias
               </FilterButton>
-            ))}
+              {categories.map((category) => (
+                <FilterButton
+                  key={category}
+                  active={selectedCategory === category}
+                  onClick={() => setSelectedCategory(category)}
+                >
+                  {category}
+                </FilterButton>
+              ))}
+            </div>
+            {partners.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Parceiro</span>
+                <select
+                  value={selectedPartner === "todos" ? "" : String(selectedPartner)}
+                  onChange={(event) =>
+                    setSelectedPartner(event.target.value === "" ? "todos" : Number(event.target.value))
+                  }
+                  className="rounded-md border border-[#d9caa7] bg-white px-3 py-2 text-sm font-bold text-[#344055]"
+                >
+                  <option value="">Todos os parceiros</option>
+                  {partners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.nome_fantasia} ({partner.total_produtos})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -282,31 +342,108 @@ function MarketplaceHome() {
           </div>
         )}
 
-        <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {featuredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} onBuy={() => buy(product)} onDetails={() => setStatus(product.descricao)} />
-          ))}
-        </div>
+        {visibleProducts.length === 0 ? (
+          <div className="mt-7 rounded-md border border-[#d9caa7] bg-white p-8 text-center">
+            <p className="text-lg font-black text-[#344055]">Nenhuma oferta com os filtros atuais.</p>
+            <p className="mt-2 text-sm font-bold text-[#6c7788]">
+              Ajuste os filtros ou volte mais tarde — novos produtos sao publicados pelos parceiros.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {featuredProducts.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onBuy={() => buy(product)}
+                onDetails={() => setStatus(product.descricao)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <OfferShelf title="Servicos mais utilizados" products={serviceProducts} onBuy={buy} />
       <OfferShelf title="Vouchers em destaque" products={voucherProducts} onBuy={buy} />
       <OfferShelf title="Beneficios com maior economia" products={biggestSavings} onBuy={buy} />
 
-      <section className="bg-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#a17820]">
-              Comparativo
-            </p>
-            <h2 className="mt-2 font-display text-3xl font-black">
-              Antes era desconto isolado. Agora e economia recorrente.
-            </h2>
+      <section id="lojas" className="bg-white">
+        <div className="mx-auto max-w-7xl px-5 py-12">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-[#a17820]">
+                Lojas proximas
+              </p>
+              <h2 className="mt-2 font-display text-3xl font-black sm:text-4xl">
+                Pontos fisicos dos nossos parceiros
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#5f6b7b]">
+                Ative a localizacao para vermos quais lojas estao mais perto. Quando o parceiro tem
+                um QR de check-in publicado, voce pode abrir a vitrine do balcao direto pelo card.
+              </p>
+            </div>
+            {geoStatus !== "ready" && (
+              <button
+                type="button"
+                onClick={requestLocation}
+                disabled={geoStatus === "loading"}
+                className="rounded-md bg-[#08111f] px-5 py-3 text-sm font-black text-white shadow-sm disabled:opacity-60"
+              >
+                {geoStatus === "loading" ? "Localizando..." : geoStatus === "denied" ? "Permissao negada — tentar novamente" : "Ativar localizacao"}
+              </button>
+            )}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <CompareCard title="Sem Opendriver" value="R$0" text="Gastos sem acompanhamento, sem beneficios acumulados e sem historico de economia." />
-            <CompareCard title="Com Opendriver" value="R$600+" text="Vouchers, produtos, cashback e economia acumulada na area do usuario." highlighted />
-          </div>
+
+          {partnerLocations.length === 0 ? (
+            <div className="mt-7 rounded-md border border-[#d9caa7] bg-[#f7f3ea] p-8 text-center text-sm font-bold text-[#5f6b7b]">
+              Os parceiros ainda nao mapearam lojas fisicas.
+            </div>
+          ) : (
+            <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {sortedLocations.map((location) => (
+                <article
+                  key={location.id}
+                  className="flex flex-col gap-3 rounded-md border border-[#e3d7bd] bg-[#f7f3ea] p-5 transition hover:border-brand-gold"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">
+                        {location.partner_nome}
+                      </p>
+                      <h3 className="mt-1 text-lg font-black leading-tight">{location.nome}</h3>
+                    </div>
+                    {typeof location.distance_km === "number" && (
+                      <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-brand-ink">
+                        {location.distance_km < 1
+                          ? `${Math.round(location.distance_km * 1000)} m`
+                          : `${location.distance_km.toFixed(1)} km`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-[#5f6b7b]">
+                    {location.endereco ?? `${location.cidade}/${location.estado}`}
+                  </p>
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => visitLocation(location)}
+                      className="rounded-md bg-brand-gold px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand-ink"
+                    >
+                      {location.checkin_token ? "Abrir vitrine" : "Ver produtos do parceiro"}
+                    </button>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border border-[#d9caa7] bg-white px-4 py-2 text-xs font-black text-[#344055]"
+                    >
+                      Como chegar
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -315,7 +452,7 @@ function MarketplaceHome() {
           <div>
             <h2 className="font-display text-3xl font-black">Pronto para economizar no proximo pedido?</h2>
             <p className="mt-2 text-sm font-semibold text-white/65">
-              Crie sua conta, confirme seus dados e acompanhe seus vouchers.
+              Crie sua conta, confirme seus dados e acompanhe seus vouchers e cashback.
             </p>
           </div>
           <button
@@ -349,10 +486,10 @@ function Benefit({ title, text }: { title: string; text: string }) {
   );
 }
 
-function Highlight({ title, value }: { title: string; value: string }) {
+function Highlight({ label, value }: { label: string; value: string }) {
   return (
     <article className="rounded-md border border-[#e0e6ef] bg-[#f7f3ea] p-5">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">{title}</p>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">{label}</p>
       <strong className="mt-2 block text-xl font-black">{value}</strong>
     </article>
   );
@@ -396,16 +533,33 @@ function offerTypeLabel(product: Product) {
   return labels[product.offer_type ?? ""] ?? product.categoria_nome ?? product.tipo;
 }
 
-function ProductCard({ product, onBuy, onDetails }: { product: Product; onBuy: () => void; onDetails: () => void }) {
+function ProductCard({
+  product,
+  onBuy,
+  onDetails
+}: {
+  product: Product;
+  onBuy: () => void;
+  onDetails: () => void;
+}) {
   return (
     <article className="group overflow-hidden rounded-md border border-[#ded4bb] bg-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-navy">
       <div className="relative aspect-[16/10] bg-[#dce3ee]">
         {product.imagem_url && (
-          <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+          <img
+            src={assetUrl(product.imagem_url)}
+            alt=""
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+          />
         )}
         <span className="absolute left-3 top-3 rounded-md bg-[#08111f] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white">
           {offerTypeLabel(product)}
         </span>
+        {product.partner_nome && (
+          <span className="absolute right-3 top-3 rounded-md bg-white/95 px-2 py-1 text-xs font-black text-brand-ink">
+            {product.partner_nome}
+          </span>
+        )}
       </div>
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">
@@ -455,9 +609,7 @@ function OfferShelf({
   products: Product[];
   onBuy: (product: Product) => void;
 }) {
-  if (products.length === 0) {
-    return null;
-  }
+  if (products.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-7xl px-5 pb-12">
@@ -468,30 +620,6 @@ function OfferShelf({
         ))}
       </div>
     </section>
-  );
-}
-
-function CompareCard({
-  title,
-  value,
-  text,
-  highlighted = false
-}: {
-  title: string;
-  value: string;
-  text: string;
-  highlighted?: boolean;
-}) {
-  return (
-    <article className={`rounded-md border p-5 ${highlighted ? "border-brand-gold bg-[#08111f] text-white" : "border-[#e0e6ef] bg-[#f7f3ea]"}`}>
-      <p className={`text-xs font-black uppercase tracking-[0.16em] ${highlighted ? "text-brand-gold" : "text-[#6c7788]"}`}>
-        {title}
-      </p>
-      <strong className="mt-3 block text-3xl font-black">{value}</strong>
-      <p className={`mt-2 text-sm font-semibold leading-6 ${highlighted ? "text-white/68" : "text-[#5f6b7b]"}`}>
-        {text}
-      </p>
-    </article>
   );
 }
 

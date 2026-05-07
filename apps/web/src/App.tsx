@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import AdminApp from "./components/admin/AdminApp";
 import AccountPage from "./components/marketplace/AccountPage";
 import AuthPage from "./components/marketplace/AuthPage";
+import CartCheckoutPage from "./components/marketplace/CartCheckoutPage";
 import CheckinPage from "./components/marketplace/CheckinPage";
 import CheckoutPage from "./components/marketplace/CheckoutPage";
 import MarketplaceHome from "./components/marketplace/MarketplaceHome";
@@ -37,10 +38,13 @@ function App() {
   }
 
   if (path.startsWith("/checkout/")) {
-    const productId = Number(path.split("/").at(-1));
+    const last = path.split("/").at(-1) ?? "";
     const search = new URLSearchParams(window.location.search);
     const checkinToken = search.get("c");
-    return <CheckoutPage productId={productId} checkinToken={checkinToken} />;
+    if (last === "cart") {
+      return <CartCheckoutPage checkinToken={checkinToken} />;
+    }
+    return <CheckoutPage productId={Number(last)} checkinToken={checkinToken} />;
   }
 
   if (path.startsWith("/c/")) {

@@ -101,6 +101,8 @@ function AdminApp() {
   const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
   const [checkinQrcodes, setCheckinQrcodes] = useState<CheckinQrcode[]>([]);
   const [cashbackSummary, setCashbackSummary] = useState<CashbackSummary | null>(null);
+  const [productCategoryFilter, setProductCategoryFilter] = useState<string>("");
+  const [productPartnerFilter, setProductPartnerFilter] = useState<string>("");
   const [checkinPartnerId, setCheckinPartnerId] = useState<number | "">("");
   const [checkinSelectedProductIds, setCheckinSelectedProductIds] = useState<number[]>([]);
   const [checkinLocationId, setCheckinLocationId] = useState<number | "">("");
@@ -1177,11 +1179,69 @@ function AdminApp() {
                       Ativar todos beneficios
                     </button>
                   </div>
+                  <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                    <label className="grid gap-1 text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
+                      Categoria
+                      <select
+                        value={productCategoryFilter}
+                        onChange={(event) => setProductCategoryFilter(event.target.value)}
+                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
+                      >
+                        <option value="">Todas</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={String(category.id)}>{category.nome}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
+                      Parceiro
+                      <select
+                        value={productPartnerFilter}
+                        onChange={(event) => setProductPartnerFilter(event.target.value)}
+                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
+                      >
+                        <option value="">Todos</option>
+                        <option value="none">Sem parceiro</option>
+                        {partners.map((partner) => (
+                          <option key={partner.id} value={String(partner.id)}>{partner.nome_fantasia}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {(productCategoryFilter || productPartnerFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProductCategoryFilter("");
+                          setProductPartnerFilter("");
+                        }}
+                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#475569]"
+                      >
+                        Limpar filtros
+                      </button>
+                    )}
+                  </div>
                   <DataTable
                     title="Ofertas publicadas"
                     description="Use a busca para localizar por nome, categoria, parceiro ou status."
                     headers={["Produto", "Categoria", "Parceiro", "Preco", "Economia", "Status", "Acoes"]}
-                    rows={products.map((product) => [
+                    rows={products
+                      .filter((product) => {
+                        if (productCategoryFilter && String(product.category_id ?? "") !== productCategoryFilter) {
+                          return false;
+                        }
+                        if (productPartnerFilter === "none" && product.partner_id != null) {
+                          return false;
+                        }
+                        if (
+                          productPartnerFilter &&
+                          productPartnerFilter !== "none" &&
+                          String(product.partner_id ?? "") !== productPartnerFilter
+                        ) {
+                          return false;
+                        }
+                        return true;
+                      })
+                      .map((product) => [
                       <div className="flex items-center gap-3" key={`product-${product.id}`}>
                         <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e2e8f0]">
                           {product.imagem_url && (
@@ -1212,8 +1272,18 @@ function AdminApp() {
                         <button onClick={() => setEditingProduct(product)} className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]">
                           Editar
                         </button>
-                        <button onClick={() => adminApi.deleteProduct(product.id).then(reload)} className="rounded-md bg-[#fee2e2] px-2.5 py-1.5 text-xs font-black text-red-700">
-                          Pausar
+                        <button
+                          onClick={() => {
+                            if (!window.confirm(`Excluir o produto "${product.nome}"?\n\nSe nao houver pedidos historicos, ele sera removido permanentemente. Caso existam pedidos, fica oculto sem perder o historico.`)) {
+                              return;
+                            }
+                            adminApi.deleteProduct(product.id).then(reload).catch((err) => {
+                              setFormMessage(err instanceof Error ? err.message : "Falha ao excluir produto.");
+                            });
+                          }}
+                          className="rounded-md bg-[#fee2e2] px-2.5 py-1.5 text-xs font-black text-red-700"
+                        >
+                          Excluir
                         </button>
                       </div>
                     ])}

@@ -6,6 +6,8 @@ export type Product = {
   category_id?: number;
   categoria_nome?: string;
   categoria_slug?: string;
+  partner_id?: number | null;
+  partner_nome?: string | null;
   nome: string;
   slug: string;
   descricao_curta: string;
@@ -226,9 +228,78 @@ export function friendlyPaymentError(error: unknown, fallback = "Nao foi possive
 }
 
 export const marketplaceApi = {
-  async products(featured = false) {
-    const query = featured ? "?featured=1" : "";
-    return (await request<Product[]>(`/products${query}`)).data;
+  async products(options: { featured?: boolean; partnerId?: number } = {}) {
+    const params = new URLSearchParams();
+    if (options.featured) params.set("featured", "1");
+    if (options.partnerId) params.set("partner_id", String(options.partnerId));
+    const qs = params.toString();
+    return (await request<Product[]>(`/products${qs ? `?${qs}` : ""}`)).data;
+  },
+  async partners() {
+    return (
+      await request<Array<{ id: number; nome_fantasia: string; cidade: string; estado: string; total_produtos: number }>>(
+        "/partners"
+      )
+    ).data;
+  },
+  async partnerLocations() {
+    return (
+      await request<
+        Array<{
+          id: number;
+          partner_id: number;
+          partner_nome: string;
+          nome: string;
+          endereco: string | null;
+          latitude: number;
+          longitude: number;
+          raio_metros: number;
+          cidade: string;
+          estado: string;
+          checkin_token: string | null;
+        }>
+      >("/partner-locations")
+    ).data;
+  },
+  async processCartPayment(input: {
+    items: Array<{ product_id: number; quantidade: number }>;
+    payment_method: "pix" | "credit_card" | "debit_card";
+    token?: string;
+    installments?: number;
+    payment_method_id?: string;
+    issuer_id?: string;
+    cashback_amount?: number;
+    checkin_token?: string | null;
+  }) {
+    return (
+      await request<{
+        cart_id: string;
+        orders: Array<{
+          id: number;
+          public_code: string;
+          voucher_code: string | null;
+          product_id: number;
+          quantidade: number;
+          valor_pago_total: number;
+          cashback_aplicado: number;
+        }>;
+        total: number;
+        cashback_used: number;
+        cash_amount: number;
+        payment: {
+          id?: string | number | null;
+          status: string;
+          status_detail?: string;
+          external_reference?: string;
+          qr_code_base64?: string;
+          qr_code?: string;
+          ticket_url?: string;
+        };
+      }>("/payments/process_cart_payment", {
+        method: "POST",
+        body: JSON.stringify(input)
+      })
+    ).data;
   },
   async product(idOrSlug: number | string) {
     return (await request<Product>(`/products/${encodeURIComponent(String(idOrSlug))}`)).data;

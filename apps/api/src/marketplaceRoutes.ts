@@ -32,6 +32,7 @@ import {
   createOrderSchema,
   forgotPasswordSchema,
   loginSchema,
+  processCartPaymentSchema,
   processPaymentSchema,
   productSchema,
   refundOrderSchema,
@@ -120,16 +121,30 @@ async function resolveCheckinEventId(
 }
 
 // Atomic stock decrement: returns false if the product has finite stock and is depleted.
-async function tryDecrementStock(productId: number) {
+async function tryDecrementStock(productId: number, quantidade = 1) {
   const result = await execute<{ id: number }>(
     `UPDATE dbo.products
-        SET estoque = estoque - 1,
+        SET estoque = estoque - @quantidade,
             updated_at = SYSUTCDATETIME()
        OUTPUT INSERTED.id
-      WHERE id = @id AND (estoque IS NULL OR estoque > 0)`,
-    (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, productId)
+      WHERE id = @id AND (estoque IS NULL OR estoque >= @quantidade)`,
+    (sqlRequest) =>
+      sqlRequest
+        .input("id", sqlTypes.BigInt, productId)
+        .input("quantidade", sqlTypes.Int, quantidade)
   );
   return result.recordset.length > 0;
+}
+
+async function restoreStock(productId: number, quantidade: number) {
+  await execute(
+    `UPDATE dbo.products SET estoque = estoque + @quantidade, updated_at = SYSUTCDATETIME()
+      WHERE id = @id AND estoque IS NOT NULL`,
+    (req) =>
+      req
+        .input("id", sqlTypes.BigInt, productId)
+        .input("quantidade", sqlTypes.Int, quantidade)
+  );
 }
 
 async function createOrderRecord(input: {
@@ -637,23 +652,67 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/products", async (request) => {
-    const queryParams = request.query as { category?: string; featured?: string; offer_type?: string };
+    const queryParams = request.query as {
+      category?: string;
+      featured?: string;
+      offer_type?: string;
+      partner_id?: string;
+    };
+    const partnerId = queryParams.partner_id ? Number(queryParams.partner_id) : null;
     const data = await query(
-      `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
+      `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug,
+              pa.nome_fantasia AS partner_nome
          FROM dbo.products p
          LEFT JOIN dbo.product_categories c ON c.id = p.category_id
+         LEFT JOIN dbo.partners pa ON pa.id = p.partner_id
         WHERE p.status = 'ativo'
+          AND p.deleted_at IS NULL
           AND (@category IS NULL OR c.slug = @category)
           AND (@offer_type IS NULL OR p.offer_type = @offer_type)
           AND (@featured IS NULL OR p.destaque_home = 1)
+          AND (@partner_id IS NULL OR p.partner_id = @partner_id)
         ORDER BY p.destaque_home DESC, p.economia_mensal_estimada DESC, p.created_at DESC`,
       (sqlRequest) =>
         sqlRequest
           .input("category", sqlTypes.VarChar(140), queryParams.category ?? null)
           .input("offer_type", sqlTypes.VarChar(30), queryParams.offer_type ?? null)
           .input("featured", sqlTypes.VarChar(10), queryParams.featured ?? null)
+          .input("partner_id", sqlTypes.BigInt, partnerId && Number.isFinite(partnerId) ? partnerId : null)
     );
 
+    return { data };
+  });
+
+  // Public: list active partners that have at least one published product.
+  // Used by the homepage filter.
+  app.get("/api/partners", async () => {
+    const data = await query(
+      `SELECT p.id, p.nome_fantasia, p.cidade, p.estado,
+              (SELECT COUNT(*) FROM dbo.products pr
+                 WHERE pr.partner_id = p.id
+                   AND pr.status = 'ativo'
+                   AND pr.deleted_at IS NULL) AS total_produtos
+         FROM dbo.partners p
+        WHERE p.status = 'ativo'
+        ORDER BY total_produtos DESC, p.nome_fantasia`
+    );
+    return { data };
+  });
+
+  // Public: list active partner locations with coordinates so the homepage
+  // can render "lojas proximas" and order by distance client-side.
+  app.get("/api/partner-locations", async () => {
+    const data = await query(
+      `SELECT pl.id, pl.partner_id, pl.nome, pl.endereco, pl.latitude, pl.longitude,
+              pl.raio_metros, p.nome_fantasia AS partner_nome, p.cidade, p.estado,
+              (SELECT TOP 1 CAST(token AS NVARCHAR(36)) FROM dbo.checkin_qrcodes q
+                 WHERE q.partner_location_id = pl.id AND q.status = 'ativo'
+                 ORDER BY q.created_at DESC) AS checkin_token
+         FROM dbo.partner_locations pl
+         JOIN dbo.partners p ON p.id = pl.partner_id
+        WHERE pl.status = 'ativo' AND p.status = 'ativo'
+        ORDER BY pl.created_at DESC`
+    );
     return { data };
   });
 
@@ -667,14 +726,14 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
              FROM dbo.products p
              LEFT JOIN dbo.product_categories c ON c.id = p.category_id
-            WHERE p.id = @id AND p.status = 'ativo'`,
+            WHERE p.id = @id AND p.status = 'ativo' AND p.deleted_at IS NULL`,
           (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, numericId)
         )
       : await query(
           `SELECT p.*, c.nome AS categoria_nome, c.slug AS categoria_slug
              FROM dbo.products p
              LEFT JOIN dbo.product_categories c ON c.id = p.category_id
-            WHERE p.slug = @slug AND p.status = 'ativo'`,
+            WHERE p.slug = @slug AND p.status = 'ativo' AND p.deleted_at IS NULL`,
           (sqlRequest) => sqlRequest.input("slug", sqlTypes.VarChar(180), slug)
         );
 
@@ -705,6 +764,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
          FROM dbo.products p
          LEFT JOIN dbo.product_categories c ON c.id = p.category_id
          LEFT JOIN dbo.partners pa ON pa.id = p.partner_id
+        WHERE p.deleted_at IS NULL
         ORDER BY p.created_at DESC`
     );
 
@@ -969,18 +1029,61 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/admin/products/:id", async (request) => {
-    await requireAdmin(request);
+    const admin = await requireAdmin(request);
     const params = request.params as { id: string };
+    const id = Number(params.id);
+
+    // Hard delete is only safe when no order ever referenced the product. If anything
+    // points to it, fall back to a soft delete so historical orders/cashback ledgers
+    // keep their FK targets intact but the product disappears from listings.
+    const orderRows = await query<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM dbo.product_orders WHERE product_id = @id`,
+      (req) => req.input("id", sqlTypes.BigInt, id)
+    );
+    const hasOrders = Number(orderRows[0]?.total ?? 0) > 0;
+
+    if (!hasOrders) {
+      // Wipe references in tables we own that don't have FK to product_orders.
+      await execute(
+        `DELETE FROM dbo.checkin_qrcode_products WHERE product_id = @id`,
+        (req) => req.input("id", sqlTypes.BigInt, id)
+      );
+      await execute(
+        `DELETE FROM dbo.products WHERE id = @id`,
+        (req) => req.input("id", sqlTypes.BigInt, id)
+      );
+      await writeAuditLog({
+        actorId: admin.id,
+        action: "product.hard_deleted",
+        entityType: "product",
+        entityId: id
+      });
+      return { data: { id, deleted: true, mode: "hard" } };
+    }
 
     await execute(
       `UPDATE dbo.products
           SET status = 'pausado',
+              deleted_at = SYSUTCDATETIME(),
               updated_at = SYSUTCDATETIME()
         WHERE id = @id`,
-      (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, Number(params.id))
+      (sqlRequest) => sqlRequest.input("id", sqlTypes.BigInt, id)
+    );
+    // Detach from any check-in QR so customers stop seeing it.
+    await execute(
+      `DELETE FROM dbo.checkin_qrcode_products WHERE product_id = @id`,
+      (req) => req.input("id", sqlTypes.BigInt, id)
     );
 
-    return { data: { id: Number(params.id), status: "pausado" } };
+    await writeAuditLog({
+      actorId: admin.id,
+      action: "product.soft_deleted",
+      entityType: "product",
+      entityId: id,
+      payload: { reason: "has_orders" }
+    });
+
+    return { data: { id, deleted: true, mode: "soft" } };
   });
 
   app.patch("/api/admin/orders/:id/status", async (request) => {
@@ -1430,6 +1533,329 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           qr_code: pointOfInteraction?.transaction_data?.qr_code,
           ticket_url: pointOfInteraction?.transaction_data?.ticket_url,
           cashback_used: cashbackDebited
+        }
+      }
+    });
+  });
+
+  // Multi-item cart checkout. Creates one Mercado Pago payment for the entire cart
+  // total and N product_orders sharing the same payment_reference + cart_id, so the
+  // existing per-order reconcile/voucher/cashback/refund logic still applies.
+  app.post("/api/payments/process_cart_payment", async (request, reply) => {
+    const user = await requireUser(request);
+    const body = processCartPaymentSchema.parse(request.body);
+
+    const profileRows = await query<{ email: string; nome: string; cpf: string | null }>(
+      `SELECT email, nome, cpf FROM dbo.users WHERE id = @id`,
+      (req) => req.input("id", sqlTypes.BigInt, user.id)
+    );
+    const profileRow = profileRows[0];
+    if (!profileRow || !profileRow.email) {
+      return reply.code(400).send({ error: "user_profile_incomplete" });
+    }
+
+    // Load all product rows in a single round-trip.
+    const productRows = await query<{
+      id: number;
+      nome: string;
+      offer_type: string;
+      delivery_method: "digital" | "presencial" | "fisica";
+      tipo_entrega: "digital" | "fisico" | "ambos";
+      preco_original: number;
+      preco_desconto: number;
+      economia_estimada: number;
+      status: string;
+      limite_resgates: number | null;
+      cashback_percent: number | null;
+    }>(
+      `SELECT id, nome, offer_type, delivery_method, tipo_entrega, preco_original, preco_desconto,
+              economia_estimada, status, limite_resgates, cashback_percent
+         FROM dbo.products
+        WHERE id IN (${body.items.map((_, i) => `@id${i}`).join(", ")})
+          AND status = 'ativo'
+          AND deleted_at IS NULL`,
+      (req) => {
+        body.items.forEach((item, i) => req.input(`id${i}`, sqlTypes.BigInt, item.product_id));
+        return req;
+      }
+    );
+    const productById = new Map(productRows.map((p) => [Number(p.id), p]));
+    for (const item of body.items) {
+      if (!productById.has(item.product_id)) {
+        return reply.code(404).send({ error: "product_not_found", product_id: item.product_id });
+      }
+    }
+
+    // Compute totals.
+    let cartTotal = 0;
+    for (const item of body.items) {
+      const product = productById.get(item.product_id)!;
+      cartTotal += Number(product.preco_desconto) * item.quantidade;
+    }
+    cartTotal = Number(cartTotal.toFixed(2));
+
+    const requestedCashback = Number((body.cashback_amount ?? 0).toFixed(2));
+    if (requestedCashback > cartTotal + 0.0099) {
+      return reply.code(400).send({ error: "cashback_amount_exceeds_total" });
+    }
+    const cashAmount = Number((cartTotal - requestedCashback).toFixed(2));
+    const fullyCovered = cashAmount <= 0.0099;
+
+    // Resolve check-in event (if present and active) once for all orders in this cart.
+    const checkinEventId = await resolveCheckinEventId(body.checkin_token, user.id, request);
+
+    // Reserve stock for every item. Roll back partial reservations on first failure.
+    const reservedSoFar: Array<{ productId: number; quantidade: number }> = [];
+    for (const item of body.items) {
+      const ok = await tryDecrementStock(item.product_id, item.quantidade);
+      if (!ok) {
+        for (const reserved of reservedSoFar) {
+          await restoreStock(reserved.productId, reserved.quantidade);
+        }
+        return reply.code(409).send({ error: "out_of_stock", product_id: item.product_id });
+      }
+      reservedSoFar.push({ productId: item.product_id, quantidade: item.quantidade });
+    }
+
+    const restoreAllStock = async () => {
+      for (const reserved of reservedSoFar) {
+        await restoreStock(reserved.productId, reserved.quantidade).catch(() => undefined);
+      }
+    };
+
+    const cartId = randomBytes(16).toString("hex");
+    const paymentReference = `DH-CART-${user.id}-${Date.now().toString(36)}-${randomBytes(4).toString("hex").toUpperCase()}`;
+
+    // Debit the cashback portion before talking to MP so the wallet stays consistent.
+    let cashbackDebited = 0;
+    if (requestedCashback > 0) {
+      const debit = await withTransaction((tx) =>
+        debitCashback(tx, {
+          userId: user.id,
+          orderId: null,
+          valor: requestedCashback,
+          descricao: `Carrinho ${cartId.slice(0, 8)} (${body.items.length} itens).`
+        })
+      );
+      if (!debit.ok) {
+        await restoreAllStock();
+        return reply.code(409).send({ error: "insufficient_cashback_balance" });
+      }
+      cashbackDebited = requestedCashback;
+    }
+
+    let mpPayment: Awaited<ReturnType<typeof createMercadoPagoPayment>> | null = null;
+    if (!fullyCovered) {
+      const paymentMethodId = body.payment_method === "pix" ? "pix" : body.payment_method_id;
+      const mpBody: Record<string, unknown> = {
+        transaction_amount: cashAmount,
+        description: `Carrinho Open Driver (${body.items.length} itens)`,
+        payment_method_id: paymentMethodId,
+        external_reference: paymentReference,
+        payer: {
+          email: profileRow.email,
+          ...(profileRow.cpf
+            ? {
+                identification: { type: "CPF", number: profileRow.cpf.replace(/\D/g, "") }
+              }
+            : {})
+        }
+      };
+
+      if (body.payment_method !== "pix") {
+        if (!body.token) {
+          await restoreAllStock();
+          // Rollback cashback debit if any.
+          if (cashbackDebited > 0) {
+            await withTransaction((tx) =>
+              tx.execute(
+                `UPDATE dbo.users SET cashback_balance = cashback_balance + @valor WHERE id = @id`,
+                (req) =>
+                  req
+                    .input("id", sqlTypes.BigInt, user.id)
+                    .input("valor", sqlTypes.Decimal(12, 2), cashbackDebited)
+              )
+            ).catch(() => undefined);
+          }
+          return reply.code(400).send({ error: "card_token_required" });
+        }
+        if (!paymentMethodId) {
+          await restoreAllStock();
+          return reply.code(400).send({ error: "card_payment_method_required" });
+        }
+        mpBody.token = body.token;
+        mpBody.installments = body.installments;
+        if (body.issuer_id) mpBody.issuer_id = body.issuer_id;
+      }
+
+      try {
+        mpPayment = await createMercadoPagoPayment(mpBody);
+      } catch (err) {
+        // Rollback everything we did locally before MP.
+        if (cashbackDebited > 0) {
+          await withTransaction((tx) =>
+            tx.execute(
+              `UPDATE dbo.users SET cashback_balance = cashback_balance + @valor WHERE id = @id`,
+              (req) =>
+                req
+                  .input("id", sqlTypes.BigInt, user.id)
+                  .input("valor", sqlTypes.Decimal(12, 2), cashbackDebited)
+            )
+          ).catch(() => undefined);
+        }
+        await restoreAllStock();
+        throw err;
+      }
+    }
+
+    const mpStatus = mpPayment ? String(mpPayment.status ?? "pending") : "approved";
+    const paymentStatus = fullyCovered ? "approved" : normalizeMercadoPagoStatus(mpStatus);
+
+    // Create one product_order per item, splitting the cashback proportionally to each
+    // item's share of the cart total. We accept a small rounding drift on the last item.
+    const createdOrders: Array<{
+      id: number;
+      public_code: string;
+      voucher_code: string | null;
+      product_id: number;
+      quantidade: number;
+      valor_pago_total: number;
+      cashback_aplicado: number;
+    }> = [];
+    let cashbackAllocated = 0;
+
+    for (let index = 0; index < body.items.length; index += 1) {
+      const item = body.items[index];
+      const product = productById.get(item.product_id)!;
+      const itemSubtotal = Number((Number(product.preco_desconto) * item.quantidade).toFixed(2));
+      const isLast = index === body.items.length - 1;
+      const itemCashback = isLast
+        ? Number((cashbackDebited - cashbackAllocated).toFixed(2))
+        : Number(((cashbackDebited * itemSubtotal) / cartTotal).toFixed(2));
+      cashbackAllocated += itemCashback;
+      const itemPaid = Number(Math.max(0, itemSubtotal - itemCashback).toFixed(2));
+
+      const order = await createOrderRecord({
+        userId: user.id,
+        product: {
+          id: product.id,
+          nome: product.nome,
+          offer_type: product.offer_type,
+          delivery_method: product.delivery_method,
+          tipo_entrega: product.tipo_entrega,
+          preco_original: Number(product.preco_original) * item.quantidade,
+          preco_desconto: itemPaid,
+          economia_estimada: Number(product.economia_estimada) * item.quantidade,
+          limite_resgates: product.limite_resgates
+        },
+        paymentStatus,
+        paymentMethod: fullyCovered ? "cashback" : body.payment_method,
+        paymentReference,
+        mercadoPagoPaymentId: mpPayment ? (mpPayment.id as string | number) : null,
+        mercadoPagoStatus: mpStatus,
+        cashbackApplied: itemCashback,
+        paidTotalOverride: itemPaid,
+        checkinEventId
+      });
+
+      // Tag the order with the cart group + override quantidade (createOrderRecord forces 1).
+      await execute(
+        `UPDATE dbo.product_orders
+            SET cart_id = @cart_id,
+                quantidade = @quantidade,
+                updated_at = SYSUTCDATETIME()
+          WHERE id = @id`,
+        (req) =>
+          req
+            .input("id", sqlTypes.BigInt, order.id)
+            .input("cart_id", sqlTypes.NVarChar(40), cartId)
+            .input("quantidade", sqlTypes.Int, item.quantidade)
+      );
+
+      createdOrders.push({
+        id: order.id,
+        public_code: order.public_code,
+        voucher_code: order.voucher_code,
+        product_id: product.id,
+        quantidade: item.quantidade,
+        valor_pago_total: itemPaid,
+        cashback_aplicado: itemCashback
+      });
+    }
+
+    // Re-key the cashback debit transaction to the first order in the cart so the user
+    // can trace it from their cashback ledger.
+    if (cashbackDebited > 0 && createdOrders[0]) {
+      await execute(
+        `UPDATE dbo.cashback_transactions
+            SET order_id = @order_id
+          WHERE id = (SELECT TOP 1 id FROM dbo.cashback_transactions
+                       WHERE user_id = @user_id AND order_id IS NULL AND tipo = 'debito'
+                       ORDER BY created_at DESC)`,
+        (req) =>
+          req
+            .input("order_id", sqlTypes.BigInt, createdOrders[0].id)
+            .input("user_id", sqlTypes.BigInt, user.id)
+      );
+    }
+
+    // Record the payment transaction once for the cart (using the first order as anchor).
+    if (mpPayment && createdOrders[0]) {
+      await recordPaymentTransaction({
+        orderId: createdOrders[0].id,
+        userId: user.id,
+        productId: createdOrders[0].product_id,
+        externalReference: paymentReference,
+        externalPaymentId:
+          typeof mpPayment.id === "number" || typeof mpPayment.id === "string" ? String(mpPayment.id) : null,
+        paymentMethod: body.payment_method,
+        amount: cashAmount,
+        status: paymentStatus,
+        statusDetail: typeof mpPayment.status_detail === "string" ? mpPayment.status_detail : null,
+        requestPayload: { cart_id: cartId, items: body.items },
+        responsePayload: mpPayment
+      });
+    }
+
+    // Synchronous approval (cards or 100% cashback) → fire cashback credit per order now.
+    if (paymentStatus === "approved") {
+      for (const order of createdOrders) {
+        const product = productById.get(order.product_id)!;
+        await ensureOrderCashbackCredit({
+          userId: user.id,
+          orderId: order.id,
+          paidAmount: order.valor_pago_total,
+          productCashbackPercent: product.cashback_percent ?? null,
+          productName: product.nome
+        }).catch((err) => request.log.error({ err }, "ensure_cashback_credit_failed"));
+      }
+    }
+
+    const pointOfInteraction = mpPayment?.point_of_interaction as
+      | {
+          transaction_data?: {
+            qr_code_base64?: string;
+            qr_code?: string;
+            ticket_url?: string;
+          };
+        }
+      | undefined;
+
+    return reply.code(201).send({
+      data: {
+        cart_id: cartId,
+        orders: createdOrders,
+        total: cartTotal,
+        cashback_used: cashbackDebited,
+        cash_amount: cashAmount,
+        payment: {
+          id: mpPayment ? mpPayment.id : null,
+          status: mpStatus,
+          status_detail: mpPayment ? mpPayment.status_detail : "fully_paid_with_cashback",
+          external_reference: paymentReference,
+          qr_code_base64: pointOfInteraction?.transaction_data?.qr_code_base64,
+          qr_code: pointOfInteraction?.transaction_data?.qr_code,
+          ticket_url: pointOfInteraction?.transaction_data?.ticket_url
         }
       }
     });

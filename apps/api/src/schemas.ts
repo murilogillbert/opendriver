@@ -191,6 +191,22 @@ export const processPaymentSchema = z.object({
   checkin_token: z.string().uuid().optional().nullable()
 });
 
+export const cartItemSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  quantidade: z.coerce.number().int().positive().max(20).default(1)
+});
+
+export const processCartPaymentSchema = z.object({
+  items: z.array(cartItemSchema).min(1).max(20),
+  payment_method: z.enum(["pix", "credit_card", "debit_card"]),
+  token: z.string().optional().nullable(),
+  installments: z.coerce.number().int().positive().default(1),
+  payment_method_id: z.string().optional().nullable(),
+  issuer_id: z.string().optional().nullable(),
+  cashback_amount: z.coerce.number().nonnegative().optional().default(0),
+  checkin_token: z.string().uuid().optional().nullable()
+});
+
 export const fullCashbackOrderSchema = z.object({
   product_id: z.coerce.number().int().positive(),
   cashback_amount: z.coerce.number().positive(),
