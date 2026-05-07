@@ -701,9 +701,10 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
   app.get("/api/admin/products", async (request) => {
     await requireAdmin(request);
     const data = await query(
-      `SELECT p.*, c.nome AS categoria_nome
+      `SELECT p.*, c.nome AS categoria_nome, pa.nome_fantasia AS partner_nome
          FROM dbo.products p
          LEFT JOIN dbo.product_categories c ON c.id = p.category_id
+         LEFT JOIN dbo.partners pa ON pa.id = p.partner_id
         ORDER BY p.created_at DESC`
     );
 

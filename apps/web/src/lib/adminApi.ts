@@ -50,6 +50,8 @@ export type AdminProduct = {
   id: number;
   category_id?: number;
   categoria_nome?: string;
+  partner_id?: number | null;
+  partner_nome?: string | null;
   nome: string;
   slug: string;
   descricao_curta: string;

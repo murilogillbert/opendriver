@@ -101,6 +101,10 @@ function AdminApp() {
   const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
   const [checkinQrcodes, setCheckinQrcodes] = useState<CheckinQrcode[]>([]);
   const [cashbackSummary, setCashbackSummary] = useState<CashbackSummary | null>(null);
+  const [checkinPartnerId, setCheckinPartnerId] = useState<number | "">("");
+  const [checkinSelectedProductIds, setCheckinSelectedProductIds] = useState<number[]>([]);
+  const [checkinLocationId, setCheckinLocationId] = useState<number | "">("");
+  const [checkinLabel, setCheckinLabel] = useState("");
   const [redeemResult, setRedeemResult] = useState<string | null>(null);
   const [hasAdminToken, setHasAdminToken] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -367,6 +371,7 @@ function AdminApp() {
 
     const payload: Record<string, unknown> = {
       category_id: num("category_id"),
+      partner_id: num("partner_id"),
       nome: text("nome"),
       slug: text("slug"),
       descricao_curta: text("descricao_curta"),
@@ -437,32 +442,49 @@ function AdminApp() {
 
   const submitCheckinQrcode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const values = Object.fromEntries(new FormData(form));
-    const productIds = String(values.product_ids ?? "")
-      .split(",")
-      .map((entry) => Number(entry.trim()))
-      .filter((value) => Number.isFinite(value) && value > 0);
 
-    if (productIds.length === 0) {
-      setFormMessage("Informe pelo menos um produto valido para o QR code.");
+    if (!checkinPartnerId) {
+      setFormMessage("Selecione o parceiro do QR code.");
+      return;
+    }
+    if (checkinSelectedProductIds.length === 0) {
+      setFormMessage("Selecione pelo menos um produto para vincular ao QR.");
       return;
     }
 
     try {
       const created = await adminApi.createCheckinQrcode({
-        partner_id: Number(values.partner_id),
-        partner_location_id: values.partner_location_id ? Number(values.partner_location_id) : undefined,
-        label: values.label ? String(values.label) : null,
-        product_ids: productIds,
+        partner_id: Number(checkinPartnerId),
+        partner_location_id: checkinLocationId ? Number(checkinLocationId) : undefined,
+        label: checkinLabel.trim() || null,
+        product_ids: checkinSelectedProductIds,
         status: "ativo"
       });
       setFormMessage(`QR criado. URL: ${window.location.origin}${created.url}`);
-      form.reset();
+      setCheckinPartnerId("");
+      setCheckinLocationId("");
+      setCheckinSelectedProductIds([]);
+      setCheckinLabel("");
       await reload();
     } catch (err) {
       setFormMessage(err instanceof Error ? err.message : "Falha ao criar QR.");
     }
+  };
+
+  const partnerProductOptions = useMemo(() => {
+    if (!checkinPartnerId) return [];
+    return products.filter((product) => product.partner_id === checkinPartnerId && product.status === "ativo");
+  }, [checkinPartnerId, products]);
+
+  const partnerLocationOptions = useMemo(() => {
+    if (!checkinPartnerId) return partnerLocations;
+    return partnerLocations.filter((loc) => loc.partner_id === checkinPartnerId);
+  }, [checkinPartnerId, partnerLocations]);
+
+  const toggleCheckinProduct = (productId: number) => {
+    setCheckinSelectedProductIds((current) =>
+      current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]
+    );
   };
 
   const toggleCheckinStatus = async (qr: CheckinQrcode) => {
@@ -807,7 +829,18 @@ function AdminApp() {
                   <form onSubmit={submitCheckinQrcode} className="mt-4 grid gap-3">
                     <label className="grid gap-1 text-sm font-bold">
                       Parceiro
-                      <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                      <select
+                        value={checkinPartnerId}
+                        onChange={(event) => {
+                          const next = event.target.value ? Number(event.target.value) : "";
+                          setCheckinPartnerId(next);
+                          // Reset dependent fields when the partner changes.
+                          setCheckinSelectedProductIds([]);
+                          setCheckinLocationId("");
+                        }}
+                        required
+                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5"
+                      >
                         <option value="">Selecione</option>
                         {partners.map((partner) => (
                           <option key={partner.id} value={partner.id}>
@@ -818,23 +851,69 @@ function AdminApp() {
                     </label>
                     <label className="grid gap-1 text-sm font-bold">
                       Local (opcional)
-                      <select name="partner_location_id" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                      <select
+                        value={checkinLocationId}
+                        onChange={(event) => setCheckinLocationId(event.target.value ? Number(event.target.value) : "")}
+                        disabled={!checkinPartnerId}
+                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5 disabled:bg-[#f1f5f9]"
+                      >
                         <option value="">Sem local especifico</option>
-                        {partnerLocations.map((loc) => (
+                        {partnerLocationOptions.map((loc) => (
                           <option key={loc.id} value={loc.id}>
-                            {loc.partner_nome} — {loc.nome}
+                            {loc.nome}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <Input name="label" label="Etiqueta interna" />
-                    <Input
-                      name="product_ids"
-                      label="IDs de produto (separados por virgula)"
-                      placeholder="ex: 12, 17"
-                      required
-                    />
-                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+                    <label className="grid gap-1 text-sm font-bold">
+                      Etiqueta interna
+                      <input
+                        value={checkinLabel}
+                        onChange={(event) => setCheckinLabel(event.target.value)}
+                        placeholder="ex: Balcao 2"
+                        className="rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
+                      />
+                    </label>
+                    <fieldset className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                      <legend className="px-1 text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
+                        Produtos do parceiro ({checkinSelectedProductIds.length} selecionados)
+                      </legend>
+                      {!checkinPartnerId ? (
+                        <p className="mt-1 text-xs font-semibold text-[#64748b]">
+                          Selecione um parceiro para listar os produtos vinculados.
+                        </p>
+                      ) : partnerProductOptions.length === 0 ? (
+                        <p className="mt-1 text-xs font-semibold text-amber-700">
+                          Este parceiro nao tem produtos ativos. Cadastre um produto e vincule-o ao parceiro na aba Catalogo.
+                        </p>
+                      ) : (
+                        <div className="mt-2 grid max-h-60 gap-1 overflow-y-auto pr-1">
+                          {partnerProductOptions.map((product) => {
+                            const checked = checkinSelectedProductIds.includes(product.id);
+                            return (
+                              <label
+                                key={product.id}
+                                className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs font-bold ${
+                                  checked ? "border-[#0ea5e9] bg-[#e0f2fe]" : "border-transparent hover:bg-white"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleCheckinProduct(product.id)}
+                                />
+                                <span className="flex-1 truncate">{product.nome}</span>
+                                <span className="text-[#64748b]">{money(product.preco_desconto)}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </fieldset>
+                    <button
+                      disabled={!checkinPartnerId || checkinSelectedProductIds.length === 0}
+                      className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
                       Gerar QR code
                     </button>
                   </form>
@@ -952,6 +1031,15 @@ function AdminApp() {
                           ))}
                         </select>
                       </label>
+                      <label className="grid gap-1 text-sm font-bold">
+                        Parceiro
+                        <select name="partner_id" defaultValue={editingProduct?.partner_id ?? ""} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                          <option value="">Sem parceiro</option>
+                          {partners.map((partner) => (
+                            <option key={partner.id} value={partner.id}>{partner.nome_fantasia}</option>
+                          ))}
+                        </select>
+                      </label>
                       <Input name="nome" label="Nome" required defaultValue={editingProduct?.nome} />
                       <Input name="slug" label="Slug" defaultValue={editingProduct?.slug} />
                       <Input name="descricao_curta" label="Descricao curta" required defaultValue={editingProduct?.descricao_curta} />
@@ -1063,8 +1151,8 @@ function AdminApp() {
                   </div>
                   <DataTable
                     title="Ofertas publicadas"
-                    description="Use a busca para localizar por nome, categoria, tipo ou status."
-                    headers={["Produto", "Categoria", "Preco", "Economia", "Status", "Acoes"]}
+                    description="Use a busca para localizar por nome, categoria, parceiro ou status."
+                    headers={["Produto", "Categoria", "Parceiro", "Preco", "Economia", "Status", "Acoes"]}
                     rows={products.map((product) => [
                       <div className="flex items-center gap-3" key={`product-${product.id}`}>
                         <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e2e8f0]">
@@ -1078,6 +1166,7 @@ function AdminApp() {
                         </div>
                       </div>,
                       product.categoria_nome ?? "-",
+                      product.partner_nome ?? "-",
                       money(product.preco_desconto),
                       money(product.economia_mensal_estimada),
                       <select
