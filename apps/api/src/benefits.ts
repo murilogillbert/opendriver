@@ -28,6 +28,18 @@ export function shouldCreateActivationFor(product: ActivationProductInput) {
   return false;
 }
 
+// Single redemption is the default for every offer type except recurring benefits.
+// A recurring benefit (clube farmacia, assinaturas, planos mensais...) can be redeemed
+// multiple times; the per-product limite_resgates caps the total. Everything else
+// (servico, voucher, combo, produto_fisico, produto_digital) is one-shot — once the
+// partner validates, the activation is exhausted.
+export function effectiveRedemptionLimit(product: ActivationProductInput): number | null {
+  if (product.offer_type === "beneficio_recorrente") {
+    return product.limite_resgates ?? null;
+  }
+  return 1;
+}
+
 export async function createBenefitActivation(input: {
   userId: number;
   product: ActivationProductInput;
@@ -50,7 +62,7 @@ export async function createBenefitActivation(input: {
         .input("order_id", sqlTypes.BigInt, input.orderId)
         .input("voucher_code", sqlTypes.VarChar(40), input.voucherCode)
         .input("redemption_token", sqlTypes.Char(12), token)
-        .input("redemption_limit", sqlTypes.Int, input.product.limite_resgates ?? null)
+        .input("redemption_limit", sqlTypes.Int, effectiveRedemptionLimit(input.product))
   );
 
   return result.recordset[0];
