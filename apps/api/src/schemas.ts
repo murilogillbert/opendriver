@@ -141,8 +141,8 @@ export const productSchema = z.object({
   partner_id: z.coerce.number().int().positive().optional().nullable(),
   nome: z.string().trim().min(2),
   slug: z.string().trim().min(2).optional().nullable(),
-  descricao_curta: z.string().trim().min(8),
-  descricao: z.string().trim().min(12),
+  descricao_curta: z.string().trim().min(2),
+  descricao: z.string().trim().min(2),
   tipo: z.enum(["digital", "fisico"]),
   tipo_entrega: z.enum(["digital", "fisico", "ambos"]),
   offer_type: z

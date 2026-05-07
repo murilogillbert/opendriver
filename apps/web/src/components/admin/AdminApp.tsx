@@ -337,33 +337,63 @@ function AdminApp() {
       }
     }
 
-    const payload = {
-      category_id: formData.get("category_id") ? Number(formData.get("category_id")) : undefined,
-      nome: String(formData.get("nome")),
-      slug: String(formData.get("slug") ?? "") || undefined,
-      descricao_curta: String(formData.get("descricao_curta")),
-      descricao: String(formData.get("descricao")),
-      tipo: String(formData.get("tipo")),
-      tipo_entrega: String(formData.get("tipo_entrega")),
-      offer_type: String(formData.get("offer_type")),
-      delivery_method: String(formData.get("delivery_method")),
-      preco_original: Number(formData.get("preco_original")),
-      preco_desconto: Number(formData.get("preco_desconto")),
-      economia_estimada: Number(formData.get("economia_estimada") || 0),
-      economia_mensal_estimada: Number(formData.get("economia_mensal_estimada") || 0),
-      imagem_url: imagemUrl || undefined,
-      gallery_urls: String(formData.get("gallery_urls") ?? "")
-        .split(",")
-        .map((url) => url.trim())
-        .filter(Boolean),
-      video_url: videoUrl || undefined,
-      usage_rules: String(formData.get("usage_rules") ?? "") || undefined,
-      delivery_deadline: String(formData.get("delivery_deadline") ?? "") || undefined,
-      estoque: formData.get("estoque") ? Number(formData.get("estoque")) : undefined,
-      destaque_home: formData.get("destaque_home") === "on",
-      status: String(formData.get("status")),
-      cashback_percent: formData.get("cashback_percent") ? Number(formData.get("cashback_percent")) : undefined
+    // Helpers: be tolerant of common admin-typing patterns. Empty strings become undefined,
+    // numeric fields accept comma decimals (10,50 → 10.50), and "0" stays as 0.
+    const text = (key: string) => {
+      const raw = formData.get(key);
+      if (raw == null) return undefined;
+      const value = String(raw).trim();
+      return value.length === 0 ? undefined : value;
     };
+    const num = (key: string) => {
+      const raw = text(key);
+      if (raw === undefined) return undefined;
+      const cleaned = raw.replace(/\./g, "").replace(",", ".");
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
+    const precoOriginal = num("preco_original");
+    const precoDesconto = num("preco_desconto");
+    if (precoOriginal === undefined || precoDesconto === undefined) {
+      setFormMessage("Preencha preco original e preco com desconto com numeros validos.");
+      return;
+    }
+
+    const galleryUrls = (text("gallery_urls") ?? "")
+      .split(",")
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+    const payload: Record<string, unknown> = {
+      category_id: num("category_id"),
+      nome: text("nome"),
+      slug: text("slug"),
+      descricao_curta: text("descricao_curta"),
+      descricao: text("descricao"),
+      tipo: text("tipo") ?? "digital",
+      tipo_entrega: text("tipo_entrega") ?? "digital",
+      offer_type: text("offer_type") ?? "produto_digital",
+      delivery_method: text("delivery_method") ?? "digital",
+      preco_original: precoOriginal,
+      preco_desconto: precoDesconto,
+      economia_estimada: num("economia_estimada") ?? Math.max(precoOriginal - precoDesconto, 0),
+      economia_mensal_estimada: num("economia_mensal_estimada") ?? 0,
+      imagem_url: imagemUrl || undefined,
+      gallery_urls: galleryUrls,
+      video_url: videoUrl || undefined,
+      usage_rules: text("usage_rules"),
+      delivery_deadline: text("delivery_deadline"),
+      estoque: num("estoque"),
+      destaque_home: formData.get("destaque_home") === "on",
+      status: text("status") ?? "ativo",
+      cashback_percent: num("cashback_percent")
+    };
+
+    // Strip undefined keys so Zod sees missing optional fields as missing, not null.
+    for (const key of Object.keys(payload)) {
+      if (payload[key] === undefined) delete payload[key];
+    }
 
     try {
       if (editingProduct) {

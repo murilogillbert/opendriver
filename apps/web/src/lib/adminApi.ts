@@ -292,8 +292,22 @@ async function request<T>(path: string, init?: RequestInit) {
     let message = `API request failed: ${response.status}`;
 
     try {
-      const body = (await response.json()) as { error?: string };
-      message = body.error ?? message;
+      const body = (await response.json()) as {
+        error?: string;
+        issues?: Array<{ path?: Array<string | number>; message?: string }>;
+      };
+      if (body.error === "validation_error" && Array.isArray(body.issues)) {
+        const detail = body.issues
+          .slice(0, 5)
+          .map((issue) => {
+            const path = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join(".") : "(root)";
+            return `${path}: ${issue.message ?? "invalid"}`;
+          })
+          .join(" • ");
+        message = detail ? `validation_error → ${detail}` : "validation_error";
+      } else if (body.error) {
+        message = body.error;
+      }
     } catch {
       // keep default message
     }
