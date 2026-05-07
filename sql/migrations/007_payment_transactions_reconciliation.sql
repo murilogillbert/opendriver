@@ -46,10 +46,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_transactions_e
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_payment_transactions_external_payment_id' AND object_id = OBJECT_ID('dbo.payment_transactions'))
   CREATE INDEX ix_payment_transactions_external_payment_id ON dbo.payment_transactions(external_payment_id, created_at DESC);
 
-UPDATE dbo.product_orders
-   SET payment_reference = public_code
- WHERE payment_reference IS NULL
-   AND mercado_pago_payment_id IS NOT NULL;
+IF COL_LENGTH('dbo.product_orders', 'payment_reference') IS NOT NULL
+  EXEC sp_executesql N'UPDATE dbo.product_orders SET payment_reference = public_code WHERE payment_reference IS NULL AND mercado_pago_payment_id IS NOT NULL';
 
 IF NOT EXISTS (SELECT 1 FROM dbo.schema_migrations WHERE migration_name = '007_payment_transactions_reconciliation.sql')
 BEGIN
