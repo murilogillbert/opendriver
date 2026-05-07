@@ -206,5 +206,15 @@ export const checkinQrcodeSchema = z.object({
 });
 
 export const refundOrderSchema = z.object({
-  reason: z.string().trim().min(1).max(500).optional().nullable()
+  // Treat empty/whitespace as "no reason given" instead of rejecting the request.
+  reason: z
+    .string()
+    .max(500)
+    .optional()
+    .nullable()
+    .transform((value) => {
+      if (value == null) return null;
+      const trimmed = value.trim();
+      return trimmed.length === 0 ? null : trimmed;
+    })
 });

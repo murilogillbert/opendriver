@@ -427,8 +427,10 @@ function AdminApp() {
   };
 
   const refundOrder = async (id: number) => {
-    const reason = window.prompt("Motivo do reembolso (opcional):") ?? "";
-    if (!window.confirm(`Confirmar reembolso do pedido #${id}? Esta acao restaura estoque e estorna cashback.`)) {
+    // window.prompt returns null on Cancel and "" on empty OK — treat both as "no reason".
+    const rawReason = window.prompt("Motivo do reembolso (opcional):");
+    const reason = rawReason && rawReason.trim().length > 0 ? rawReason.trim() : undefined;
+    if (!window.confirm(`Confirmar reembolso do pedido #${id}? Esta acao chama o Mercado Pago, restaura estoque e estorna cashback.`)) {
       return;
     }
     try {
