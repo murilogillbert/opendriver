@@ -471,14 +471,29 @@ function AdminApp() {
     }
   };
 
-  const partnerProductOptions = useMemo(() => {
+  // Coerce both sides to Number — mssql can hand back BIGINT as a string in some
+  // configurations, and the select stores its value as Number. Strict === between
+  // the two would always return false and silently produce an empty list.
+  const samePartner = (productPartnerId: unknown, target: number | "") => {
+    if (target === "") return false;
+    if (productPartnerId == null) return false;
+    return Number(productPartnerId) === Number(target);
+  };
+
+  const partnerAllProducts = useMemo(() => {
     if (!checkinPartnerId) return [];
-    return products.filter((product) => product.partner_id === checkinPartnerId && product.status === "ativo");
+    return products.filter((product) => samePartner(product.partner_id, checkinPartnerId));
   }, [checkinPartnerId, products]);
+
+  // Eligible for QR vinculation: skip drafts, exhausted and paused entries.
+  const partnerProductOptions = useMemo(
+    () => partnerAllProducts.filter((product) => product.status === "ativo"),
+    [partnerAllProducts]
+  );
 
   const partnerLocationOptions = useMemo(() => {
     if (!checkinPartnerId) return partnerLocations;
-    return partnerLocations.filter((loc) => loc.partner_id === checkinPartnerId);
+    return partnerLocations.filter((loc) => samePartner(loc.partner_id, checkinPartnerId));
   }, [checkinPartnerId, partnerLocations]);
 
   const toggleCheckinProduct = (productId: number) => {
@@ -884,7 +899,9 @@ function AdminApp() {
                         </p>
                       ) : partnerProductOptions.length === 0 ? (
                         <p className="mt-1 text-xs font-semibold text-amber-700">
-                          Este parceiro nao tem produtos ativos. Cadastre um produto e vincule-o ao parceiro na aba Catalogo.
+                          {partnerAllProducts.length === 0
+                            ? "Este parceiro nao tem produtos vinculados. Va em Catalogo, edite um produto e selecione este parceiro."
+                            : `Este parceiro tem ${partnerAllProducts.length} produto(s) cadastrado(s), mas nenhum esta com status 'ativo'. Reative-os no Catalogo.`}
                         </p>
                       ) : (
                         <div className="mt-2 grid max-h-60 gap-1 overflow-y-auto pr-1">
