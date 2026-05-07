@@ -281,9 +281,13 @@ export type PaymentEvent = {
 
 async function request<T>(path: string, init?: RequestInit) {
   const token = window.localStorage.getItem("opendriver-admin-token");
+  // Only advertise application/json when we actually have a JSON body to parse — Fastify
+  // refuses POST/PUT/PATCH with content-type application/json and an empty body.
+  const isFormData = init?.body instanceof FormData;
+  const hasBody = init?.body != null && !isFormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers
     },
