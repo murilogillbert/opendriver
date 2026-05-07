@@ -27,14 +27,18 @@ type ActivationRow = {
   economia_estimada: number;
 };
 
+// Accepts either the 12-char redemption_token (the QR payload) or the OD-XXXXXXXX
+// voucher_code shown on digital vouchers — partners type whichever the customer hands them.
 async function loadActivationByToken(token: string) {
+  const normalized = token.trim().toUpperCase();
   const rows = await query<ActivationRow>(
-    `SELECT a.id, a.user_id, a.product_id, a.status, a.redemption_limit, a.redemption_count,
+    `SELECT TOP 1 a.id, a.user_id, a.product_id, a.status, a.redemption_limit, a.redemption_count,
             a.expires_at, a.voucher_code, p.partner_id, p.economia_estimada
        FROM dbo.benefit_activations a
        JOIN dbo.products p ON p.id = a.product_id
-      WHERE a.redemption_token = @token`,
-    (request) => request.input("token", sqlTypes.Char(12), token.trim().toUpperCase())
+      WHERE a.redemption_token = @token OR a.voucher_code = @token
+      ORDER BY a.activated_at DESC`,
+    (request) => request.input("token", sqlTypes.NVarChar(40), normalized)
   );
   return rows[0] ?? null;
 }

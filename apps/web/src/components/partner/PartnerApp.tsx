@@ -405,9 +405,9 @@ function PartnerTerminal({
         <div className="grid gap-4 rounded-md border border-white/10 bg-[#101a2e] p-5">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">Validar cupom</p>
-            <h2 className="mt-1 font-display text-2xl font-black">Cole ou digite o token</h2>
+            <h2 className="mt-1 font-display text-2xl font-black">Cole ou digite o codigo</h2>
             <p className="mt-1 text-xs font-bold text-white/55">
-              O cliente mostra o token de 12 caracteres ou o QR — voce pode digitar ou escanear.
+              Aceita o token de 12 letras (QR de resgate) ou o codigo OD-XXXXXXXX (voucher digital).
             </p>
           </div>
 
@@ -426,12 +426,12 @@ function PartnerTerminal({
             <input
               value={token}
               onChange={(event) => setToken(event.target.value.toUpperCase())}
-              placeholder="K7M3LFXP9TQR"
+              placeholder="K7M3LFXP9TQR ou OD-A24A9F03"
               autoFocus
-              maxLength={20}
+              maxLength={40}
               autoComplete="off"
               autoCapitalize="characters"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-4 py-4 text-center font-mono text-2xl font-black tracking-[0.3em] text-white placeholder:text-white/25 focus:border-brand-gold focus:outline-none"
+              className="rounded-md border border-white/15 bg-[#0b1220] px-4 py-4 text-center font-mono text-xl font-black tracking-[0.2em] text-white placeholder:text-white/25 focus:border-brand-gold focus:outline-none"
             />
             <div className="flex flex-wrap gap-2">
               <button

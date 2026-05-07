@@ -32,11 +32,13 @@ export async function registerPartnerRoutes(app: FastifyInstance) {
 
   // Preview a voucher token before confirming. No side-effects so the operator can
   // inspect the activation, talk to the customer and only then press confirm.
+  // Accepts either the redemption_token (12 alphanumeric chars, the "real" QR token)
+  // or the voucher_code (OD-XXXXXXXX, friendlier code shown on digital vouchers).
   app.get("/api/partner/me/lookup", async (request, reply) => {
     const actor = await requirePartner(request);
     const queryParams = request.query as { token?: string };
     const token = (queryParams.token ?? "").trim().toUpperCase();
-    if (!token || token.length < 6 || token.length > 20) {
+    if (!token || token.length < 6 || token.length > 40) {
       return reply.code(400).send({ error: "invalid_token" });
     }
 
@@ -57,17 +59,21 @@ export async function registerPartnerRoutes(app: FastifyInstance) {
       user_id: number;
       user_nome: string;
       economia_estimada: number;
+      redemption_token: string;
     }>(
-      `SELECT a.id, a.product_id, p.partner_id AS product_partner_id, p.partner_id,
+      `SELECT TOP 1
+              a.id, a.product_id, p.partner_id AS product_partner_id, p.partner_id,
               p.nome AS produto_nome, p.offer_type, p.delivery_method,
               a.voucher_code, a.status, a.activated_at, a.expires_at,
               a.redemption_limit, a.redemption_count,
-              a.user_id, u.nome AS user_nome, p.economia_estimada
+              a.user_id, u.nome AS user_nome, p.economia_estimada,
+              a.redemption_token
          FROM dbo.benefit_activations a
          JOIN dbo.products p ON p.id = a.product_id
          JOIN dbo.users u ON u.id = a.user_id
-        WHERE a.redemption_token = @token`,
-      (req) => req.input("token", sqlTypes.Char(12), token)
+        WHERE a.redemption_token = @token OR a.voucher_code = @token
+        ORDER BY a.activated_at DESC`,
+      (req) => req.input("token", sqlTypes.NVarChar(40), token)
     );
     const activation = rows[0];
     if (!activation) return reply.code(404).send({ error: "activation_not_found" });
