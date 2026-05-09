@@ -12,6 +12,9 @@ import {
   Order,
   SavingsSummary
 } from "../../lib/marketplaceApi";
+import CashbackExpiringBanner from "./CashbackExpiringBanner";
+import OrderTimeline from "./OrderTimeline";
+import ReferralCard from "./ReferralCard";
 import VoucherCard from "./VoucherCard";
 
 const defaultSavings: SavingsSummary = {
@@ -28,6 +31,7 @@ const defaultSavings: SavingsSummary = {
 function AccountPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [benefits, setBenefits] = useState<BenefitActivation[]>([]);
+  const [openTimelineFor, setOpenTimelineFor] = useState<number | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [savings, setSavings] = useState<SavingsSummary>(defaultSavings);
   const [profile, setProfile] = useState<(AuthUser & Record<string, string>) | null>(null);
@@ -152,6 +156,16 @@ function AccountPage() {
             Sair
           </button>
         </header>
+
+        {/* Banner de cashback expirando em destaque (so aparece se houver) */}
+        <div className="mt-6">
+          <CashbackExpiringBanner />
+        </div>
+
+        {/* Programa de indicacao — CTA viral */}
+        <div className="mt-6">
+          <ReferralCard />
+        </div>
 
         {/* Hero do cashback — destaque maximo, com CTA explicito de uso. */}
         <section className="mt-6 grid gap-4 rounded-md border border-brand-gold/40 bg-gradient-to-br from-brand-gold/15 to-white p-6 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
@@ -397,7 +411,19 @@ function AccountPage() {
                         {syncingOrders.includes(order.id) ? "Verificando..." : "Verificar pagamento"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setOpenTimelineFor(openTimelineFor === order.id ? null : order.id)}
+                      className="mt-2 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
+                    >
+                      {openTimelineFor === order.id ? "Ocultar timeline" : "Ver timeline"}
+                    </button>
                   </div>
+                  {openTimelineFor === order.id && (
+                    <div className="sm:col-span-3">
+                      <OrderTimeline orderId={order.id} />
+                    </div>
+                  )}
                 </article>
               ))
             )}

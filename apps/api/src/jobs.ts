@@ -2,7 +2,7 @@ import { FastifyBaseLogger } from "fastify";
 
 import { expireCashbackForAllUsers } from "./cashback.js";
 import { findStalePendingOrders, reconcileOrderPaymentStatus } from "./payments.js";
-import { execute, sqlTypes } from "./db.js";
+import { execute, query, sqlTypes } from "./db.js";
 
 type JobHandle = {
   stop: () => void;
@@ -95,11 +95,82 @@ function startBenefitExpirationJob(logger: FastifyBaseLogger): JobHandle {
   return { stop: () => { stopped = true; clearInterval(interval); } };
 }
 
+// Daily: notify users whose cashback is about to expire (within 7 days).
+// Idempotent — uses notification's titulo to avoid duplicates per user/window.
+function startCashbackExpiringNotificationJob(logger: FastifyBaseLogger): JobHandle {
+  const intervalMs = DAY_MS;
+  let stopped = false;
+
+  const run = async () => {
+    if (stopped) return;
+    try {
+      // Find users with credit expiring in next 7 days, with a positive remaining balance.
+      const targets = await query<{ user_id: number; total: number; next_expires: Date }>(
+        `SELECT t.user_id, SUM(t.valor) AS total, MIN(t.expires_at) AS next_expires
+           FROM dbo.cashback_transactions t
+           JOIN dbo.users u ON u.id = t.user_id
+          WHERE t.tipo = 'credito'
+            AND t.expires_at IS NOT NULL
+            AND t.expires_at > SYSUTCDATETIME()
+            AND t.expires_at <= DATEADD(DAY, 7, SYSUTCDATETIME())
+            AND COALESCE(u.cashback_balance, 0) > 0
+          GROUP BY t.user_id`
+      );
+
+      let notified = 0;
+      for (const target of targets) {
+        if (stopped) break;
+        const valor = Number(target.total ?? 0);
+        if (valor <= 0) continue;
+
+        // Idempotency: only insert if no notification with the same title was created in the last 5 days.
+        const titulo = "Seu cashback vai expirar em breve";
+        const exists = await query<{ id: number }>(
+          `SELECT TOP 1 id FROM dbo.notifications
+            WHERE user_id = @user_id
+              AND titulo = @titulo
+              AND created_at >= DATEADD(DAY, -5, SYSUTCDATETIME())`,
+          (req) =>
+            req
+              .input("user_id", sqlTypes.BigInt, target.user_id)
+              .input("titulo", sqlTypes.NVarChar(140), titulo)
+        );
+        if (exists[0]) continue;
+
+        const valorFormatted = `R$ ${valor.toFixed(2).replace(".", ",")}`;
+        const mensagem = `Voce tem ${valorFormatted} de cashback que vai expirar em breve. Use antes de perder!`;
+
+        await execute(
+          `INSERT INTO dbo.notifications (user_id, titulo, mensagem, canal)
+           VALUES (@user_id, @titulo, @mensagem, 'app')`,
+          (req) =>
+            req
+              .input("user_id", sqlTypes.BigInt, target.user_id)
+              .input("titulo", sqlTypes.NVarChar(140), titulo)
+              .input("mensagem", sqlTypes.NVarChar(500), mensagem)
+        );
+        notified += 1;
+      }
+
+      if (notified > 0) {
+        logger.info({ notified }, "cashback_expiring_notifications_sent");
+      }
+    } catch (err) {
+      logger.error({ err }, "cashback_expiring_notifications_failed");
+    }
+  };
+
+  const interval = setInterval(() => void run(), intervalMs);
+  setTimeout(() => void run(), 120_000);
+  return { stop: () => { stopped = true; clearInterval(interval); } };
+}
+
 export function startBackgroundJobs(logger: FastifyBaseLogger): JobHandle {
   const handles = [
     startWebhookRetryJob(logger),
     startCashbackExpirationJob(logger),
-    startBenefitExpirationJob(logger)
+    startBenefitExpirationJob(logger),
+    startCashbackExpiringNotificationJob(logger)
   ];
   return {
     stop: () => handles.forEach((handle) => handle.stop())

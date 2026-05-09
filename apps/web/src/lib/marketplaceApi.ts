@@ -431,6 +431,104 @@ export const marketplaceApi = {
         body: JSON.stringify(input)
       })
     ).data;
+  },
+
+  // ─── Cashback expiring banner ──────────────────────────────────────────
+  async cashbackExpiring(days = 30) {
+    return (
+      await request<{
+        balance: number;
+        days_window: number;
+        total_expiring: number;
+        next_expires_at: string | null;
+      }>(`/me/cashback/expiring?days=${days}`)
+    ).data;
+  },
+
+  // ─── Referrals ─────────────────────────────────────────────────────────
+  async myReferrals() {
+    return (
+      await request<{
+        code: string;
+        stats: { total_indicados: number; qualificados: number; pagos: number; total_ganho: number };
+        recent: Array<{
+          id: number;
+          status: string;
+          bonus_amount: number;
+          created_at: string;
+          qualified_at: string | null;
+          indicado_nome: string;
+        }>;
+      }>("/me/referrals")
+    ).data;
+  },
+  async lookupReferral(code: string) {
+    return (
+      await request<{ referrer_id: number; referrer_first_name: string }>(
+        `/referrals/lookup?code=${encodeURIComponent(code)}`
+      )
+    ).data;
+  },
+  async applyReferral(code: string) {
+    return (
+      await request<{ ok: true }>("/me/referrals/apply", {
+        method: "POST",
+        body: JSON.stringify({ code })
+      })
+    ).data;
+  },
+
+  // ─── Order tracking timeline ───────────────────────────────────────────
+  async orderTimeline(orderId: number) {
+    return (
+      await request<{
+        order: Order;
+        events: Array<{
+          id: number;
+          status: string;
+          payment_status: string | null;
+          note: string | null;
+          created_at: string;
+        }>;
+      }>(`/me/orders/${orderId}/timeline`)
+    ).data;
+  },
+  async searchOrders(filters: {
+    status?: string;
+    payment_status?: string;
+    from?: string;
+    to?: string;
+    partner_id?: number;
+    search?: string;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    });
+    const qs = params.toString();
+    return (
+      await request<
+        Array<{
+          id: number;
+          public_code: string;
+          status: string;
+          payment_status: string | null;
+          payment_method: string | null;
+          valor_pago_total: number;
+          voucher_code: string | null;
+          tipo_entrega: string;
+          created_at: string;
+          produto_nome: string;
+          imagem_url: string | null;
+          partner_nome: string | null;
+        }>
+      >(`/me/orders/search${qs ? `?${qs}` : ""}`)
+    ).data;
+  },
+
+  async markNotificationRead(id: number) {
+    await request(`/me/notifications/${id}/read`, { method: "PATCH" });
   }
 };
 

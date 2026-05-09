@@ -176,7 +176,154 @@ export const partnerApi = {
   },
   async stats() {
     return (await request<PartnerStats>("/partner/me/stats")).data;
+  },
+
+  // ─── Products self-service ──────────────────────────────────────────────
+  async listProducts() {
+    return (await request<PartnerProduct[]>("/partner/me/products")).data;
+  },
+  async createProduct(input: PartnerProductInput) {
+    return (
+      await request<{ id: number }>("/partner/me/products", {
+        method: "POST",
+        body: JSON.stringify(input)
+      })
+    ).data;
+  },
+  async updateProduct(id: number, input: Partial<PartnerProductInput>) {
+    return (
+      await request<{ id: number }>(`/partner/me/products/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input)
+      })
+    ).data;
+  },
+  async deleteProduct(id: number) {
+    await request<{ ok: true }>(`/partner/me/products/${id}`, { method: "DELETE" });
+  },
+  async productSales(id: number) {
+    return (
+      await request<{ total_pedidos: number; total_resgates: number; receita_total: number }>(
+        `/partner/me/products/${id}/sales`
+      )
+    ).data;
+  },
+
+  // ─── Receivables ────────────────────────────────────────────────────────
+  async receivables(filters?: { from?: string; to?: string; status?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.from) params.set("from", filters.from);
+    if (filters?.to) params.set("to", filters.to);
+    if (filters?.status) params.set("status", filters.status);
+    const qs = params.toString();
+    return (await request<PartnerReceivable[]>(`/partner/me/receivables${qs ? `?${qs}` : ""}`)).data;
+  },
+
+  // ─── Analytics ──────────────────────────────────────────────────────────
+  async analyticsRedemptions(days = 30) {
+    return (
+      await request<{ dia: string; total: number; receita: number }[]>(
+        `/partner/me/analytics/redemptions?days=${days}`
+      )
+    ).data;
+  },
+  async analyticsTopProducts(days = 30) {
+    return (
+      await request<{ id: number; nome: string; resgates: number; receita: number }[]>(
+        `/partner/me/analytics/top-products?days=${days}`
+      )
+    ).data;
+  },
+  async analyticsQrPerformance(days = 30) {
+    return (
+      await request<
+        { id: number; label: string | null; token: string; status: string; scans: number; conversions: number; receita: number }[]
+      >(`/partner/me/analytics/qr-performance?days=${days}`)
+    ).data;
+  },
+
+  // ─── Payouts ────────────────────────────────────────────────────────────
+  async listPayouts() {
+    return (await request<PartnerPayout[]>("/partner/me/payout-requests")).data;
+  },
+  async requestPayout(input: { amount: number; bank_info: string; notes?: string }) {
+    return (
+      await request<{ id: number }>("/partner/me/payout-requests", {
+        method: "POST",
+        body: JSON.stringify(input)
+      })
+    ).data;
+  },
+  async cancelPayout(id: number) {
+    await request<{ ok: true }>(`/partner/me/payout-requests/${id}`, { method: "DELETE" });
   }
+};
+
+// ─── Types for the new endpoints ───────────────────────────────────────────
+export type PartnerProduct = {
+  id: number;
+  nome: string;
+  slug: string;
+  descricao_curta: string;
+  status: string;
+  offer_type: string;
+  delivery_method: string;
+  preco_original: number;
+  preco_desconto: number;
+  economia_estimada: number;
+  cashback_percent: number | null;
+  estoque: number | null;
+  destaque_home: boolean;
+  imagem_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerProductInput = {
+  nome: string;
+  descricao_curta: string;
+  descricao: string;
+  offer_type: string;
+  delivery_method?: string;
+  tipo_entrega?: string;
+  tipo?: string;
+  preco_original: number;
+  preco_desconto: number;
+  economia_estimada?: number | null;
+  cashback_percent?: number | null;
+  estoque?: number | null;
+  imagem_url?: string | null;
+  usage_rules?: string | null;
+  status?: "ativo" | "pausado" | "rascunho";
+};
+
+export type PartnerReceivable = {
+  id: number;
+  descricao: string;
+  valor: number;
+  status: string;
+  due_date: string | null;
+  settled_at: string | null;
+  created_at: string;
+  payout_request_id: number | null;
+  redeemed_at: string | null;
+  valor_referencia: number | null;
+  confirmation_method: string | null;
+  produto_nome: string | null;
+  cliente_nome: string | null;
+};
+
+export type PartnerPayout = {
+  id: number;
+  amount: number;
+  status: string;
+  bank_info: string | null;
+  notes: string | null;
+  admin_notes: string | null;
+  requested_at: string;
+  approved_at: string | null;
+  paid_at: string | null;
+  rejected_at: string | null;
 };
 
 const ERROR_MESSAGES: Record<string, string> = {

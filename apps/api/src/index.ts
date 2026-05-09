@@ -11,6 +11,7 @@ import { config } from "./config.js";
 import { registerBenefitRoutes } from "./benefitRoutes.js";
 import { registerChatRoutes } from "./chatRoutes.js";
 import { registerCheckinRoutes } from "./checkinRoutes.js";
+import { registerEngagementRoutes } from "./engagementRoutes.js";
 import { registerGeoRoutes } from "./geoRoutes.js";
 import { startBackgroundJobs } from "./jobs.js";
 import { registerMarketplaceRoutes } from "./marketplaceRoutes.js";
@@ -88,6 +89,7 @@ await registerGeoRoutes(app);
 await registerCheckinRoutes(app);
 await registerPartnerRoutes(app);
 await registerChatRoutes(app);
+await registerEngagementRoutes(app);
 
 await app.listen({
   port: config.port,

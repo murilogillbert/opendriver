@@ -14,6 +14,10 @@ import type {
   PartnerRedemption,
   PartnerStats
 } from "../../lib/partnerApi";
+import PartnerAnalyticsTab from "./PartnerAnalyticsTab";
+import PartnerPayoutsTab from "./PartnerPayoutsTab";
+import PartnerProductsTab from "./PartnerProductsTab";
+import PartnerReceivablesTab from "./PartnerReceivablesTab";
 
 type Phase = "checking" | "login" | "must_change_password" | "ready";
 
@@ -302,6 +306,8 @@ function PartnerChangePassword({
   );
 }
 
+type PartnerTab = "terminal" | "produtos" | "analytics" | "recebiveis" | "saques";
+
 function PartnerTerminal({
   profile,
   stats,
@@ -315,6 +321,7 @@ function PartnerTerminal({
   onRefresh: () => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
+  const [tab, setTab] = useState<PartnerTab>("terminal");
   const [token, setToken] = useState("");
   const [lookup, setLookup] = useState<PartnerLookup | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -399,8 +406,44 @@ function PartnerTerminal({
             Sair
           </button>
         </div>
+        <nav className="mx-auto flex max-w-5xl flex-wrap gap-1 px-5 pb-3">
+          {(
+            [
+              ["terminal", "Terminal"],
+              ["produtos", "Produtos"],
+              ["analytics", "Analytics"],
+              ["recebiveis", "Recebiveis"],
+              ["saques", "Saques"]
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider transition ${
+                tab === key
+                  ? "bg-brand-gold text-brand-ink"
+                  : "border border-white/15 bg-white/5 text-white/70 hover:border-brand-gold hover:text-brand-gold"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
       </header>
 
+      {tab !== "terminal" && (
+        <section className="mx-auto max-w-5xl px-5 py-6">
+          <div className="rounded-md bg-white p-5 text-slate-800">
+            {tab === "produtos" && <PartnerProductsTab />}
+            {tab === "analytics" && <PartnerAnalyticsTab />}
+            {tab === "recebiveis" && <PartnerReceivablesTab />}
+            {tab === "saques" && <PartnerPayoutsTab />}
+          </div>
+        </section>
+      )}
+
+      {tab === "terminal" && (
       <section className="mx-auto grid max-w-5xl gap-5 px-5 py-6 lg:grid-cols-[1.4fr_0.8fr]">
         <div className="grid gap-4 rounded-md border border-white/10 bg-[#101a2e] p-5">
           <div>
@@ -537,6 +580,7 @@ function PartnerTerminal({
           </div>
         </aside>
       </section>
+      )}
     </main>
   );
 }
