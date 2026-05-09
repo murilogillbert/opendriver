@@ -9,6 +9,7 @@ import { ZodError } from "zod";
 
 import { config } from "./config.js";
 import { registerBenefitRoutes } from "./benefitRoutes.js";
+import { registerChatRoutes } from "./chatRoutes.js";
 import { registerCheckinRoutes } from "./checkinRoutes.js";
 import { registerGeoRoutes } from "./geoRoutes.js";
 import { startBackgroundJobs } from "./jobs.js";
@@ -86,6 +87,7 @@ await registerBenefitRoutes(app);
 await registerGeoRoutes(app);
 await registerCheckinRoutes(app);
 await registerPartnerRoutes(app);
+await registerChatRoutes(app);
 
 await app.listen({
   port: config.port,

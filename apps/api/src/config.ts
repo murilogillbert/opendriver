@@ -79,6 +79,7 @@ export const config = {
   userTokenTtl,
   uploadDir: resolveUploadDir(),
   uploadMaxBytes: numberFromEnv("UPLOAD_MAX_BYTES", 200 * 1024 * 1024),
+  groqApiKey: process.env.GROQ_API_KEY?.trim() || null,
   mercadoPago: {
     accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN ?? "",
     publicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? "",

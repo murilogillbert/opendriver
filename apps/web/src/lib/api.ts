@@ -72,3 +72,20 @@ export async function recordBotInteraction(input: {
     lead_id: input.leadId
   });
 }
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export async function sendChatMessage(input: {
+  messages: ChatMessage[];
+  leadContext?: {
+    driverType?: string;
+    city?: string;
+    mainPain?: string;
+  };
+}): Promise<string> {
+  const response = await postJson<{ data: { message: string } }>("/chat", input);
+  return response.data.message;
+}
