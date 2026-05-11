@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
@@ -20,11 +21,63 @@ import { registerPaymentWebhookRoutes } from "./paymentWebhooks.js";
 import { registerRoutes } from "./routes.js";
 
 const app = Fastify({
-  logger: true,
+  logger: {
+    level: process.env.LOG_LEVEL ?? (config.isProduction ? "info" : "debug"),
+    // Strip credentials and tokens from request/response logs. Pino's redact uses
+    // glob-style paths — `*` covers a single key, `**` recurses. Anything redacted
+    // is replaced with "[REDACTED]" before being emitted to stdout.
+    redact: {
+      paths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "req.headers['x-webhook-secret']",
+        "req.headers['x-opendriver-webhook-secret']",
+        'req.headers["x-signature"]',
+        "req.body.senha",
+        "req.body.password",
+        "req.body.token",
+        "req.body.cpf",
+        "req.body.payment_method_id",
+        "req.body.cashback_amount",
+        "*.password",
+        "*.senha",
+        "*.token",
+        "*.access_token",
+        "*.refresh_token"
+      ],
+      censor: "[REDACTED]"
+    }
+  },
   trustProxy: true
 });
 
 mkdirSync(config.uploadDir, { recursive: true });
+
+// Locked-down baseline security headers. CSP is reasonably permissive because the
+// SPA inlines styles via Tailwind's runtime and pulls images from /uploads and
+// remote partner sites; tighten further if the asset mix stops needing it.
+await app.register(helmet, {
+  global: true,
+  contentSecurityPolicy: config.isProduction
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "blob:", "https:"],
+          mediaSrc: ["'self'", "blob:", "https:"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          connectSrc: ["'self'", "https:"],
+          frameAncestors: ["'none'"],
+          objectSrc: ["'none'"]
+        }
+      }
+    : false,
+  // The reverse proxy already terminates TLS; let it own HSTS so we don't double up.
+  strictTransportSecurity: false,
+  crossOriginEmbedderPolicy: false,
+  // Allow images uploaded to /uploads to be embedded across origins (admin previews, etc.).
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+});
 
 await app.register(cors, {
   origin: config.corsOrigin === "*" ? true : config.corsOrigin
@@ -47,7 +100,7 @@ await app.register(fastifyStatic, {
   prefix: "/uploads/"
 });
 
-app.setErrorHandler((error, _request, reply) => {
+app.setErrorHandler((error, request, reply) => {
   if (error instanceof ZodError) {
     return reply.code(400).send({
       error: "validation_error",
@@ -74,7 +127,7 @@ app.setErrorHandler((error, _request, reply) => {
     });
   }
 
-  app.log.error(error);
+  request.log.error({ err: error }, "unhandled_error");
 
   return reply.code(500).send({
     error: "internal_server_error"
@@ -99,3 +152,17 @@ await app.listen({
 if (process.env.DISABLE_BACKGROUND_JOBS !== "1") {
   startBackgroundJobs(app.log);
 }
+
+// Graceful shutdown — give in-flight requests up to 10 s to drain before forcing exit.
+const shutdown = async (signal: string) => {
+  app.log.info({ signal }, "shutdown_received");
+  try {
+    await app.close();
+  } catch (err) {
+    app.log.error({ err }, "shutdown_close_failed");
+  } finally {
+    setTimeout(() => process.exit(0), 100).unref();
+  }
+};
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

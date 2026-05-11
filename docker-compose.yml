@@ -11,6 +11,18 @@ services:
     volumes:
       - opendriver-local-sqlserver:/var/opt/mssql
     restart: unless-stopped
+    healthcheck:
+      # The 2022 image ships mssql-tools18 under /opt/mssql-tools18; older tags use /opt/mssql-tools.
+      # Trust the cert because the container generates a self-signed one at boot.
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" >/dev/null
+          || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" >/dev/null
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
   opendriver-local-sqlserver:

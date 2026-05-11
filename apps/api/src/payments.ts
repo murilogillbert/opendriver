@@ -5,6 +5,9 @@ import { ensureActivationForOrder } from "./benefits.js";
 import { clawbackCashbackCredit, ensureOrderCashbackCredit, refundCashbackDebit } from "./cashback.js";
 import { config } from "./config.js";
 import { execute, query, sqlTypes, withTransaction } from "./db.js";
+import { fetchWithTimeout } from "./http.js";
+
+const MP_FETCH_OPTIONS = { timeoutMs: 10_000, retry: { attempts: 3, baseDelayMs: 250 } } as const;
 
 export type MercadoPagoPaymentRecord = Record<string, unknown>;
 
@@ -93,14 +96,15 @@ export function generateVoucherCode() {
 }
 
 export async function createMercadoPagoPayment(body: unknown) {
-  const response = await fetch("https://api.mercadopago.com/v1/payments", {
+  const response = await fetchWithTimeout("https://api.mercadopago.com/v1/payments", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getMercadoPagoAccessToken()}`,
       "Content-Type": "application/json",
       "X-Idempotency-Key": randomBytes(16).toString("hex")
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    ...MP_FETCH_OPTIONS
   });
 
   const data = (await response.json()) as MercadoPagoPaymentRecord;
@@ -116,10 +120,11 @@ export async function createMercadoPagoPayment(body: unknown) {
 }
 
 export async function fetchMercadoPagoPayment(paymentId: string) {
-  const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+  const response = await fetchWithTimeout(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
     headers: {
       Authorization: `Bearer ${getMercadoPagoAccessToken()}`
-    }
+    },
+    ...MP_FETCH_OPTIONS
   });
 
   if (!response.ok) {
@@ -136,14 +141,15 @@ export async function fetchMercadoPagoPayment(paymentId: string) {
 // the customer's card / Pix automatically. Returns the refund record on success.
 // `amount` is the BRL value to refund — omit for a full refund.
 export async function refundMercadoPagoPayment(paymentId: string, amount?: number) {
-  const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
+  const response = await fetchWithTimeout(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getMercadoPagoAccessToken()}`,
       "Content-Type": "application/json",
       "X-Idempotency-Key": randomBytes(16).toString("hex")
     },
-    body: amount && amount > 0 ? JSON.stringify({ amount: Number(amount.toFixed(2)) }) : "{}"
+    body: amount && amount > 0 ? JSON.stringify({ amount: Number(amount.toFixed(2)) }) : "{}",
+    ...MP_FETCH_OPTIONS
   });
 
   const data = (await response.json().catch(() => null)) as MercadoPagoPaymentRecord | null;
@@ -159,12 +165,13 @@ export async function refundMercadoPagoPayment(paymentId: string, amount?: numbe
 }
 
 export async function findMercadoPagoPaymentByExternalReference(externalReference: string) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.mercadopago.com/v1/payments/search?sort=date_last_updated&criteria=desc&external_reference=${encodeURIComponent(externalReference)}`,
     {
       headers: {
         Authorization: `Bearer ${getMercadoPagoAccessToken()}`
-      }
+      },
+      ...MP_FETCH_OPTIONS
     }
   );
 
@@ -628,8 +635,16 @@ export async function reconcileOrderPaymentStatus(input: {
   });
 
   if (transition.becameApproved) {
-    await ensureActivationForOrder(order.id).catch((error) => {
-      console.error("ensure_activation_failed", error);
+    await ensureActivationForOrder(order.id).catch(async (error) => {
+      await execute(
+        `INSERT INTO dbo.payment_events (provider, event_type, order_id, status, status_detail, raw_payload)
+         VALUES ('mercado_pago', 'activation_failed', @order_id, 'error', @detail, @raw)`,
+        (request) =>
+          request
+            .input("order_id", sqlTypes.BigInt, order.id)
+            .input("detail", sqlTypes.NVarChar(120), error instanceof Error ? error.message.slice(0, 120) : "activation_error")
+            .input("raw", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify({ error: String(error) }))
+      ).catch(() => undefined);
     });
 
     // Issue cashback. The function is internally idempotent (no-op if already credited for this order).
@@ -640,8 +655,16 @@ export async function reconcileOrderPaymentStatus(input: {
       paidAmount: Number(order.valor_pago_total),
       productCashbackPercent: order.product_cashback_percent,
       productName: order.product_name
-    }).catch((error) => {
-      console.error("ensure_cashback_credit_failed", error);
+    }).catch(async (error) => {
+      await execute(
+        `INSERT INTO dbo.payment_events (provider, event_type, order_id, status, status_detail, raw_payload)
+         VALUES ('mercado_pago', 'cashback_credit_failed', @order_id, 'error', @detail, @raw)`,
+        (request) =>
+          request
+            .input("order_id", sqlTypes.BigInt, order.id)
+            .input("detail", sqlTypes.NVarChar(120), error instanceof Error ? error.message.slice(0, 120) : "cashback_error")
+            .input("raw", sqlTypes.NVarChar(sqlTypes.MAX), JSON.stringify({ error: String(error) }))
+      ).catch(() => undefined);
     });
 
     await execute(

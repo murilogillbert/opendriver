@@ -317,7 +317,14 @@ export async function expireCashbackForAllUsers() {
   let usersAffected = 0;
   for (const row of candidates) {
     const result = await expireCashbackForUser(row.id).catch((err) => {
-      console.error("expire_cashback_failed", { userId: row.id, err });
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          msg: "expire_cashback_failed",
+          userId: row.id,
+          err: err instanceof Error ? err.message : String(err)
+        }) + "\n"
+      );
       return null;
     });
     if (result && result.expired > 0) {

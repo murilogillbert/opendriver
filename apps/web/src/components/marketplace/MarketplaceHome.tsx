@@ -190,6 +190,8 @@ function MarketplaceHome() {
           <img
             src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=80"
             alt=""
+            decoding="async"
+            fetchPriority="high"
             className="h-full w-full object-cover"
           />
         </div>
@@ -549,6 +551,8 @@ function ProductCard({
           <img
             src={assetUrl(product.imagem_url)}
             alt=""
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           />
         )}

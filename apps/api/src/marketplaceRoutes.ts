@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { clientIp, hashPassword, requireAdmin, requireUser, signToken, verifyPassword } from "./auth.js";
 import { writeAuditLog } from "./audit.js";
+import { invalidateChatProductCache } from "./chatRoutes.js";
 import { createBenefitActivation, shouldCreateActivationFor } from "./benefits.js";
 import {
   debitCashback,
@@ -239,7 +240,14 @@ async function createOrderRecord(input: {
       voucherCode: orderRow.voucher_code,
       product: input.product
     }).catch((err) => {
-      console.error("benefit_activation_failed", err);
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          msg: "benefit_activation_failed",
+          orderId: orderRow.id,
+          err: err instanceof Error ? err.message : String(err)
+        }) + "\n"
+      );
     });
   }
 
@@ -247,7 +255,10 @@ async function createOrderRecord(input: {
 }
 
 export async function registerMarketplaceRoutes(app: FastifyInstance) {
-  app.post("/api/auth/register", async (request, reply) => {
+  app.post(
+    "/api/auth/register",
+    { config: { rateLimit: { max: 5, timeWindow: "10 minutes" } } },
+    async (request, reply) => {
     const body = registerSchema.parse(request.body);
     const passwordHash = await hashPassword(body.senha);
 
@@ -911,6 +922,11 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
 
   app.get("/api/admin/users", async (request) => {
     await requireAdmin(request);
+    const queryParams = request.query as { limit?: string; offset?: string; q?: string };
+    const limit = Math.min(Math.max(Number(queryParams.limit ?? 100), 1), 500);
+    const offset = Math.max(Number(queryParams.offset ?? 0), 0);
+    const search = (queryParams.q ?? "").trim();
+    const hasSearch = search.length > 0;
     const data = await query(
       `WITH monthly AS (
           SELECT user_id, COUNT(*) AS monthly_acquisitions
@@ -936,6 +952,10 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
             FROM dbo.users u
             LEFT JOIN monthly m ON m.user_id = u.id
             LEFT JOIN totals t ON t.user_id = u.id
+           WHERE (@has_search = 0
+                  OR u.nome LIKE @search
+                  OR u.email LIKE @search
+                  OR u.telefone LIKE @search)
         )
         SELECT *,
                ${levelCaseSql} AS nivel_atual,
@@ -943,24 +963,44 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
                CASE WHEN monthly_acquisitions >= 5 THEN 'nivel_liberado' ELSE 'em_progresso' END AS nivel_status,
                CASE WHEN monthly_acquisitions >= 5 THEN 0 ELSE 5 - monthly_acquisitions END AS faltam_para_subir
           FROM base
-         ORDER BY created_at DESC`
+         ORDER BY created_at DESC
+         OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      (req) =>
+        req
+          .input("offset", sqlTypes.Int, offset)
+          .input("limit", sqlTypes.Int, limit)
+          .input("has_search", sqlTypes.Bit, hasSearch ? 1 : 0)
+          .input("search", sqlTypes.NVarChar(180), hasSearch ? `%${search}%` : null)
     );
 
-    return { data };
+    return { data, pagination: { limit, offset, count: data.length } };
   });
 
   app.get("/api/admin/orders", async (request) => {
     await requireAdmin(request);
+    const queryParams = request.query as { limit?: string; offset?: string; status?: string };
+    const limit = Math.min(Math.max(Number(queryParams.limit ?? 100), 1), 500);
+    const offset = Math.max(Number(queryParams.offset ?? 0), 0);
+    const status = (queryParams.status ?? "").trim();
+    const hasStatus = status.length > 0;
     const data = await query(
       `SELECT o.*, u.nome AS usuario_nome, u.email AS usuario_email, p.nome AS produto_nome,
               p.tipo AS produto_tipo, p.offer_type, p.delivery_method, p.imagem_url
          FROM dbo.product_orders o
          JOIN dbo.users u ON u.id = o.user_id
          JOIN dbo.products p ON p.id = o.product_id
-        ORDER BY o.created_at DESC`
+        WHERE (@has_status = 0 OR o.status = @status)
+        ORDER BY o.created_at DESC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      (req) =>
+        req
+          .input("offset", sqlTypes.Int, offset)
+          .input("limit", sqlTypes.Int, limit)
+          .input("has_status", sqlTypes.Bit, hasStatus ? 1 : 0)
+          .input("status", sqlTypes.VarChar(40), hasStatus ? status : null)
     );
 
-    return { data };
+    return { data, pagination: { limit, offset, count: data.length } };
   });
 
   app.post("/api/admin/products", async (request, reply) => {
@@ -1013,6 +1053,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("cashback_percent", sqlTypes.Decimal(5, 2), body.cashback_percent ?? null)
     );
 
+    invalidateChatProductCache();
     return reply.code(201).send({ data: result.recordset[0] });
   });
 
@@ -1080,6 +1121,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("cashback_percent", sqlTypes.Decimal(5, 2), body.cashback_percent ?? null)
     );
 
+    invalidateChatProductCache();
     return { data: { id: Number(params.id) } };
   });
 
@@ -1099,6 +1141,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
           .input("status", sqlTypes.VarChar(20), body.status)
     );
 
+    invalidateChatProductCache();
     return { data: { id: Number(params.id), status: body.status } };
   });
 
@@ -1113,6 +1156,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
         WHERE status IN ('pausado', 'rascunho')`
     );
 
+    invalidateChatProductCache();
     return { data: { affected: result.recordset.length } };
   });
 
@@ -1146,6 +1190,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
         entityType: "product",
         entityId: id
       });
+      invalidateChatProductCache();
       return { data: { id, deleted: true, mode: "hard" } };
     }
 
@@ -1171,6 +1216,7 @@ export async function registerMarketplaceRoutes(app: FastifyInstance) {
       payload: { reason: "has_orders" }
     });
 
+    invalidateChatProductCache();
     return { data: { id, deleted: true, mode: "soft" } };
   });
 

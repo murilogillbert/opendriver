@@ -3,7 +3,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { config } from "./config.js";
-import { execute, sqlTypes } from "./db.js";
+import { execute, query, sqlTypes } from "./db.js";
 import { reconcileOrderPaymentStatus } from "./payments.js";
 
 const webhookBodySchema = z
@@ -94,6 +94,52 @@ function verifyMercadoPagoSignature(input: {
   return { ok: false, reason: "missing_signature" };
 }
 
+// Records the webhook event for idempotent processing. Returns true if this is the
+// first time we see it (caller should process). Returns false if we already have a
+// row for (provider, eventId) — caller should skip work and just ACK with 200.
+async function claimWebhookEvent(input: {
+  provider: string;
+  eventId: string;
+  eventType: string | null;
+}): Promise<boolean> {
+  try {
+    // INSERT-then-fail on UNIQUE is the cheapest way to "claim" the event. If the
+    // unique constraint fires we know another delivery is already mid-flight.
+    await execute(
+      `INSERT INTO dbo.webhook_events (provider, event_id, event_type)
+       VALUES (@provider, @event_id, @event_type)`,
+      (req) =>
+        req
+          .input("provider", sqlTypes.VarChar(40), input.provider)
+          .input("event_id", sqlTypes.NVarChar(120), input.eventId)
+          .input("event_type", sqlTypes.NVarChar(80), input.eventType)
+    );
+    return true;
+  } catch (err) {
+    // SQL Server returns error 2627 for unique key violations. Any other failure
+    // is unexpected — re-throw so the caller can decide (we want a 500 in that case
+    // so MP retries instead of swallowing a real error).
+    const code = (err as { number?: number; code?: string }).number ?? null;
+    if (code === 2627 || code === 2601) return false;
+    throw err;
+  }
+}
+
+async function markWebhookEventProcessed(input: { provider: string; eventId: string; error?: string | null }) {
+  await execute(
+    `UPDATE dbo.webhook_events
+        SET processed_at = SYSUTCDATETIME(),
+            status = CASE WHEN @error IS NULL THEN 'processed' ELSE 'error' END,
+            error_message = @error
+      WHERE provider = @provider AND event_id = @event_id`,
+    (req) =>
+      req
+        .input("provider", sqlTypes.VarChar(40), input.provider)
+        .input("event_id", sqlTypes.NVarChar(120), input.eventId)
+        .input("error", sqlTypes.NVarChar(500), input.error ?? null)
+  ).catch(() => undefined);
+}
+
 export async function registerPaymentWebhookRoutes(app: FastifyInstance) {
   const handler = async (request: import("fastify").FastifyRequest, reply: import("fastify").FastifyReply) => {
     const queryParams = request.query as { id?: string; topic?: string; type?: string; "data.id"?: string };
@@ -128,28 +174,65 @@ export async function registerPaymentWebhookRoutes(app: FastifyInstance) {
       return reply.code(200).send({ received: true, ignored: true });
     }
 
+    // Build a stable event id. Mercado Pago includes x-request-id on retries that
+    // mirror the original delivery, so payment_id + request_id is enough to dedupe.
+    const provider = "mercado_pago";
+    const eventId = `${String(dataId)}:${requestId ?? "no-req-id"}`;
+
+    let firstDelivery: boolean;
+    try {
+      firstDelivery = await claimWebhookEvent({ provider, eventId, eventType: topic ?? null });
+    } catch (err) {
+      // Failing to insert into webhook_events means the DB is unreachable. Don't ACK —
+      // let MP retry rather than silently drop the event.
+      app.log.error({ err, eventId }, "webhook_claim_failed");
+      return reply.code(500).send({ error: "internal_error" });
+    }
+
     // Acknowledge MP immediately so retries don't pile up while we reconcile.
-    reply.code(200).send({ received: true });
+    reply.code(200).send({ received: true, deduped: !firstDelivery });
+
+    if (!firstDelivery) {
+      // Check whether the previous attempt finished. If it's still pending, we still
+      // skip processing — the original handler is responsible for finishing it. This
+      // avoids two webhooks racing on the same order during retry storms.
+      const existing = await query<{ status: string }>(
+        `SELECT status FROM dbo.webhook_events WHERE provider = @provider AND event_id = @event_id`,
+        (req) =>
+          req
+            .input("provider", sqlTypes.VarChar(40), provider)
+            .input("event_id", sqlTypes.NVarChar(120), eventId)
+      ).catch(() => [] as { status: string }[]);
+      app.log.info({ eventId, status: existing[0]?.status ?? "unknown" }, "webhook_duplicate_skipped");
+      return;
+    }
 
     void reconcileOrderPaymentStatus({
       paymentId: String(dataId),
       eventType: topic ?? "payment"
-    }).catch(async (error) => {
-      app.log.error({ err: error, paymentId: dataId }, "mercado_pago_webhook_failed");
-      await execute(
-        `INSERT INTO dbo.payment_events (provider, event_type, payment_id, raw_payload)
-         VALUES ('mercado_pago', @event_type, @payment_id, @raw_payload)`,
-        (req) =>
-          req
-            .input("event_type", sqlTypes.VarChar(60), topic ?? null)
-            .input("payment_id", sqlTypes.NVarChar(80), String(dataId))
-            .input(
-              "raw_payload",
-              sqlTypes.NVarChar(sqlTypes.MAX),
-              JSON.stringify({ query: queryParams, body: request.body ?? null, error: String(error) })
-            )
-      ).catch(() => undefined);
-    });
+    })
+      .then(() => markWebhookEventProcessed({ provider, eventId, error: null }))
+      .catch(async (error) => {
+        app.log.error({ err: error, paymentId: dataId }, "mercado_pago_webhook_failed");
+        await markWebhookEventProcessed({
+          provider,
+          eventId,
+          error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)
+        });
+        await execute(
+          `INSERT INTO dbo.payment_events (provider, event_type, payment_id, raw_payload)
+           VALUES ('mercado_pago', @event_type, @payment_id, @raw_payload)`,
+          (req) =>
+            req
+              .input("event_type", sqlTypes.VarChar(60), topic ?? null)
+              .input("payment_id", sqlTypes.NVarChar(80), String(dataId))
+              .input(
+                "raw_payload",
+                sqlTypes.NVarChar(sqlTypes.MAX),
+                JSON.stringify({ query: queryParams, body: request.body ?? null, error: String(error) })
+              )
+        ).catch(() => undefined);
+      });
   };
 
   app.post("/api/webhooks/mercado-pago", handler);

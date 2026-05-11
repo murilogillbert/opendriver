@@ -1,6 +1,9 @@
-import { FastifyInstance, FastifyRequest } from "fastify";
+import { randomBytes } from "crypto";
+
+import { FastifyInstance } from "fastify";
 
 import { hashPassword, requireAdmin } from "./auth.js";
+import { clientIp } from "./http.js";
 import { writeAuditLog } from "./audit.js";
 import { generateOpenDriverCommission } from "./commission.js";
 import { execute, getPool, query, sqlTypes } from "./db.js";
@@ -27,10 +30,14 @@ const pageQuery = (requestQuery: unknown) => {
   };
 };
 
-const PARTNER_DEFAULT_PASSWORD = "123456";
+// Random one-time password for new partner accounts. The partner must reset it on
+// first login (password_must_change = 1). Format: 12-char URL-safe base64 — strong
+// enough to survive a transcription, short enough to share over WhatsApp/email.
+const generatePartnerInitialPassword = () =>
+  randomBytes(9).toString("base64").replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || randomBytes(6).toString("hex");
 
 // Returns metadata about the user account that operates this partner. If the partner has
-// an email, we plant a parceiro user with the default password (or just link to an
+// an email, we plant a parceiro user with a freshly generated password (or just link to an
 // existing matching user). Idempotent — safe to call from POST and from the legacy
 // "gerar login" admin button.
 async function ensurePartnerUser(input: {
@@ -75,7 +82,8 @@ async function ensurePartnerUser(input: {
     };
   }
 
-  const hash = await hashPassword(PARTNER_DEFAULT_PASSWORD);
+  const initialPassword = generatePartnerInitialPassword();
+  const hash = await hashPassword(initialPassword);
   const result = await execute<{ id: number }>(
     `INSERT INTO dbo.users (
         nome, email, tipo_usuario, status, password_hash, password_must_change, telefone,
@@ -97,28 +105,32 @@ async function ensurePartnerUser(input: {
   return {
     user_id: result.recordset[0].id,
     email: emailLower,
-    initial_password: PARTNER_DEFAULT_PASSWORD,
+    initial_password: initialPassword,
     created: true
   };
 }
 
-const clientIp = (request: FastifyRequest) => {
-  const forwarded = request.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    return forwarded.split(",")[0]?.trim() ?? null;
-  }
-  return request.ip ?? null;
-};
-
 export async function registerRoutes(app: FastifyInstance) {
-  app.get("/health", async () => {
-    await getPool();
-    return { ok: true };
+  // Liveness — does not touch the database (k8s/Docker uses this to decide whether to restart).
+  app.get("/health", async () => ({ ok: true }));
+
+  // Readiness — only returns 200 once the DB pool is connected and responding.
+  app.get("/readyz", async (_request, reply) => {
+    try {
+      const pool = await getPool();
+      await pool.request().query("SELECT 1");
+      return reply.send({ ok: true });
+    } catch (err) {
+      app.log.warn({ err }, "readyz_failed");
+      return reply.code(503).send({ ok: false });
+    }
   });
 
   // Lead capture is public so the bot, landing pages and the WhatsApp flow can post
-  // leads without an admin token. Status is forced to "novo" to avoid abuse.
-  app.post("/api/leads", async (request, reply) => {
+  // leads without an admin token. Status is forced to "novo" to avoid abuse. The
+  // rate limit is per-IP — adjust the bot integration to fan out from a fixed server
+  // IP if you genuinely need bursts above 30/min.
+  app.post("/api/leads", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = createLeadSchema.parse(request.body);
     const estado = typeof body.estado === "string" ? body.estado.toUpperCase() : null;
     const result = await execute<{ id: number; public_token: string }>(
@@ -151,7 +163,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // Bot ingestion stays public so the WhatsApp/automation worker can stream messages.
-  app.post("/api/bot/interactions", async (request, reply) => {
+  app.post(
+    "/api/bot/interactions",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
     const body = createBotInteractionSchema.parse(request.body);
     const result = await execute<{ id: number }>(
       `INSERT INTO dbo.bot_interactions (
@@ -272,8 +287,9 @@ export async function registerRoutes(app: FastifyInstance) {
     );
 
     if (existing[0]) {
-      // Reset the password to the default and force a change on next login.
-      const hash = await hashPassword(PARTNER_DEFAULT_PASSWORD);
+      // Reset the password to a fresh random one and force a change on next login.
+      const rotatedPassword = generatePartnerInitialPassword();
+      const hash = await hashPassword(rotatedPassword);
       await execute(
         `UPDATE dbo.users
             SET password_hash = @hash,
@@ -302,7 +318,7 @@ export async function registerRoutes(app: FastifyInstance) {
           partner_login: {
             user_id: existing[0].id,
             email: emailLower,
-            initial_password: PARTNER_DEFAULT_PASSWORD,
+            initial_password: rotatedPassword,
             created: false
           }
         }

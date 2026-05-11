@@ -5,14 +5,28 @@ import {
   partnerServiceCategories,
   serviceOrderStatuses
 } from "@opendriver/shared";
+import { isValidCnpj, isValidCpf } from "./validators.js";
 
 const nullableString = z.string().trim().min(1).optional().nullable();
 const optionalMoney = z.coerce.number().nonnegative().optional().nullable();
 
+const cpfField = z
+  .string()
+  .trim()
+  .refine(isValidCpf, { message: "CPF invalido" });
+
+const optionalCnpjField = z
+  .string()
+  .trim()
+  .min(1)
+  .optional()
+  .nullable()
+  .refine((value) => value == null || isValidCnpj(value), { message: "CNPJ invalido" });
+
 export const createPartnerSchema = z.object({
   razao_social: z.string().trim().min(1),
   nome_fantasia: z.string().trim().min(1),
-  cnpj: nullableString,
+  cnpj: optionalCnpjField,
   responsavel: nullableString,
   telefone: nullableString,
   whatsapp: nullableString,
@@ -114,7 +128,7 @@ export const createPaymentSchema = z.object({
 
 export const registerSchema = z.object({
   nome: z.string().trim().min(2),
-  cpf: z.string().trim().min(11),
+  cpf: cpfField,
   email: z.string().trim().email(),
   senha: z.string().min(8),
   telefone: z.string().trim().min(8),

@@ -3,10 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070b" />
     <meta
       name="description"
       content="DriverHub ajuda motoristas a aumentarem seus ganhos com benefícios, descontos e atendimento direto pelo WhatsApp."
     />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DriverHub" />
+    <meta property="og:title" content="DriverHub | Ganhe mais como motorista" />
+    <meta
+      property="og:description"
+      content="Benefícios, cashback e descontos exclusivos para motoristas profissionais."
+    />
+    <meta property="og:locale" content="pt_BR" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,8 +24,20 @@
       rel="stylesheet"
     />
     <title>DriverHub | Ganhe mais como motorista</title>
+    <script>
+      // Apply the saved theme synchronously to avoid a light flash before React mounts.
+      (function () {
+        try {
+          var stored = localStorage.getItem("opendriver-theme");
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var mode = stored === "light" || stored === "dark" ? stored : prefersDark ? "dark" : "light";
+          if (mode === "dark") document.documentElement.classList.add("dark");
+          document.documentElement.dataset.theme = mode;
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body>
+  <body class="bg-brand-bone text-brand-ink antialiased dark:bg-brand-ink dark:text-brand-bone">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

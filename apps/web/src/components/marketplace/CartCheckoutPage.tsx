@@ -427,7 +427,7 @@ function CartCheckoutPage({ checkinToken = null }: CartCheckoutPageProps) {
                 <li key={item.product_id} className="flex items-center gap-3 rounded-md bg-[#f8fafc] p-3">
                   <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e6ebf2]">
                     {item.imagem_url && (
-                      <img src={assetUrl(item.imagem_url)} alt="" className="h-full w-full object-cover" />
+                      <img src={assetUrl(item.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     )}
                   </div>
                   <div className="flex-1">

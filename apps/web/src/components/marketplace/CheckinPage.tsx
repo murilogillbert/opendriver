@@ -173,7 +173,7 @@ function CheckinPage({ token }: CheckinPageProps) {
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                     <div className="h-24 w-32 overflow-hidden rounded-md bg-[#e6ebf2]">
                       {product.imagem_url && (
-                        <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover" />
+                        <img src={assetUrl(product.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       )}
                     </div>
                     <div className="flex-1">

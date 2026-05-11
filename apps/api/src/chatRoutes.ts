@@ -6,9 +6,12 @@ import { config } from "./config.js";
 import { query, sqlTypes } from "./db.js";
 
 // ─── Groq client ─────────────────────────────────────────────────────────────
+// 20 s budget gives the model room while still failing fast — Groq llama-3.3-70b
+// typically streams within 2-5 s, so anything past 20 s means the upstream is wedged.
+const GROQ_TIMEOUT_MS = 20_000;
 let groqClient: Groq | null = null;
 if (config.groqApiKey) {
-  groqClient = new Groq({ apiKey: config.groqApiKey });
+  groqClient = new Groq({ apiKey: config.groqApiKey, timeout: GROQ_TIMEOUT_MS, maxRetries: 1 });
 }
 
 // ─── Product cache (refreshed every 5 minutes) ───────────────────────────────
@@ -28,6 +31,13 @@ type CachedProduct = {
 let productCache: CachedProduct[] = [];
 let productCacheAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Called by admin product mutations so the chat sees catalog changes immediately
+// instead of waiting up to 5 minutes for the TTL.
+export function invalidateChatProductCache() {
+  productCacheAt = 0;
+  productCache = [];
+}
 
 async function getActiveProducts(): Promise<CachedProduct[]> {
   if (Date.now() - productCacheAt < CACHE_TTL_MS && productCache.length > 0) {
@@ -168,21 +178,33 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const systemPrompt = buildSystemPrompt(products, body.leadContext);
 
-      const completion = await groqClient.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...body.messages.map((m) => ({ role: m.role, content: m.content }))
-        ],
-        max_tokens: 450,
-        temperature: 0.7
-      });
+      try {
+        const completion = await groqClient.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...body.messages.map((m) => ({ role: m.role, content: m.content }))
+          ],
+          max_tokens: 450,
+          temperature: 0.7
+        });
 
-      const message =
-        completion.choices[0]?.message?.content?.trim() ??
-        "Ops, não consegui processar sua pergunta agora. Tente novamente em instantes 😊";
+        const message =
+          completion.choices[0]?.message?.content?.trim() ??
+          "Ops, não consegui processar sua pergunta agora. Tente novamente em instantes 😊";
 
-      return reply.send({ data: { message } });
+        return reply.send({ data: { message } });
+      } catch (err) {
+        request.log.warn({ err }, "groq_chat_failed");
+        return reply.code(503).send({
+          error: "chat_unavailable",
+          // User-facing fallback in PT-BR so the UI can show it directly.
+          data: {
+            message:
+              "Nossa IA esta com lentidao agora. Tente novamente em instantes — ou fale com a equipe no WhatsApp."
+          }
+        });
+      }
     }
   );
 }

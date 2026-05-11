@@ -5,6 +5,8 @@ import jwt, { SignOptions } from "jsonwebtoken";
 import { config } from "./config.js";
 import { query, sqlTypes } from "./db.js";
 
+
+
 export type AuthUser = {
   id: number;
   email: string;
@@ -114,13 +116,4 @@ export async function requirePartner(request: FastifyRequest) {
   return user as AuthUser & { partner_id: number };
 }
 
-export function clientIp(request: FastifyRequest): string | null {
-  const forwarded = request.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    return forwarded.split(",")[0].trim();
-  }
-  if (Array.isArray(forwarded) && forwarded[0]) {
-    return forwarded[0].split(",")[0].trim();
-  }
-  return request.ip ?? null;
-}
+export { clientIp } from "./http.js";
