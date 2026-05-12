@@ -2,7 +2,201 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  background: #05070b;
+/* ── Base resets ──────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    margin: 0;
+    background-color: theme("colors.surface");
+    color: theme("colors.on-surface");
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  html.dark body {
+    background-color: theme("colors.dark.bg");
+    color: theme("colors.dark.text");
+  }
+  /* Material Symbols defaults — keeps icon weight/grade consistent across the app. */
+  .material-symbols-outlined {
+    font-family: "Material Symbols Outlined";
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
+  }
+  /* Scrollbar — gentle in light mode, contrasty in dark. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(15, 17, 24, 0.18);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 17, 24, 0.32);
+  }
+  html.dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+  }
+}
+
+/* ── Tactile surface utilities ───────────────────────────────────────────── */
+@layer components {
+  /* Outset: card-like elements with a top highlight + soft drop shadow + 2 px bottom "lip". */
+  .tactile-pop {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -1px rgb(0 0 0 / 0.05),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.55);
+    border-bottom: 2px solid theme("colors.outline-variant");
+  }
+  .tactile-pop-lg {
+    box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.18), 0 6px 10px -4px rgb(0 0 0 / 0.08),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.6);
+    border-bottom: 2px solid theme("colors.outline-variant");
+  }
+  /* Pressed state — flattens the lip and adds inner shadow to feel like a click. */
+  .tactile-pressed:active {
+    transform: translateY(1px);
+    border-bottom-width: 1px;
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.12);
+  }
+  /* Inset: inputs / image wells appear recessed into the surface. */
+  .surface-inset {
+    background-color: theme("colors.surface-container");
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+  }
+  /* Glass overlay — used on dark hero widgets and modals. */
+  .glass-card {
+    background: linear-gradient(145deg, rgba(28, 31, 36, 0.82) 0%, rgba(19, 21, 24, 0.92) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .glass-card-light {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.85) 0%, rgba(247, 243, 234, 0.92) 100%);
+    border: 1px solid rgba(15, 17, 24, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 32px rgba(15, 17, 24, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  /* Dark-mode tactile pop. Different shadow stack because shadows over dark vanish. */
+  html.dark .tactile-pop,
+  html.dark .tactile-pop-lg {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4), inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+  html.dark .surface-inset {
+    background-color: theme("colors.dark.surface");
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.35);
+  }
+  /* Gradient text — for hero numbers / display headings. */
+  .gradient-text {
+    background: linear-gradient(90deg, theme("colors.brand.gold"), theme("colors.brand.goldLight"));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  /* Subtle dotted grid backdrop for empty states / hero filler. */
+  .dot-grid {
+    background-image: radial-gradient(rgba(15, 17, 24, 0.08) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  html.dark .dot-grid {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  }
+  /* Smooth focus ring shared by buttons and inputs. */
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: box-shadow 0.18s ease;
+  }
+  .focus-ring:focus-visible {
+    box-shadow: 0 0 0 4px rgba(214, 178, 94, 0.35);
+    outline-color: theme("colors.accent");
+  }
+}
+
+/* ── Page transition ────────────────────────────────────────────────────── */
+/* Applied via <main> elements that change with the SPA route. Keeps the swap
+   from feeling abrupt without a full router transition library. */
+@media (prefers-reduced-motion: no-preference) {
+  main {
+    animation: fade-in-up 0.35s ease-out;
+  }
+}
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Leaflet overrides ──────────────────────────────────────────────────── */
+/* Soften the popup chrome so it matches the tactile design system. */
+.leaflet-container {
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid rgba(168, 152, 122, 0.35);
+}
+.leaflet-popup-tip {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+html.dark .leaflet-popup-content-wrapper {
+  background: #1c1f24 !important;
+  color: #f3f4f6 !important;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+html.dark .leaflet-popup-tip {
+  background: #1c1f24 !important;
+}
+.leaflet-control-zoom a {
+  background: #ffffff !important;
+  color: #15110a !important;
+  border-color: rgba(168, 152, 122, 0.45) !important;
+}
+html.dark .leaflet-control-zoom a {
+  background: #1c1f24 !important;
+  color: #f3f4f6 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+.partner-map-marker {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+/* ── Tiny custom scrollbar for sidebars over maps / dark glass surfaces ──── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }

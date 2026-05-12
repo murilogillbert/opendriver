@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
 import { friendlyPaymentError, getToken, marketplaceApi, money, Order, Product } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, Icon, Skeleton } from "../ui";
 
 type CheckoutPageProps = {
   productId: number;
@@ -418,115 +419,136 @@ function CheckoutPage({ productId, checkinToken = null }: CheckoutPageProps) {
     }
   };
 
+  const goToAccount = () => {
+    window.history.pushState(null, "", "/minha-conta");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const methodLabel =
+    paymentMethod === "pix" ? "Pix" : paymentMethod === "credit_card" ? "Cartão de crédito" : "Cartão de débito";
+
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-5 py-8 text-[#111827]">
-      <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_26rem]">
-        <div className="rounded-md border border-[#dfe5ef] bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Checkout</p>
-          <h1 className="mt-2 font-display text-3xl font-black">Confirme seus dados e pagamento</h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-[#68748a]">
-            Produtos digitais, servicos presenciais e vouchers exigem cadastro completo com endereco.
-          </p>
+    <main className="min-h-screen bg-surface px-margin-mobile py-8 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+      <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_24rem]">
+        <Card surface="bright" tactile rounded="3xl" padding="lg" className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <Chip tone="accent" uppercase icon="credit_card">
+                Checkout
+              </Chip>
+              <h1 className="mt-3 font-display text-headline-md text-on-surface dark:text-dark-text">
+                Confirme seus dados e pagamento
+              </h1>
+              <p className="mt-2 text-body-md text-on-surface-variant dark:text-dark-textMuted">
+                Produtos digitais, serviços presenciais e vouchers exigem cadastro completo com endereço.
+              </p>
+            </div>
+          </div>
 
           {error && (
-            <div className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-              {error}
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-body-sm font-bold text-danger">
+              <Icon name="error" size={18} /> <span>{error}</span>
             </div>
           )}
 
           {result ? (
-            <div className="mt-6 rounded-md border border-brand-gold/40 bg-brand-gold/10 p-5">
-              <div className="flex flex-col gap-3 border-b border-brand-gold/30 pb-4">
+            <Card surface="default" rounded="2xl" padding="lg" className="border-accent/40 bg-accent/10 dark:border-accent/30 dark:bg-accent/10">
+              <div className="flex flex-col gap-3 border-b border-accent/30 pb-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-xl font-black">{syncStatus.label}</h2>
-                  <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-brand-ink">
+                  <div className="flex items-center gap-2">
+                    {syncStatus.phase === "approved" ? (
+                      <Icon name="check_circle" size={26} className="text-success" />
+                    ) : syncStatus.phase === "rejected" || syncStatus.phase === "cancelled" ? (
+                      <Icon name="error" size={26} className="text-danger" />
+                    ) : (
+                      <Icon name="sync" size={22} className="animate-spin text-accent-deep" />
+                    )}
+                    <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">
+                      {syncStatus.label}
+                    </h2>
+                  </div>
+                  <Chip tone="inverse" uppercase>
                     Pedido {result.order.public_code}
-                  </span>
+                  </Chip>
                 </div>
-                <p className="text-sm font-semibold leading-6 text-[#5f6b7b]">
-                  {syncStatus.detail}
-                </p>
+                <p className="text-body-sm text-on-surface-variant dark:text-dark-textMuted">{syncStatus.detail}</p>
               </div>
 
               {result.payment.qr_code_base64 && (
-                <img
-                  src={`data:image/png;base64,${result.payment.qr_code_base64}`}
-                  alt="QR Code Pix"
-                  className="mt-4 h-56 w-56 rounded-md bg-white p-3"
-                />
+                <div className="mt-5 flex justify-center">
+                  <img
+                    src={`data:image/png;base64,${result.payment.qr_code_base64}`}
+                    alt="QR Code Pix"
+                    className="h-56 w-56 rounded-2xl bg-white p-3 shadow-soft"
+                  />
+                </div>
               )}
               {result.payment.qr_code && (
                 <div className="mt-4 space-y-2">
-                  <label className="block text-xs font-black uppercase tracking-[0.12em] text-[#6c7788]">
+                  <label className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
                     Pix copia e cola
                   </label>
                   <textarea
                     readOnly
                     value={result.payment.qr_code}
                     onFocus={(event) => event.currentTarget.select()}
-                    className="h-28 w-full rounded-md border border-[#ccd5e2] p-3 text-xs"
+                    className="surface-inset h-28 w-full rounded-xl border border-transparent p-3 font-mono text-body-sm text-on-surface focus:border-accent focus:outline-none dark:text-dark-text"
                   />
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={copiedPix ? "check" : "content_copy"}
                     onClick={() => void copyPixCode()}
-                    className="rounded-md border border-brand-gold bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand-ink"
                   >
-                    {copiedPix ? "Codigo copiado!" : "Copiar codigo Pix"}
-                  </button>
+                    {copiedPix ? "Código copiado!" : "Copiar código Pix"}
+                  </Button>
                 </div>
               )}
               {result.order.voucher_code && (
-                <p className="mt-4 rounded-md bg-white px-3 py-2 text-sm font-black">
-                  Voucher liberado: {result.order.voucher_code}
-                </p>
+                <div className="mt-4 flex items-center gap-2 rounded-xl bg-success/15 px-3 py-2 text-body-md font-bold text-success">
+                  <Icon name="verified" size={18} /> Voucher liberado: {result.order.voucher_code}
+                </div>
               )}
-              <div className="mt-4 grid gap-3 rounded-md bg-white/70 p-4 text-sm font-semibold text-[#425166] sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 rounded-xl bg-surface-bright/70 p-4 sm:grid-cols-2 dark:bg-dark-surface/60">
                 <div>
-                  <span className="block text-xs font-black uppercase tracking-[0.12em] text-[#6c7788]">
+                  <span className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
                     Status do pedido
                   </span>
-                  <strong className="mt-1 block text-base font-black text-[#111827]">
+                  <p className="mt-1 font-display text-title-md text-on-surface dark:text-dark-text">
                     {result.order.status ?? "pendente_pagamento"}
-                  </strong>
+                  </p>
                 </div>
                 <div>
-                  <span className="block text-xs font-black uppercase tracking-[0.12em] text-[#6c7788]">
-                    Metodo
+                  <span className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
+                    Método
                   </span>
-                  <strong className="mt-1 block text-base font-black text-[#111827]">
-                    {paymentMethod === "pix" ? "Pix" : paymentMethod === "credit_card" ? "Cartao de credito" : "Cartao de debito"}
-                  </strong>
+                  <p className="mt-1 font-display text-title-md text-on-surface dark:text-dark-text">
+                    {methodLabel}
+                  </p>
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={isVerifying}
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button
+                  variant="primary"
+                  leftIcon="sync"
+                  loading={isVerifying}
                   onClick={() => void verifyPaymentStatus(result.order.id)}
-                  className="rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isVerifying ? "Verificando..." : "Verificar pagamento agora"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.history.pushState(null, "", "/minha-conta");
-                    window.dispatchEvent(new PopStateEvent("popstate"));
-                  }}
-                  className="rounded-md border border-[#ccd5e2] bg-white px-4 py-3 text-sm font-black"
-                >
+                  Verificar pagamento agora
+                </Button>
+                <Button variant="secondary" rightIcon="arrow_forward" onClick={goToAccount}>
                   Ir para minha conta
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           ) : (
-            <div className="mt-6 grid gap-4">
+            <div className="grid gap-4">
               {cashbackBalance > 0 && (
-                <div className="rounded-md border border-brand-gold/40 bg-brand-gold/10 p-4">
-                  <label className="flex items-start gap-3 text-sm font-bold">
+                <Card surface="default" rounded="2xl" padding="md" className="border-accent/40 bg-accent/10 dark:border-accent/30 dark:bg-accent/10">
+                  <label className="flex items-start gap-3 text-body-md font-bold text-on-surface dark:text-dark-text">
                     <input
                       type="checkbox"
-                      className="mt-1"
+                      className="mt-1 h-5 w-5 accent-accent"
                       checked={useCashback}
                       onChange={(event) => {
                         const next = event.target.checked;
@@ -535,9 +557,12 @@ function CheckoutPage({ productId, checkinToken = null }: CheckoutPageProps) {
                       }}
                     />
                     <span className="flex-1">
-                      Usar meu cashback (saldo disponivel: {money(cashbackBalance)}).
+                      <span className="flex items-center gap-2">
+                        <Icon name="payments" size={18} className="text-accent-deep" />
+                        Usar meu cashback (saldo {money(cashbackBalance)})
+                      </span>
                       {useCashback && (
-                        <span className="mt-2 grid gap-2">
+                        <span className="mt-3 grid gap-1">
                           <input
                             type="number"
                             min={0}
@@ -550,110 +575,161 @@ function CheckoutPage({ productId, checkinToken = null }: CheckoutPageProps) {
                                 setCashbackAmount(Math.max(0, Math.min(value, maxCashback)));
                               }
                             }}
-                            className="w-32 rounded-md border border-[#ccd5e2] px-3 py-2"
+                            className="surface-inset w-40 rounded-xl border border-transparent px-3 py-2 text-on-surface focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/25 dark:text-dark-text"
                           />
-                          <span className="text-xs font-semibold text-[#5a3f00]">
-                            Aplicado: {money(effectiveCashback)} (max {money(maxCashback)}).
+                          <span className="text-label-sm font-bold text-accent-deep dark:text-accent-soft">
+                            Aplicado {money(effectiveCashback)} (máx {money(maxCashback)})
                           </span>
                         </span>
                       )}
                     </span>
                   </label>
-                </div>
+                </Card>
               )}
 
               {fullyCovered ? (
-                <form onSubmit={submitPixPayment}>
-                  <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900">
-                    Cashback cobre o pedido inteiro. Sem cobranca no Mercado Pago.
-                  </p>
-                  <button
+                <form onSubmit={submitPixPayment} className="grid gap-3">
+                  <div className="flex items-center gap-2 rounded-xl bg-success/15 px-3 py-2 text-body-sm font-bold text-success">
+                    <Icon name="verified" size={18} /> Cashback cobre o pedido inteiro — sem cobrança no Mercado Pago.
+                  </div>
+                  <Button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="w-full rounded-md bg-emerald-600 px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    variant="accent"
+                    size="lg"
+                    fullWidth
+                    loading={isSubmitting}
+                    leftIcon="check_circle"
                   >
-                    {isSubmitting ? "Confirmando..." : `Confirmar pedido com cashback (${money(effectiveCashback)})`}
-                  </button>
+                    {`Confirmar pedido com cashback (${money(effectiveCashback)})`}
+                  </Button>
                 </form>
               ) : (
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    {(["pix", "credit_card", "debit_card"] as const).map((method) => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setPaymentMethod(method)}
-                        className={`rounded-md border px-4 py-3 text-sm font-black ${
-                          paymentMethod === method ? "border-brand-gold bg-brand-gold text-brand-ink" : "border-[#ccd5e2] bg-white"
-                        }`}
-                      >
-                        {method === "pix" ? "Pix" : method === "credit_card" ? "Credito" : "Debito"}
-                      </button>
-                    ))}
+                    {(["pix", "credit_card", "debit_card"] as const).map((method) => {
+                      const active = paymentMethod === method;
+                      const label = method === "pix" ? "Pix" : method === "credit_card" ? "Crédito" : "Débito";
+                      const icon = method === "pix" ? "pix" : "credit_card";
+                      return (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() => setPaymentMethod(method)}
+                          aria-pressed={active}
+                          className={`focus-ring flex items-center justify-center gap-2 rounded-pill px-4 py-3 text-label-bold transition ${
+                            active
+                              ? "bg-accent text-on-accent tactile-pop"
+                              : "bg-surface-bright text-on-surface border border-outline-variant tactile-pop hover:border-accent dark:bg-dark-surfaceElevated dark:text-dark-text dark:border-dark-outline"
+                          }`}
+                        >
+                          <Icon name={icon} size={18} />
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {effectiveCashback > 0 && (
-                    <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
-                      Pagara {money(remainingCash)} pelo Mercado Pago e {money(effectiveCashback)} sai do cashback.
-                    </p>
+                    <div className="flex items-start gap-2 rounded-xl bg-success/15 px-3 py-2 text-body-sm font-bold text-success">
+                      <Icon name="info" size={16} /> Pagará {money(remainingCash)} pelo Mercado Pago e {money(effectiveCashback)} sai do cashback.
+                    </div>
                   )}
 
                   {paymentMethod === "pix" ? (
                     <form onSubmit={submitPixPayment}>
-                      <button
+                      <Button
                         type="submit"
-                        disabled={isSubmitting}
-                        className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:cursor-not-allowed disabled:opacity-60"
+                        variant="accent"
+                        size="lg"
+                        fullWidth
+                        loading={isSubmitting}
+                        loadingLabel="Gerando código Pix..."
+                        leftIcon="pix"
                       >
-                        {isSubmitting ? "Gerando codigo Pix..." : `Gerar Pix de ${money(remainingCash)}`}
-                      </button>
+                        Gerar Pix de {money(remainingCash)}
+                      </Button>
                     </form>
                   ) : publicKey ? (
-                    <div className="rounded-md border border-[#dfe5ef] p-4">
-                      {!cardReady && <p className="text-sm font-bold text-[#68748a]">Carregando pagamento seguro...</p>}
+                    <Card surface="inset" rounded="2xl" padding="md" className="border border-outline-variant/70 dark:border-dark-outline">
+                      {!cardReady && (
+                        <div className="flex items-center gap-2 text-body-sm font-bold text-on-surface-variant dark:text-dark-textMuted">
+                          <Icon name="sync" size={16} className="animate-spin" /> Carregando pagamento seguro...
+                        </div>
+                      )}
                       <div id="cardPaymentBrick_container" />
-                    </div>
+                    </Card>
                   ) : (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                      Configure VITE/MERCADO_PAGO_PUBLIC_KEY para liberar cartao.
+                    <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-body-sm font-bold text-warning">
+                      <Icon name="warning" size={18} /> Configure VITE / MERCADO_PAGO_PUBLIC_KEY para liberar cartão.
                     </div>
                   )}
                 </>
               )}
             </div>
           )}
-        </div>
+        </Card>
 
-        <aside className="rounded-md border border-[#dfe5ef] bg-white p-5">
-          {product ? (
-            <>
-              {product.imagem_url && (
-                <img
-                  src={assetUrl(product.imagem_url)}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  className="aspect-[16/10] w-full rounded-md object-cover"
-                />
-              )}
-              <h2 className="mt-4 text-xl font-black">{product.nome}</h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-[#68748a]">{product.descricao_curta}</p>
-              <div className="mt-4 flex items-end justify-between">
-                <div>
-                  <span className="block text-sm font-bold text-[#7a8496] line-through">{money(product.preco_original)}</span>
-                  <strong className="text-2xl font-black">{money(product.preco_desconto)}</strong>
+        <aside>
+          <Card surface="bright" tactile rounded="3xl" padding="md" className="sticky top-24 space-y-3">
+            {product ? (
+              <>
+                {product.imagem_url && (
+                  <div className="surface-inset overflow-hidden rounded-2xl">
+                    <img
+                      src={assetUrl(product.imagem_url)}
+                      alt={product.nome}
+                      loading="lazy"
+                      decoding="async"
+                      className="aspect-[16/10] w-full object-cover"
+                    />
+                  </div>
+                )}
+                <Chip tone="ghost" uppercase>{product.partner_nome ?? "DriverHub"}</Chip>
+                <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">{product.nome}</h2>
+                <p className="text-body-sm text-on-surface-variant dark:text-dark-textMuted">{product.descricao_curta}</p>
+                <div className="flex items-end justify-between border-t border-outline-variant/60 pt-3 dark:border-dark-outline">
+                  <div>
+                    {Number(product.preco_original) > Number(product.preco_desconto) && (
+                      <span className="block text-label-sm text-on-surface-variant line-through dark:text-dark-textMuted">
+                        {money(product.preco_original)}
+                      </span>
+                    )}
+                    <strong className="font-display text-headline-sm text-on-surface dark:text-dark-text">
+                      {money(product.preco_desconto)}
+                    </strong>
+                  </div>
+                  {Number(product.economia_estimada) > 0 && (
+                    <Chip tone="success" icon="trending_up">
+                      {money(product.economia_estimada)}
+                    </Chip>
+                  )}
                 </div>
-                <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-black text-green-700">
-                  {money(product.economia_estimada)} economia
-                </span>
+                <ul className="space-y-2 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+                  <li className="flex items-center gap-2">
+                    <Icon name="local_gas_station" size={16} /> Entrega: <strong className="text-on-surface dark:text-dark-text">{delivery}</strong>
+                  </li>
+                  {product.delivery_deadline && (
+                    <li className="flex items-center gap-2">
+                      <Icon name="info" size={16} /> Prazo: <strong className="text-on-surface dark:text-dark-text">{product.delivery_deadline}</strong>
+                    </li>
+                  )}
+                  {product.usage_rules && (
+                    <li className="flex items-start gap-2">
+                      <Icon name="info" size={16} className="mt-0.5" />
+                      <span>{product.usage_rules}</span>
+                    </li>
+                  )}
+                </ul>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <Skeleton height={160} rounded="2xl" />
+                <Skeleton height={20} width="60%" />
+                <Skeleton height={14} width="100%" />
+                <Skeleton height={14} width="80%" />
               </div>
-              <p className="mt-4 text-sm font-bold">Entrega: {delivery}</p>
-              {product.delivery_deadline && <p className="mt-2 text-sm font-bold">Prazo: {product.delivery_deadline}</p>}
-              {product.usage_rules && <p className="mt-2 text-sm font-semibold text-[#68748a]">{product.usage_rules}</p>}
-            </>
-          ) : (
-            <p className="font-bold text-[#68748a]">Carregando oferta...</p>
-          )}
+            )}
+          </Card>
         </aside>
       </section>
     </main>

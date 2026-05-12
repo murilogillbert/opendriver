@@ -1,122 +1,163 @@
 import { FormEvent, useState } from "react";
-import type { InputHTMLAttributes } from "react";
 
 import { marketplaceApi } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, Icon, Input } from "../ui";
+import { useToast } from "../../lib/useToast";
 
 function AuthPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
+
+  const navigateHome = () => {
+    window.history.pushState(null, "", "/minha-conta");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
 
   const login = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setIsSubmitting(true);
     const values = Object.fromEntries(new FormData(event.currentTarget));
-
     try {
       await marketplaceApi.login(String(values.email), String(values.senha));
-      window.history.pushState(null, "", "/minha-conta");
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      toast.success("Bem-vindo de volta!");
+      navigateHome();
     } catch {
-      setError("Email ou senha invalidos.");
+      setError("Email ou senha inválidos.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const register = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setIsSubmitting(true);
     const values = Object.fromEntries(new FormData(event.currentTarget));
-
     try {
       await marketplaceApi.register(values);
-      window.history.pushState(null, "", "/minha-conta");
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      toast.success("Conta criada com sucesso!");
+      navigateHome();
     } catch {
-      setError("Nao foi possivel criar a conta. Verifique os dados.");
+      setError("Não foi possível criar a conta. Verifique os dados.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
-      <section className="mx-auto max-w-5xl overflow-hidden rounded-md border border-[#dfe5ef] bg-white">
+    <main className="min-h-screen bg-surface px-margin-mobile py-12 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+      <button
+        type="button"
+        onClick={() => {
+          window.history.pushState(null, "", "/");
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }}
+        className="mx-auto mb-6 flex max-w-5xl items-center gap-2 text-label-bold text-on-surface-variant transition hover:text-on-surface dark:text-dark-textMuted dark:hover:text-dark-text"
+      >
+        <Icon name="arrow_back" size={18} /> Voltar para a home
+      </button>
+
+      <Card surface="bright" rounded="3xl" padding="none" tactile className="mx-auto max-w-5xl overflow-hidden">
         <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="bg-brand-ink p-8 text-white">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
-              Minha Opendriver
-            </p>
-            <h1 className="mt-4 font-display text-4xl font-black">
-              Acompanhe seus vouchers e sua economia acumulada.
+          <aside className="relative isolate overflow-hidden bg-inverse-surface p-8 text-inverse-on-surface lg:p-10">
+            <div className="pointer-events-none absolute -left-12 top-1/3 h-64 w-64 rounded-full bg-accent/30 blur-3xl" />
+            <Chip tone="ghost" uppercase className="border-white/15 text-accent-soft">
+              Minha conta DriverHub
+            </Chip>
+            <h1 className="mt-6 font-display text-headline-lg leading-tight text-white">
+              Acompanhe vouchers, cashback e economia acumulada.
             </h1>
-            <p className="mt-4 text-sm font-semibold leading-6 text-white/70">
-              Cadastre-se uma vez, confirme endereco e receba produtos digitais por email ou
-              fisicos no endereco cadastrado.
+            <p className="mt-4 text-body-md text-white/70">
+              Cadastre-se uma vez, confirme endereço e receba produtos digitais por e-mail ou
+              físicos no endereço cadastrado.
             </p>
-          </div>
-          <div className="p-6 sm:p-8">
-            <div className="mb-6 flex gap-2">
+            <ul className="mt-8 space-y-3 text-body-sm text-white/80">
+              <li className="flex items-center gap-2">
+                <Icon name="check_circle" size={18} className="text-accent-soft" /> Cashback creditado em até 24 h após confirmação
+              </li>
+              <li className="flex items-center gap-2">
+                <Icon name="check_circle" size={18} className="text-accent-soft" /> Pagamento por Pix com QR pronto na hora
+              </li>
+              <li className="flex items-center gap-2">
+                <Icon name="check_circle" size={18} className="text-accent-soft" /> Atendimento direto pelo WhatsApp se precisar
+              </li>
+            </ul>
+          </aside>
+
+          <div className="p-6 sm:p-10">
+            <div className="mb-6 inline-flex rounded-pill border border-outline-variant bg-surface-container p-1 dark:border-dark-outline dark:bg-dark-surfaceElevated">
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className={`rounded-md px-4 py-2 text-sm font-black ${mode === "login" ? "bg-brand-ink text-white" : "bg-[#eef2f7]"}`}
+                aria-pressed={mode === "login"}
+                className={`rounded-pill px-5 py-2 text-label-bold transition ${
+                  mode === "login"
+                    ? "bg-primary text-on-primary tactile-pop dark:bg-white dark:text-brand-ink"
+                    : "text-on-surface-variant dark:text-dark-textMuted"
+                }`}
               >
-                Login
+                Entrar
               </button>
               <button
                 type="button"
                 onClick={() => setMode("register")}
-                className={`rounded-md px-4 py-2 text-sm font-black ${mode === "register" ? "bg-brand-ink text-white" : "bg-[#eef2f7]"}`}
+                aria-pressed={mode === "register"}
+                className={`rounded-pill px-5 py-2 text-label-bold transition ${
+                  mode === "register"
+                    ? "bg-primary text-on-primary tactile-pop dark:bg-white dark:text-brand-ink"
+                    : "text-on-surface-variant dark:text-dark-textMuted"
+                }`}
               >
-                Cadastro
+                Criar conta
               </button>
             </div>
 
             {error && (
-              <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-                {error}
+              <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-body-sm font-bold text-danger">
+                <Icon name="error" size={18} /> <span>{error}</span>
               </div>
             )}
 
             {mode === "login" ? (
               <form onSubmit={login} className="grid gap-4">
-                <Input name="email" label="Email" type="email" required />
-                <Input name="senha" label="Senha" type="password" required />
-                <button className="rounded-md bg-brand-gold px-5 py-3 text-sm font-black text-brand-ink">
+                <Input name="email" label="E-mail" type="email" leftIcon="account_circle" required autoComplete="email" />
+                <Input name="senha" label="Senha" type="password" required autoComplete="current-password" />
+                <Button type="submit" variant="accent" size="lg" loading={isSubmitting} fullWidth rightIcon="arrow_forward">
                   Entrar
-                </button>
+                </Button>
+                <p className="text-center text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+                  Ainda não tem conta?{" "}
+                  <button type="button" onClick={() => setMode("register")} className="font-bold text-accent-deep underline dark:text-accent-soft">
+                    Criar agora
+                  </button>
+                </p>
               </form>
             ) : (
               <form onSubmit={register} className="grid gap-4 md:grid-cols-2">
-                <Input name="nome" label="Nome" required />
+                <Input name="nome" label="Nome" required containerClassName="md:col-span-2" />
                 <Input name="cpf" label="CPF" required minLength={11} />
-                <Input name="email" label="Email" type="email" required />
-                <Input name="senha" label="Senha" type="password" required minLength={8} />
+                <Input name="email" label="E-mail" type="email" required autoComplete="email" />
+                <Input name="senha" label="Senha" type="password" required minLength={8} autoComplete="new-password" />
                 <Input name="telefone" label="Telefone" required />
-                <Input name="endereco" label="Endereco" required />
-                <Input name="numero" label="Numero" required />
+                <Input name="endereco" label="Endereço" required containerClassName="md:col-span-2" />
+                <Input name="numero" label="Número" required />
                 <Input name="complemento" label="Complemento" />
                 <Input name="bairro" label="Bairro" required />
                 <Input name="cidade" label="Cidade" required />
                 <Input name="estado" label="UF" required maxLength={2} />
                 <Input name="cep" label="CEP" required />
-                <button className="rounded-md bg-brand-gold px-5 py-3 text-sm font-black text-brand-ink md:col-span-2">
+                <Button type="submit" variant="accent" size="lg" loading={isSubmitting} fullWidth className="md:col-span-2" rightIcon="arrow_forward">
                   Criar conta
-                </button>
+                </Button>
               </form>
             )}
           </div>
         </div>
-      </section>
+      </Card>
     </main>
-  );
-}
-
-function Input(props: InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {
-  const { label, ...inputProps } = props;
-
-  return (
-    <label className="grid gap-1 text-sm font-bold">
-      {label}
-      <input {...inputProps} className="rounded-md border border-[#ccd5e2] px-3 py-2" />
-    </label>
   );
 }
 

@@ -12,6 +12,7 @@ import {
   Order,
   SavingsSummary
 } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, EmptyState, Icon, StatCard } from "../ui";
 import CashbackExpiringBanner from "./CashbackExpiringBanner";
 import OrderTimeline from "./OrderTimeline";
 import ReferralCard from "./ReferralCard";
@@ -138,99 +139,119 @@ function AccountPage() {
   const cashbackBalance = cashback?.balance ?? 0;
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-5 py-8 text-[#111827]">
+    <main className="min-h-screen bg-surface px-margin-mobile py-8 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
       <section className="mx-auto max-w-7xl">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Minha conta</p>
-            <h1 className="mt-2 font-display text-3xl font-black">Ola, {profile?.nome ?? "Cliente"}</h1>
+            <Chip tone="accent" uppercase icon="account_circle">
+              Minha conta
+            </Chip>
+            <h1 className="mt-3 font-display text-headline-lg text-on-surface dark:text-dark-text">
+              Olá, {profile?.nome ?? "motorista"}
+            </h1>
+            {profile?.email && (
+              <p className="mt-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+                {profile.email}
+              </p>
+            )}
           </div>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            leftIcon="logout"
             onClick={() => {
               clearToken();
               navigate("/");
             }}
-            className="rounded-md border border-[#ccd5e2] bg-white px-4 py-2 text-sm font-black"
           >
             Sair
-          </button>
+          </Button>
         </header>
 
-        {/* Banner de cashback expirando em destaque (so aparece se houver) */}
+        {/* Banner de cashback expirando em destaque (só aparece se houver) */}
         <div className="mt-6">
           <CashbackExpiringBanner />
         </div>
 
-        {/* Programa de indicacao — CTA viral */}
+        {/* Programa de indicação — CTA viral */}
         <div className="mt-6">
           <ReferralCard />
         </div>
 
-        {/* Hero do cashback — destaque maximo, com CTA explicito de uso. */}
-        <section className="mt-6 grid gap-4 rounded-md border border-brand-gold/40 bg-gradient-to-br from-brand-gold/15 to-white p-6 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Sua carteira de cashback</p>
-            <strong className="mt-2 block font-display text-5xl font-black tabular-nums">
-              {money(cashbackBalance)}
-            </strong>
-            <p className="mt-3 max-w-md text-sm font-bold leading-6 text-[#5a3f00]">
-              Voce ganha <strong>{cashback?.effective_rate ?? 2}%</strong> de cashback (nivel {cashback?.tier ?? "Bronze"}) em
-              cada compra. Use como desconto direto no proximo pedido.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => navigate("/")}
-                disabled={cashbackBalance <= 0}
-                className="rounded-md bg-brand-ink px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Usar agora no catalogo
-              </button>
-              <a
-                href="#como-funciona"
-                className="rounded-md border border-brand-gold bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-brand-ink"
-              >
-                Como funciona
-              </a>
-            </div>
-          </div>
-          <div className="rounded-md bg-white p-4">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7788]">Expira nos proximos 30 dias</p>
-            <strong className="mt-2 block text-2xl font-black">
-              {money(cashback?.expiring_soon ?? 0)}
-            </strong>
-            {(cashback?.expiring_soon ?? 0) > 0 && (
-              <p className="mt-2 text-xs font-bold text-amber-700">
-                Use antes de expirar para nao perder.
+        {/* Hero do cashback — destaque máximo, com CTA explícito de uso. */}
+        <Card surface="bright" tactile rounded="3xl" padding="lg" className="mt-6 relative isolate overflow-hidden">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-accent/25 blur-3xl" />
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
+            <div>
+              <Chip tone="accent" uppercase icon="savings">
+                Sua carteira de cashback
+              </Chip>
+              <p className="mt-4 font-display text-display-lg leading-none tabular-nums text-on-surface dark:text-dark-text">
+                <span className="gradient-text">{money(cashbackBalance)}</span>
               </p>
-            )}
-          </div>
-          <div className="rounded-md bg-white p-4">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7788]">Movimentacoes recentes</p>
-            <div className="mt-2 grid gap-1 text-xs font-bold">
-              {(cashback?.transactions ?? []).slice(0, 4).map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between gap-2 border-t border-[#edf1f6] pt-1 first:border-t-0 first:pt-0">
-                  <span className="capitalize text-[#425166]">{tx.tipo}</span>
-                  <span className={tx.tipo === "credito" || tx.tipo === "estornado" ? "text-emerald-700" : "text-red-700"}>
-                    {tx.tipo === "credito" || tx.tipo === "estornado" ? "+" : "−"}
-                    {money(Number(tx.valor))}
-                  </span>
-                </div>
-              ))}
-              {(cashback?.transactions ?? []).length === 0 && (
-                <span className="text-[#68748a]">Sem movimentacoes ainda. Faca uma compra para comecar.</span>
-              )}
+              <p className="mt-3 max-w-md text-body-md text-on-surface-variant dark:text-dark-textMuted">
+                Você ganha <strong className="text-accent-deep dark:text-accent-soft">{cashback?.effective_rate ?? 2}%</strong> de cashback (nível {cashback?.tier ?? "Bronze"}) em cada compra. Use como desconto direto no próximo pedido.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  leftIcon="shopping_cart"
+                  disabled={cashbackBalance <= 0}
+                  onClick={() => navigate("/")}
+                >
+                  Usar agora no catálogo
+                </Button>
+                <Button variant="secondary" size="lg" leftIcon="info" onClick={() => document.getElementById("como-funciona")?.scrollIntoView({ behavior: "smooth" })}>
+                  Como funciona
+                </Button>
+              </div>
             </div>
+            <Card surface="inset" rounded="2xl" padding="md" className="border-0">
+              <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
+                Expira nos próximos 30 dias
+              </p>
+              <strong className="mt-2 block font-display text-headline-sm text-on-surface dark:text-dark-text">
+                {money(cashback?.expiring_soon ?? 0)}
+              </strong>
+              {(cashback?.expiring_soon ?? 0) > 0 && (
+                <p className="mt-2 flex items-center gap-1 text-label-sm font-bold text-warning">
+                  <Icon name="warning" size={14} /> Use antes de expirar.
+                </p>
+              )}
+            </Card>
+            <Card surface="inset" rounded="2xl" padding="md" className="border-0">
+              <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
+                Movimentações recentes
+              </p>
+              <div className="mt-2 grid gap-1.5">
+                {(cashback?.transactions ?? []).slice(0, 4).map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="flex items-center justify-between gap-2 border-t border-outline-variant/50 pt-1.5 text-body-sm font-bold first:border-t-0 first:pt-0 dark:border-dark-outline"
+                  >
+                    <span className="capitalize text-on-surface-variant dark:text-dark-textMuted">{tx.tipo}</span>
+                    <span className={tx.tipo === "credito" || tx.tipo === "estornado" ? "text-success" : "text-danger"}>
+                      {tx.tipo === "credito" || tx.tipo === "estornado" ? "+" : "−"}
+                      {money(Number(tx.valor))}
+                    </span>
+                  </div>
+                ))}
+                {(cashback?.transactions ?? []).length === 0 && (
+                  <span className="text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+                    Sem movimentações ainda. Faça uma compra para começar.
+                  </span>
+                )}
+              </div>
+            </Card>
           </div>
-        </section>
+        </Card>
 
         {/* KPIs gerais — reais, calculados das compras. */}
         <div className="mt-6 grid gap-4 md:grid-cols-4">
-          <Metric label="Economia acumulada" value={money(savings.economia_total)} />
-          <Metric label="Pedidos" value={savings.pedidos} />
-          <Metric label="Pagamentos aprovados" value={approvedPayments} />
-          <Metric label="Nivel" value={savings.nivel_atual} />
+          <StatCard label="Economia acumulada" value={money(savings.economia_total)} icon="trending_up" tone="success" />
+          <StatCard label="Pedidos" value={savings.pedidos} icon="shopping_cart" />
+          <StatCard label="Pagamentos aprovados" value={approvedPayments} icon="check_circle" tone="success" />
+          <StatCard label="Nível" value={savings.nivel_atual} icon="star" tone="accent" />
         </div>
 
         {/* Vouchers digitais — protagonistas se existem. */}
@@ -249,8 +270,12 @@ function AccountPage() {
             </p>
           </header>
           {digitalVouchers.length === 0 ? (
-            <div className="mt-4 rounded-md border border-dashed border-[#dfe5ef] bg-white p-6 text-center text-sm font-bold text-[#68748a]">
-              Quando comprar um voucher digital, ele aparece aqui pronto pra uso.
+            <div className="mt-4">
+              <EmptyState
+                title="Nenhum voucher digital ainda"
+                description="Quando comprar um voucher digital, ele aparece aqui pronto pra uso."
+                icon="confirmation_number"
+              />
             </div>
           ) : (
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -290,8 +315,12 @@ function AccountPage() {
             </p>
           </header>
           {usableBenefits.length === 0 ? (
-            <div className="mt-4 rounded-md border border-dashed border-[#dfe5ef] bg-white p-6 text-center text-sm font-bold text-[#68748a]">
-              Compre um servico ou voucher presencial para ver o QR de resgate aqui.
+            <div className="mt-4">
+              <EmptyState
+                title="Sem benefícios ativos"
+                description="Compre um serviço ou voucher presencial para ver o QR de resgate aqui."
+                icon="qr_code_2"
+              />
             </div>
           ) : (
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -314,17 +343,15 @@ function AccountPage() {
             </div>
           )}
           {expiredOrUsedBenefits.length > 0 && (
-            <details className="mt-3 rounded-md border border-[#dfe5ef] bg-white p-4">
-              <summary className="cursor-pointer text-sm font-black text-[#475569]">
-                Mostrar beneficios usados ou expirados ({expiredOrUsedBenefits.length})
+            <details className="mt-3 rounded-2xl border border-outline-variant/70 bg-surface-bright p-4 dark:border-dark-outline dark:bg-dark-surface">
+              <summary className="cursor-pointer text-label-bold text-on-surface-variant dark:text-dark-textMuted">
+                Mostrar benefícios usados ou expirados ({expiredOrUsedBenefits.length})
               </summary>
-              <ul className="mt-3 grid gap-2 text-sm font-semibold text-[#5f6b7b]">
+              <ul className="mt-3 grid gap-2">
                 {expiredOrUsedBenefits.map((benefit) => (
-                  <li key={`exp-${benefit.id}`} className="flex items-center justify-between border-t border-[#edf1f6] pt-2 first:border-t-0 first:pt-0">
-                    <span>{benefit.produto_nome}</span>
-                    <span className="rounded-md bg-[#f1f5f9] px-2 py-1 text-xs font-black uppercase tracking-[0.1em]">
-                      {benefit.status}
-                    </span>
+                  <li key={`exp-${benefit.id}`} className="flex items-center justify-between border-t border-outline-variant/40 pt-2 text-body-sm first:border-t-0 first:pt-0 dark:border-dark-outline">
+                    <span className="font-bold text-on-surface dark:text-dark-text">{benefit.produto_nome}</span>
+                    <Chip tone="ghost" size="sm" uppercase>{benefit.status}</Chip>
                   </li>
                 ))}
               </ul>
@@ -333,9 +360,11 @@ function AccountPage() {
         </section>
 
         {/* Como funciona */}
-        <section id="como-funciona" className="mt-8 rounded-md border border-[#dfe5ef] bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Guia rapido</p>
-          <h2 className="mt-1 font-display text-2xl font-black">Como cashback e vouchers funcionam</h2>
+        <Card id="como-funciona" surface="bright" tactile rounded="3xl" padding="lg" className="mt-8">
+          <Chip tone="ghost" uppercase>Guia rápido</Chip>
+          <h2 className="mt-3 font-display text-headline-sm text-on-surface dark:text-dark-text">
+            Como cashback e vouchers funcionam
+          </h2>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <Step
               number="1"
@@ -350,74 +379,91 @@ function AccountPage() {
             <Step
               number="3"
               title="Voucher e QR"
-              text="Compras digitais ja vem com um codigo OD-XXXX. Compras presenciais geram um token + QR para o parceiro escanear."
+              text="Compras digitais já vêm com um código OD-XXXX. Compras presenciais geram um token + QR para o parceiro escanear."
             />
           </div>
-        </section>
+        </Card>
 
         {/* Pedidos */}
-        <section className="mt-8 rounded-md border border-[#dfe5ef] bg-white">
-          <div className="flex flex-col gap-3 border-b border-[#edf1f6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-black">Meus pedidos</h2>
+        <Card surface="bright" tactile rounded="3xl" padding="none" className="mt-8 overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-outline-variant/60 px-6 py-4 dark:border-dark-outline sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">Meus pedidos</h2>
             {pendingOrders.length > 0 && (
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon="sync"
                 onClick={() => void Promise.all(pendingOrders.slice(0, 5).map((order) => refreshOrderPayment(order.id)))}
-                className="rounded-md bg-brand-ink px-4 py-2 text-sm font-black text-white"
               >
-                Atualizar pagamentos pendentes
-              </button>
+                Atualizar pendentes
+              </Button>
             )}
           </div>
-          <div className="divide-y divide-[#edf1f6]">
+          <div className="divide-y divide-outline-variant/40 dark:divide-dark-outline">
             {orders.length === 0 ? (
-              <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nenhum pedido ainda.</p>
+              <p className="px-6 py-6 text-body-sm font-bold text-on-surface-variant dark:text-dark-textMuted">
+                Nenhum pedido ainda.
+              </p>
             ) : (
               orders.map((order) => (
-                <article key={order.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
-                  <div className="h-20 overflow-hidden rounded-md bg-[#e6ebf2]">
-                    {order.imagem_url && <img src={assetUrl(order.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
+                <article key={order.id} className="grid gap-4 px-6 py-5 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
+                  <div className="h-20 overflow-hidden rounded-xl surface-inset">
+                    {order.imagem_url ? (
+                      <img src={assetUrl(order.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-on-surface-variant dark:text-dark-textMuted">
+                        <Icon name="shopping_bag" size={24} />
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <h3 className="font-black">{order.produto_nome}</h3>
-                    <p className="mt-1 text-sm font-semibold text-[#68748a]">
+                    <h3 className="font-display text-title-md text-on-surface dark:text-dark-text">{order.produto_nome}</h3>
+                    <p className="mt-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
                       {labelOrderType(order)} · {labelOrderStatus(order.status)} · pagamento {labelPaymentStatus(order.payment_status)}
                     </p>
-                    {(order.cashback_aplicado ?? 0) > 0 && (
-                      <p className="mt-1 text-xs font-bold text-emerald-700">
-                        Usou {money(order.cashback_aplicado ?? 0)} de cashback
-                      </p>
-                    )}
-                    {(order.cashback_creditado ?? 0) > 0 && (
-                      <p className="mt-1 text-xs font-bold text-brand-ink">
-                        Ganhou {money(order.cashback_creditado ?? 0)} de cashback
-                      </p>
-                    )}
-                    {order.voucher_code && (
-                      <p className="mt-2 inline-flex items-center gap-2 rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black text-brand-ink">
-                        Voucher {order.voucher_code}
-                      </p>
-                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(order.cashback_aplicado ?? 0) > 0 && (
+                        <Chip tone="success" size="sm" icon="payments">
+                          Usou {money(order.cashback_aplicado ?? 0)}
+                        </Chip>
+                      )}
+                      {(order.cashback_creditado ?? 0) > 0 && (
+                        <Chip tone="accent" size="sm" icon="trending_up">
+                          Ganhou {money(order.cashback_creditado ?? 0)}
+                        </Chip>
+                      )}
+                      {order.voucher_code && (
+                        <Chip tone="accent" size="sm" icon="confirmation_number">
+                          Voucher {order.voucher_code}
+                        </Chip>
+                      )}
+                    </div>
                   </div>
                   <div className="justify-self-end text-right">
-                    <strong>{money(order.valor_pago_total)}</strong>
-                    {order.payment_status === "pending" && (
-                      <button
-                        type="button"
-                        onClick={() => void refreshOrderPayment(order.id)}
-                        disabled={syncingOrders.includes(order.id)}
-                        className="mt-3 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
+                    <strong className="font-display text-title-lg text-on-surface dark:text-dark-text">
+                      {money(order.valor_pago_total)}
+                    </strong>
+                    <div className="mt-3 flex flex-col gap-2">
+                      {order.payment_status === "pending" && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leftIcon="sync"
+                          loading={syncingOrders.includes(order.id)}
+                          onClick={() => void refreshOrderPayment(order.id)}
+                        >
+                          Verificar pagamento
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        rightIcon={openTimelineFor === order.id ? "close" : "chevron_right"}
+                        onClick={() => setOpenTimelineFor(openTimelineFor === order.id ? null : order.id)}
                       >
-                        {syncingOrders.includes(order.id) ? "Verificando..." : "Verificar pagamento"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setOpenTimelineFor(openTimelineFor === order.id ? null : order.id)}
-                      className="mt-2 block rounded-md border border-[#ccd5e2] bg-white px-3 py-2 text-xs font-black"
-                    >
-                      {openTimelineFor === order.id ? "Ocultar timeline" : "Ver timeline"}
-                    </button>
+                        {openTimelineFor === order.id ? "Ocultar" : "Ver timeline"}
+                      </Button>
+                    </div>
                   </div>
                   {openTimelineFor === order.id && (
                     <div className="sm:col-span-3">
@@ -428,57 +474,51 @@ function AccountPage() {
               ))
             )}
           </div>
-        </section>
+        </Card>
 
-        {/* Cadastro + notificacoes */}
+        {/* Cadastro + notificações */}
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_24rem]">
-          <section className="rounded-md border border-[#dfe5ef] bg-white">
-            <div className="border-b border-[#edf1f6] px-5 py-4">
-              <h2 className="text-lg font-black">Notificacoes</h2>
+          <Card surface="bright" tactile rounded="3xl" padding="none" className="overflow-hidden">
+            <div className="border-b border-outline-variant/60 px-6 py-4 dark:border-dark-outline">
+              <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">Notificações</h2>
             </div>
-            <div className="divide-y divide-[#edf1f6]">
+            <div className="divide-y divide-outline-variant/40 dark:divide-dark-outline">
               {notifications.length === 0 ? (
-                <p className="px-5 py-5 text-sm font-bold text-[#68748a]">Nada por enquanto.</p>
+                <p className="px-6 py-6 text-body-sm font-bold text-on-surface-variant dark:text-dark-textMuted">
+                  Nada por enquanto.
+                </p>
               ) : (
                 notifications.map((notification) => (
-                  <div key={notification.id} className="px-5 py-4">
-                    <h3 className="text-sm font-black">{notification.titulo}</h3>
-                    <p className="mt-1 text-sm font-semibold leading-6 text-[#68748a]">
+                  <div key={notification.id} className="px-6 py-4">
+                    <h3 className="font-bold text-on-surface dark:text-dark-text">{notification.titulo}</h3>
+                    <p className="mt-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
                       {notification.mensagem}
                     </p>
                   </div>
                 ))
               )}
             </div>
-          </section>
+          </Card>
 
           <div className="grid gap-4">
-            <InfoPanel title="Dados cadastrais">
+            <InfoPanel title="Dados cadastrais" icon="person">
               <p>{profile?.nome}</p>
               <p>{profile?.email}</p>
               <p>{profile?.telefone}</p>
               <p>CPF {profile?.cpf ?? "-"}</p>
             </InfoPanel>
-            <InfoPanel title="Endereco">
-              <p>{fullAddress || "Endereco nao localizado."}</p>
+            <InfoPanel title="Endereço" icon="location_on">
+              <p>{fullAddress || "Endereço não localizado."}</p>
             </InfoPanel>
-            <InfoPanel title="Localizacao">
-              <p>Ative para receber alertas de beneficios proximos.</p>
+            <InfoPanel title="Localização" icon="my_location">
+              <p>Ative para receber alertas de benefícios próximos.</p>
               <div className="mt-3 grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => marketplaceApi.setLocationConsent("granted")}
-                  className="rounded-md bg-brand-gold px-3 py-2 text-sm font-black text-brand-ink"
-                >
+                <Button variant="accent" size="sm" leftIcon="check" onClick={() => marketplaceApi.setLocationConsent("granted")}>
                   Permitir
-                </button>
-                <button
-                  type="button"
-                  onClick={() => marketplaceApi.setLocationConsent("revoked")}
-                  className="rounded-md border border-[#ccd5e2] px-3 py-2 text-sm font-black"
-                >
+                </Button>
+                <Button variant="secondary" size="sm" leftIcon="close" onClick={() => marketplaceApi.setLocationConsent("revoked")}>
                   Revogar
-                </button>
+                </Button>
               </div>
             </InfoPanel>
           </div>
@@ -523,31 +563,31 @@ function labelPaymentStatus(status?: string) {
   return labels[status ?? ""] ?? (status || "pendente");
 }
 
-function InfoPanel({ title, children }: { title: string; children: ReactNode }) {
+function InfoPanel({ title, icon, children }: { title: string; icon?: import("../ui").IconName; children: ReactNode }) {
   return (
-    <section className="rounded-md border border-[#dfe5ef] bg-white p-5">
-      <h2 className="text-lg font-black">{title}</h2>
-      <div className="mt-3 grid gap-1 text-sm font-semibold leading-6 text-[#68748a]">{children}</div>
-    </section>
+    <Card surface="bright" tactile rounded="2xl" padding="md">
+      <div className="flex items-center gap-2">
+        {icon ? (
+          <span className="flex h-9 w-9 items-center justify-center rounded-pill bg-accent/15 text-accent-deep dark:text-accent-soft">
+            <Icon name={icon} size={18} />
+          </span>
+        ) : null}
+        <h2 className="font-display text-title-md text-on-surface dark:text-dark-text">{title}</h2>
+      </div>
+      <div className="mt-3 grid gap-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">{children}</div>
+    </Card>
   );
 }
 
 function Step({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <div className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] p-4">
-      <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-ink font-black text-white">{number}</span>
-      <h3 className="mt-3 text-base font-black">{title}</h3>
-      <p className="mt-2 text-sm font-semibold leading-6 text-[#5f6b7b]">{text}</p>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md border border-[#dfe5ef] bg-white p-5">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#68748a]">{label}</p>
-      <strong className="mt-2 block text-2xl font-black">{value}</strong>
-    </div>
+    <Card surface="inset" rounded="2xl" padding="md" className="border-0">
+      <span className="flex h-10 w-10 items-center justify-center rounded-pill bg-primary font-display text-title-md text-on-primary dark:bg-white dark:text-brand-ink">
+        {number}
+      </span>
+      <h3 className="mt-3 font-display text-title-md text-on-surface dark:text-dark-text">{title}</h3>
+      <p className="mt-2 text-body-sm text-on-surface-variant dark:text-dark-textMuted">{text}</p>
+    </Card>
   );
 }
 

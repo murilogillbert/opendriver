@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { marketplaceApi, money } from "../../lib/marketplaceApi";
+import { Card, Chip, Icon, Skeleton } from "../ui";
+import type { ChipTone } from "../ui";
 
 type Timeline = Awaited<ReturnType<typeof marketplaceApi.orderTimeline>>;
 
@@ -18,6 +20,13 @@ const STATUS_DICT: Record<string, string> = {
   entregue: "Entregue",
   cancelado: "Cancelado",
   estornado: "Estornado"
+};
+
+const STATUS_TONE = (status: string): ChipTone => {
+  if (status === "cancelado" || status === "estornado") return "danger";
+  if (status === "entregue") return "success";
+  if (status === "confirmado") return "info";
+  return "warning";
 };
 
 export default function OrderTimeline({ orderId }: { orderId: number }) {
@@ -47,42 +56,47 @@ export default function OrderTimeline({ orderId }: { orderId: number }) {
     };
   }, [orderId]);
 
-  if (loading) return <p className="text-sm text-slate-500">Carregando timeline...</p>;
-  if (error) return <p className="text-sm text-rose-600">Erro: {error}</p>;
+  if (loading)
+    return (
+      <Card surface="bright" tactile rounded="2xl" padding="md" className="space-y-3">
+        <Skeleton height={18} width="40%" />
+        <Skeleton height={14} width="100%" />
+        <Skeleton height={14} width="70%" />
+      </Card>
+    );
+  if (error)
+    return (
+      <Card surface="bright" tactile rounded="2xl" padding="md" className="border-danger/30 bg-danger/10">
+        <p className="flex items-center gap-2 text-body-sm font-bold text-danger">
+          <Icon name="error" size={16} /> Erro ao carregar: {error}
+        </p>
+      </Card>
+    );
   if (!data) return null;
 
   const currentStatus = data.order.status;
   const isCancelled = currentStatus === "cancelado" || currentStatus === "estornado";
   const currentIndex = STATUS_FLOW.findIndex((s) => s.key === currentStatus);
 
-  // Sort events from oldest to newest for display
   const events = [...data.events].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card surface="bright" tactile rounded="2xl" padding="lg">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Pedido</p>
-          <h3 className="mt-0.5 font-display text-lg font-black text-slate-800">
+          <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">Pedido</p>
+          <h3 className="mt-1 font-display text-title-lg text-on-surface dark:text-dark-text">
             #{data.order.public_code ?? data.order.id}
           </h3>
-          <p className="mt-1 text-sm font-semibold text-slate-700">
-            Total: <span className="font-black">{money(data.order.valor_pago_total)}</span>
+          <p className="mt-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+            Total: <span className="font-bold text-on-surface dark:text-dark-text">{money(data.order.valor_pago_total)}</span>
           </p>
         </div>
-        <span
-          className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider ${
-            isCancelled
-              ? "bg-rose-100 text-rose-800"
-              : currentStatus === "entregue"
-              ? "bg-emerald-100 text-emerald-800"
-              : "bg-amber-100 text-amber-800"
-          }`}
-        >
+        <Chip tone={STATUS_TONE(currentStatus)} uppercase>
           {STATUS_DICT[currentStatus] ?? currentStatus}
-        </span>
+        </Chip>
       </header>
 
       {!isCancelled && (
@@ -92,14 +106,14 @@ export default function OrderTimeline({ orderId }: { orderId: number }) {
             return (
               <li key={step.key} className="flex items-start gap-3">
                 <span
-                  className={`mt-1 grid h-6 w-6 place-items-center rounded-full text-[0.7rem] font-black ${
-                    reached ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"
+                  className={`mt-0.5 grid h-7 w-7 place-items-center rounded-pill text-label-sm font-bold ${
+                    reached ? "bg-success text-white" : "bg-surface-container text-on-surface-variant dark:bg-dark-surfaceContainer dark:text-dark-textMuted"
                   }`}
                 >
-                  {reached ? "✓" : i + 1}
+                  {reached ? <Icon name="check" size={14} /> : i + 1}
                 </span>
                 <div className="flex-1">
-                  <p className={`text-sm font-bold ${reached ? "text-slate-800" : "text-slate-400"}`}>
+                  <p className={`text-body-md font-bold ${reached ? "text-on-surface dark:text-dark-text" : "text-on-surface-variant dark:text-dark-textMuted"}`}>
                     {step.label}
                   </p>
                 </div>
@@ -110,16 +124,18 @@ export default function OrderTimeline({ orderId }: { orderId: number }) {
       )}
 
       {events.length > 0 && (
-        <details className="mt-5 rounded-xl bg-slate-50 px-4 py-3">
-          <summary className="cursor-pointer text-sm font-bold text-slate-700">Historico completo</summary>
+        <details className="mt-5 rounded-2xl surface-inset px-4 py-3">
+          <summary className="cursor-pointer text-label-bold text-on-surface dark:text-dark-text">
+            Histórico completo
+          </summary>
           <ul className="mt-3 space-y-3">
             {events.map((evt) => (
-              <li key={evt.id} className="border-l-2 border-slate-300 pl-3">
-                <p className="text-sm font-bold text-slate-800">
+              <li key={evt.id} className="border-l-2 border-outline-variant pl-3 dark:border-dark-outline">
+                <p className="text-body-sm font-bold text-on-surface dark:text-dark-text">
                   {STATUS_DICT[evt.status] ?? evt.status}
                 </p>
-                {evt.note && <p className="text-xs text-slate-600">{evt.note}</p>}
-                <p className="mt-0.5 text-[0.65rem] uppercase tracking-wider text-slate-400">
+                {evt.note && <p className="text-body-sm text-on-surface-variant dark:text-dark-textMuted">{evt.note}</p>}
+                <p className="mt-0.5 text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
                   {new Date(evt.created_at).toLocaleString("pt-BR")}
                 </p>
               </li>
@@ -127,6 +143,6 @@ export default function OrderTimeline({ orderId }: { orderId: number }) {
           </ul>
         </details>
       )}
-    </section>
+    </Card>
   );
 }

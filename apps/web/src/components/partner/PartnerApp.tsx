@@ -146,7 +146,7 @@ function PartnerLogin({
 }) {
   return (
     <main className="grid min-h-screen place-items-center bg-[#0b1220] px-5 text-white">
-      <section className="grid w-full max-w-md gap-5 rounded-md border border-white/10 bg-[#101a2e] p-7 shadow-2xl">
+      <section className="grid w-full max-w-md gap-5 rounded-xl border border-white/10 bg-[#101a2e] p-7 shadow-2xl">
         <header className="grid gap-2 text-center">
           <img src={logoUrl} alt="DriverHub" className="mx-auto h-12 w-auto" />
           <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Terminal do parceiro</p>
@@ -157,12 +157,12 @@ function PartnerLogin({
         </header>
 
         {error && (
-          <div className="rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+          <div className="rounded-xl border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
             {error}
           </div>
         )}
         {info && (
-          <div className="rounded-md border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-200">
+          <div className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-200">
             {info}
           </div>
         )}
@@ -175,7 +175,7 @@ function PartnerLogin({
               type="email"
               required
               autoComplete="email"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-brand-gold focus:outline-none"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-brand-gold focus:outline-none"
               placeholder="parceiro@empresa.com"
             />
           </label>
@@ -186,13 +186,13 @@ function PartnerLogin({
               type="password"
               required
               autoComplete="current-password"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-brand-gold focus:outline-none"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white placeholder:text-white/30 focus:border-brand-gold focus:outline-none"
               placeholder="••••••"
             />
           </label>
           <button
             type="submit"
-            className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink shadow-gold"
+            className="rounded-xl bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink shadow-gold"
           >
             Entrar no terminal
           </button>
@@ -240,7 +240,7 @@ function PartnerChangePassword({
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#0b1220] px-5 text-white">
-      <section className="grid w-full max-w-md gap-4 rounded-md border border-white/10 bg-[#101a2e] p-7 shadow-2xl">
+      <section className="grid w-full max-w-md gap-4 rounded-xl border border-white/10 bg-[#101a2e] p-7 shadow-2xl">
         <header className="grid gap-2 text-center">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Primeiro acesso</p>
           <h1 className="font-display text-2xl font-black">Defina sua senha</h1>
@@ -249,7 +249,7 @@ function PartnerChangePassword({
           </p>
         </header>
         {error && (
-          <div className="rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+          <div className="rounded-xl border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
             {error}
           </div>
         )}
@@ -261,7 +261,7 @@ function PartnerChangePassword({
               type="password"
               required
               autoComplete="current-password"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
             />
           </label>
           <label className="grid gap-1 text-xs font-black uppercase tracking-[0.16em] text-white/60">
@@ -272,7 +272,7 @@ function PartnerChangePassword({
               required
               minLength={6}
               autoComplete="new-password"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
             />
           </label>
           <label className="grid gap-1 text-xs font-black uppercase tracking-[0.16em] text-white/60">
@@ -283,13 +283,13 @@ function PartnerChangePassword({
               required
               minLength={6}
               autoComplete="new-password"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-3 py-3 text-sm font-bold text-white"
             />
           </label>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:opacity-60"
+            className="rounded-xl bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:opacity-60"
           >
             {submitting ? "Salvando..." : "Salvar nova senha"}
           </button>
@@ -401,7 +401,7 @@ function PartnerTerminal({
           <button
             type="button"
             onClick={() => void onLogout()}
-            className="self-start rounded-md border border-white/20 bg-white/5 px-4 py-2 text-sm font-black"
+            className="self-start rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-black"
           >
             Sair
           </button>
@@ -420,7 +420,7 @@ function PartnerTerminal({
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`rounded-md px-3 py-2 text-xs font-black uppercase tracking-wider transition ${
+              className={`rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider transition ${
                 tab === key
                   ? "bg-brand-gold text-brand-ink"
                   : "border border-white/15 bg-white/5 text-white/70 hover:border-brand-gold hover:text-brand-gold"
@@ -434,7 +434,7 @@ function PartnerTerminal({
 
       {tab !== "terminal" && (
         <section className="mx-auto max-w-5xl px-5 py-6">
-          <div className="rounded-md bg-white p-5 text-slate-800">
+          <div className="rounded-xl bg-white p-5 text-slate-800">
             {tab === "produtos" && <PartnerProductsTab />}
             {tab === "analytics" && <PartnerAnalyticsTab />}
             {tab === "recebiveis" && <PartnerReceivablesTab />}
@@ -445,7 +445,7 @@ function PartnerTerminal({
 
       {tab === "terminal" && (
       <section className="mx-auto grid max-w-5xl gap-5 px-5 py-6 lg:grid-cols-[1.4fr_0.8fr]">
-        <div className="grid gap-4 rounded-md border border-white/10 bg-[#101a2e] p-5">
+        <div className="grid gap-4 rounded-xl border border-white/10 bg-[#101a2e] p-5">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">Validar cupom</p>
             <h2 className="mt-1 font-display text-2xl font-black">Cole ou digite o codigo</h2>
@@ -455,12 +455,12 @@ function PartnerTerminal({
           </div>
 
           {error && (
-            <div className="rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
+            <div className="rounded-xl border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200">
               {error}
             </div>
           )}
           {info && (
-            <div className="rounded-md border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-200">
+            <div className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-200">
               {info}
             </div>
           )}
@@ -474,13 +474,13 @@ function PartnerTerminal({
               maxLength={40}
               autoComplete="off"
               autoCapitalize="characters"
-              className="rounded-md border border-white/15 bg-[#0b1220] px-4 py-4 text-center font-mono text-xl font-black tracking-[0.2em] text-white placeholder:text-white/25 focus:border-brand-gold focus:outline-none"
+              className="rounded-xl border border-white/15 bg-[#0b1220] px-4 py-4 text-center font-mono text-xl font-black tracking-[0.2em] text-white placeholder:text-white/25 focus:border-brand-gold focus:outline-none"
             />
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
                 disabled={busy}
-                className="rounded-md bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:opacity-60"
+                className="rounded-xl bg-brand-gold px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:opacity-60"
               >
                 {busy ? "Buscando..." : "Buscar voucher"}
               </button>
@@ -488,7 +488,7 @@ function PartnerTerminal({
                 <button
                   type="button"
                   onClick={reset}
-                  className="rounded-md border border-white/20 bg-white/5 px-4 py-3 text-sm font-black"
+                  className="rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm font-black"
                 >
                   Limpar
                 </button>
@@ -497,7 +497,7 @@ function PartnerTerminal({
           </form>
 
           {lookup && (
-            <div className="grid gap-3 rounded-md border border-brand-gold/30 bg-brand-gold/10 p-4 text-sm">
+            <div className="grid gap-3 rounded-xl border border-brand-gold/30 bg-brand-gold/10 p-4 text-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-gold">{lookup.offer_type ?? "beneficio"}</p>
@@ -512,7 +512,7 @@ function PartnerTerminal({
                   )}
                 </div>
                 <span
-                  className={`rounded-md px-2 py-1 text-xs font-black uppercase tracking-[0.1em] ${
+                  className={`rounded-xl px-2 py-1 text-xs font-black uppercase tracking-[0.1em] ${
                     lookup.usable ? "bg-emerald-500/20 text-emerald-200" : "bg-red-500/20 text-red-200"
                   }`}
                 >
@@ -532,7 +532,7 @@ function PartnerTerminal({
                   type="button"
                   onClick={() => void confirmRedeem()}
                   disabled={busy}
-                  className="rounded-md bg-emerald-400 px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-emerald-950 disabled:opacity-60"
+                  className="rounded-xl bg-emerald-400 px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-emerald-950 disabled:opacity-60"
                 >
                   {busy ? "Validando..." : "Confirmar resgate"}
                 </button>
@@ -542,7 +542,7 @@ function PartnerTerminal({
         </div>
 
         <aside className="grid gap-4">
-          <div className="grid gap-3 rounded-md border border-white/10 bg-[#101a2e] p-5">
+          <div className="grid gap-3 rounded-xl border border-white/10 bg-[#101a2e] p-5">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">Hoje no balcao</p>
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Resgates hoje" value={String(stats?.resgates_hoje ?? 0)} />
@@ -552,7 +552,7 @@ function PartnerTerminal({
             </div>
           </div>
 
-          <div className="rounded-md border border-white/10 bg-[#101a2e] p-5">
+          <div className="rounded-xl border border-white/10 bg-[#101a2e] p-5">
             <div className="flex items-center justify-between">
               <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">Ultimos resgates</p>
               <button
@@ -587,7 +587,7 @@ function PartnerTerminal({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-white/5 bg-white/[0.03] p-3">
+    <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
       <p className="text-[0.65rem] font-black uppercase tracking-[0.14em] text-white/55">{label}</p>
       <strong className="mt-1 block text-lg font-black">{value}</strong>
     </div>

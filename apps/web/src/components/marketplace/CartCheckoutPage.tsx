@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
 import { friendlyPaymentError, getToken, marketplaceApi, money } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, EmptyState, Icon } from "../ui";
 
 type CartCheckoutPageProps = {
   checkinToken?: string | null;
@@ -240,56 +241,70 @@ function CartCheckoutPage({ checkinToken = null }: CartCheckoutPageProps) {
 
   if (!cart && !result) {
     return (
-      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
-        <section className="mx-auto max-w-xl rounded-md border border-[#dfe5ef] bg-white p-6">
-          <h1 className="font-display text-2xl font-black">Seu carrinho esta vazio</h1>
-          <p className="mt-2 text-sm font-bold text-[#68748a]">
-            Volte para a vitrine do parceiro e adicione produtos antes de finalizar.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="mt-4 rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white"
-          >
-            Voltar para o catalogo
-          </button>
-        </section>
+      <main className="min-h-screen bg-surface px-margin-mobile py-12 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+        <div className="mx-auto max-w-xl">
+          <EmptyState
+            title="Seu carrinho está vazio"
+            description="Volte para a vitrine do parceiro e adicione produtos antes de finalizar."
+            icon="shopping_cart"
+            action={
+              <Button variant="primary" leftIcon="arrow_back" onClick={() => navigate("/")}>
+                Voltar para o catálogo
+              </Button>
+            }
+          />
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-5 py-8 text-[#111827]">
-      <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_26rem]">
-        <div className="rounded-md border border-[#dfe5ef] bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-gold">Checkout do carrinho</p>
-          <h1 className="mt-2 font-display text-3xl font-black">Confirme seu pedido</h1>
-          {cart && (
-            <p className="mt-2 text-sm font-semibold text-[#68748a]">
-              {cart.items.length} {cart.items.length === 1 ? "item" : "itens"} de {cart.partnerName}.
-            </p>
-          )}
+    <main className="min-h-screen bg-surface px-margin-mobile py-8 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+      <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_24rem]">
+        <Card surface="bright" tactile rounded="3xl" padding="lg" className="space-y-4">
+          <div>
+            <Chip tone="accent" uppercase icon="shopping_cart">
+              Checkout do carrinho
+            </Chip>
+            <h1 className="mt-3 font-display text-headline-md text-on-surface dark:text-dark-text">
+              Confirme seu pedido
+            </h1>
+            {cart && (
+              <p className="mt-2 text-body-md text-on-surface-variant dark:text-dark-textMuted">
+                {cart.items.length} {cart.items.length === 1 ? "item" : "itens"} de {cart.partnerName}.
+              </p>
+            )}
+          </div>
 
           {error && (
-            <div className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-              {error}
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-body-sm font-bold text-danger">
+              <Icon name="error" size={18} /> <span>{error}</span>
             </div>
           )}
 
           {result ? (
-            <div className="mt-6 rounded-md border border-brand-gold/40 bg-brand-gold/10 p-5">
-              <h2 className="text-xl font-black">
-                {result.payment.status === "approved" ? "Pedido aprovado" : "Pagamento iniciado"}
-              </h2>
-              <p className="mt-2 text-sm font-bold text-[#5a3f00]">
+            <Card surface="default" rounded="2xl" padding="lg" className="border-accent/40 bg-accent/10 dark:border-accent/30 dark:bg-accent/10">
+              <div className="flex items-center gap-2">
+                {result.payment.status === "approved" ? (
+                  <Icon name="check_circle" size={26} className="text-success" />
+                ) : (
+                  <Icon name="sync" size={22} className="animate-spin text-accent-deep" />
+                )}
+                <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">
+                  {result.payment.status === "approved" ? "Pedido aprovado" : "Pagamento iniciado"}
+                </h2>
+              </div>
+              <p className="mt-2 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
                 Carrinho {result.cart_id.slice(0, 8)} • {result.orders.length} pedidos criados • Total {money(result.total)}
               </p>
               {result.payment.qr_code_base64 && (
-                <img
-                  src={`data:image/png;base64,${result.payment.qr_code_base64}`}
-                  alt="QR Code Pix"
-                  className="mt-4 h-56 w-56 rounded-md bg-white p-3"
-                />
+                <div className="mt-4 flex justify-center">
+                  <img
+                    src={`data:image/png;base64,${result.payment.qr_code_base64}`}
+                    alt="QR Code Pix"
+                    className="h-56 w-56 rounded-2xl bg-white p-3 shadow-soft"
+                  />
+                </div>
               )}
               {result.payment.qr_code && (
                 <div className="mt-4 grid gap-2">
@@ -297,33 +312,30 @@ function CartCheckoutPage({ checkinToken = null }: CartCheckoutPageProps) {
                     readOnly
                     value={result.payment.qr_code}
                     onFocus={(event) => event.currentTarget.select()}
-                    className="h-28 w-full rounded-md border border-[#ccd5e2] p-3 text-xs"
+                    className="surface-inset h-28 w-full rounded-xl border border-transparent p-3 font-mono text-body-sm text-on-surface focus:border-accent focus:outline-none dark:text-dark-text"
                   />
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={copiedPix ? "check" : "content_copy"}
                     onClick={() => void copyPixCode()}
-                    className="rounded-md border border-brand-gold bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-brand-ink"
                   >
-                    {copiedPix ? "Codigo copiado!" : "Copiar codigo Pix"}
-                  </button>
+                    {copiedPix ? "Código copiado!" : "Copiar código Pix"}
+                  </Button>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => navigate("/minha-conta")}
-                className="mt-5 rounded-md bg-brand-ink px-4 py-3 text-sm font-black text-white"
-              >
+              <Button variant="primary" rightIcon="arrow_forward" className="mt-5" onClick={() => navigate("/minha-conta")}>
                 Ir para minha conta
-              </button>
-            </div>
+              </Button>
+            </Card>
           ) : (
-            <div className="mt-6 grid gap-4">
+            <div className="grid gap-4">
               {cashbackBalance > 0 && (
-                <div className="rounded-md border border-brand-gold/40 bg-brand-gold/10 p-4">
-                  <label className="flex items-start gap-3 text-sm font-bold">
+                <Card surface="default" rounded="2xl" padding="md" className="border-accent/40 bg-accent/10 dark:border-accent/30 dark:bg-accent/10">
+                  <label className="flex items-start gap-3 text-body-md font-bold text-on-surface dark:text-dark-text">
                     <input
                       type="checkbox"
-                      className="mt-1"
+                      className="mt-1 h-5 w-5 accent-accent"
                       checked={useCashback}
                       onChange={(event) => {
                         const next = event.target.checked;
@@ -332,9 +344,12 @@ function CartCheckoutPage({ checkinToken = null }: CartCheckoutPageProps) {
                       }}
                     />
                     <span className="flex-1">
-                      Usar meu cashback (saldo: {money(cashbackBalance)}).
+                      <span className="flex items-center gap-2">
+                        <Icon name="payments" size={18} className="text-accent-deep" />
+                        Usar meu cashback (saldo {money(cashbackBalance)})
+                      </span>
                       {useCashback && (
-                        <span className="mt-2 grid gap-2">
+                        <span className="mt-3 grid gap-1">
                           <input
                             type="number"
                             min={0}
@@ -347,116 +362,145 @@ function CartCheckoutPage({ checkinToken = null }: CartCheckoutPageProps) {
                                 setCashbackAmount(Math.max(0, Math.min(value, maxCashback)));
                               }
                             }}
-                            className="w-32 rounded-md border border-[#ccd5e2] px-3 py-2"
+                            className="surface-inset w-40 rounded-xl border border-transparent px-3 py-2 text-on-surface focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/25 dark:text-dark-text"
                           />
-                          <span className="text-xs font-semibold text-[#5a3f00]">
-                            Aplicado: {money(effectiveCashback)} (max {money(maxCashback)}).
+                          <span className="text-label-sm font-bold text-accent-deep dark:text-accent-soft">
+                            Aplicado {money(effectiveCashback)} (máx {money(maxCashback)})
                           </span>
                         </span>
                       )}
                     </span>
                   </label>
-                </div>
+                </Card>
               )}
 
               {fullyCovered ? (
-                <form onSubmit={submitPixCart}>
-                  <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900">
-                    Cashback cobre o carrinho inteiro. Sem cobranca no Mercado Pago.
-                  </p>
-                  <button
+                <form onSubmit={submitPixCart} className="grid gap-3">
+                  <div className="flex items-center gap-2 rounded-xl bg-success/15 px-3 py-2 text-body-sm font-bold text-success">
+                    <Icon name="verified" size={18} /> Cashback cobre o carrinho inteiro — sem cobrança no Mercado Pago.
+                  </div>
+                  <Button
                     type="submit"
-                    disabled={isSubmitting}
-                    className="w-full rounded-md bg-emerald-600 px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:opacity-60"
+                    variant="accent"
+                    size="lg"
+                    fullWidth
+                    loading={isSubmitting}
+                    leftIcon="check_circle"
                   >
-                    {isSubmitting ? "Confirmando..." : `Confirmar pedido (${money(effectiveCashback)} de cashback)`}
-                  </button>
+                    {`Confirmar pedido (${money(effectiveCashback)} de cashback)`}
+                  </Button>
                 </form>
               ) : (
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    {(["pix", "credit_card", "debit_card"] as const).map((method) => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setPaymentMethod(method)}
-                        className={`rounded-md border px-4 py-3 text-sm font-black ${
-                          paymentMethod === method ? "border-brand-gold bg-brand-gold text-brand-ink" : "border-[#ccd5e2] bg-white"
-                        }`}
-                      >
-                        {method === "pix" ? "Pix" : method === "credit_card" ? "Credito" : "Debito"}
-                      </button>
-                    ))}
+                    {(["pix", "credit_card", "debit_card"] as const).map((method) => {
+                      const active = paymentMethod === method;
+                      const label = method === "pix" ? "Pix" : method === "credit_card" ? "Crédito" : "Débito";
+                      const icon = method === "pix" ? "pix" : "credit_card";
+                      return (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() => setPaymentMethod(method)}
+                          aria-pressed={active}
+                          className={`focus-ring flex items-center justify-center gap-2 rounded-pill px-4 py-3 text-label-bold transition ${
+                            active
+                              ? "bg-accent text-on-accent tactile-pop"
+                              : "bg-surface-bright text-on-surface border border-outline-variant tactile-pop hover:border-accent dark:bg-dark-surfaceElevated dark:text-dark-text dark:border-dark-outline"
+                          }`}
+                        >
+                          <Icon name={icon} size={18} /> {label}
+                        </button>
+                      );
+                    })}
                   </div>
                   {effectiveCashback > 0 && (
-                    <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
-                      {money(remainingCash)} pelo Mercado Pago + {money(effectiveCashback)} de cashback.
-                    </p>
+                    <div className="flex items-start gap-2 rounded-xl bg-success/15 px-3 py-2 text-body-sm font-bold text-success">
+                      <Icon name="info" size={16} /> {money(remainingCash)} pelo Mercado Pago + {money(effectiveCashback)} de cashback.
+                    </div>
                   )}
                   {paymentMethod === "pix" ? (
                     <form onSubmit={submitPixCart}>
-                      <button
+                      <Button
                         type="submit"
-                        disabled={isSubmitting}
-                        className="w-full rounded-md bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.14em] text-brand-ink disabled:opacity-60"
+                        variant="accent"
+                        size="lg"
+                        fullWidth
+                        loading={isSubmitting}
+                        loadingLabel="Gerando código Pix..."
+                        leftIcon="pix"
                       >
-                        {isSubmitting ? "Gerando codigo Pix..." : `Gerar Pix de ${money(remainingCash)}`}
-                      </button>
+                        Gerar Pix de {money(remainingCash)}
+                      </Button>
                     </form>
                   ) : publicKey ? (
-                    <div className="rounded-md border border-[#dfe5ef] p-4">
-                      {!cardReady && <p className="text-sm font-bold text-[#68748a]">Carregando pagamento seguro...</p>}
+                    <Card surface="inset" rounded="2xl" padding="md" className="border border-outline-variant/70 dark:border-dark-outline">
+                      {!cardReady && (
+                        <div className="flex items-center gap-2 text-body-sm font-bold text-on-surface-variant dark:text-dark-textMuted">
+                          <Icon name="sync" size={16} className="animate-spin" /> Carregando pagamento seguro...
+                        </div>
+                      )}
                       <div id="cartCardBrick_container" />
-                    </div>
+                    </Card>
                   ) : (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                      Configure VITE/MERCADO_PAGO_PUBLIC_KEY para liberar cartao.
+                    <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-body-sm font-bold text-warning">
+                      <Icon name="warning" size={18} /> Configure VITE / MERCADO_PAGO_PUBLIC_KEY para liberar cartão.
                     </div>
                   )}
                 </>
               )}
             </div>
           )}
-        </div>
+        </Card>
 
-        <aside className="rounded-md border border-[#dfe5ef] bg-white p-5">
-          <h2 className="text-lg font-black">Itens do carrinho</h2>
-          {cart && (
-            <ul className="mt-4 grid gap-3">
-              {cart.items.map((item) => (
-                <li key={item.product_id} className="flex items-center gap-3 rounded-md bg-[#f8fafc] p-3">
-                  <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e6ebf2]">
-                    {item.imagem_url && (
-                      <img src={assetUrl(item.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-black">{item.nome}</p>
-                    <p className="text-xs font-bold text-[#68748a]">
-                      {item.quantidade} × {money(item.preco_desconto)}
-                    </p>
-                  </div>
-                  <strong className="text-sm font-black">{money(item.quantidade * item.preco_desconto)}</strong>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-5 border-t border-[#edf1f6] pt-4">
-            <div className="flex items-center justify-between text-sm font-bold">
-              <span>Subtotal</span>
-              <span>{money(total)}</span>
-            </div>
-            {effectiveCashback > 0 && (
-              <div className="mt-2 flex items-center justify-between text-sm font-bold text-emerald-700">
-                <span>Cashback aplicado</span>
-                <span>−{money(effectiveCashback)}</span>
-              </div>
+        <aside>
+          <Card surface="bright" tactile rounded="3xl" padding="md" className="sticky top-24 space-y-4">
+            <h2 className="font-display text-title-lg text-on-surface dark:text-dark-text">Itens do carrinho</h2>
+            {cart && (
+              <ul className="grid gap-3">
+                {cart.items.map((item) => (
+                  <li key={item.product_id} className="flex items-center gap-3 rounded-2xl surface-inset p-3">
+                    <div className="h-14 w-16 overflow-hidden rounded-xl bg-surface-bright dark:bg-dark-surface">
+                      {item.imagem_url ? (
+                        <img src={assetUrl(item.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-on-surface-variant dark:text-dark-textMuted">
+                          <Icon name="shopping_bag" size={20} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-on-surface dark:text-dark-text">{item.nome}</p>
+                      <p className="text-label-sm text-on-surface-variant dark:text-dark-textMuted">
+                        {item.quantidade} × {money(item.preco_desconto)}
+                      </p>
+                    </div>
+                    <strong className="font-display text-title-md text-on-surface dark:text-dark-text">
+                      {money(item.quantidade * item.preco_desconto)}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
             )}
-            <div className="mt-3 flex items-end justify-between border-t border-[#edf1f6] pt-3">
-              <span className="text-sm font-black">Total a pagar</span>
-              <strong className="text-2xl font-black">{money(remainingCash)}</strong>
+            <div className="border-t border-outline-variant/60 pt-4 dark:border-dark-outline">
+              <div className="flex items-center justify-between text-body-md">
+                <span className="text-on-surface-variant dark:text-dark-textMuted">Subtotal</span>
+                <span className="font-bold">{money(total)}</span>
+              </div>
+              {effectiveCashback > 0 && (
+                <div className="mt-2 flex items-center justify-between text-body-md font-bold text-success">
+                  <span>Cashback aplicado</span>
+                  <span>−{money(effectiveCashback)}</span>
+                </div>
+              )}
+              <div className="mt-3 flex items-end justify-between border-t border-outline-variant/60 pt-3 dark:border-dark-outline">
+                <span className="text-body-md font-bold text-on-surface dark:text-dark-text">Total a pagar</span>
+                <strong className="font-display text-headline-sm text-on-surface dark:text-dark-text">
+                  {money(remainingCash)}
+                </strong>
+              </div>
             </div>
-          </div>
+          </Card>
         </aside>
       </section>
     </main>

@@ -18,11 +18,21 @@ export default defineConfig({
           if (id.includes("node_modules/qrcode")) {
             return "vendor-qrcode";
           }
+          // Leaflet is heavy (~40 KB gzipped) and only used on the home map. Keep it
+          // out of the marketplace chunk so the lazy import in <PartnerMap /> can
+          // actually defer it.
+          if (id.includes("node_modules/leaflet")) {
+            return "vendor-leaflet";
+          }
           if (id.includes("/src/components/admin/")) {
             return "admin";
           }
           if (id.includes("/src/components/partner/")) {
             return "partner";
+          }
+          // Don't bundle PartnerMap into the marketplace chunk — it must stay lazy.
+          if (id.includes("/src/components/marketplace/PartnerMap")) {
+            return undefined;
           }
           if (id.includes("/src/components/marketplace/")) {
             return "marketplace";

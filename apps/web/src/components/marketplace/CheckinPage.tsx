@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { assetUrl } from "../../lib/assets";
 import { CheckinPageData, marketplaceApi, money } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, EmptyState, Icon, Skeleton } from "../ui";
 
 type CheckinPageProps = {
   token: string;
@@ -57,7 +58,6 @@ function CheckinPage({ token }: CheckinPageProps) {
         if (cancelled) return;
         setData(result);
         marketplaceApi.trackCheckin(token).catch(() => undefined);
-        // If the stored cart is from a different QR, reset it.
         const stored = loadStoredCart();
         if (stored && stored.token !== token) {
           setItems([]);
@@ -73,14 +73,9 @@ function CheckinPage({ token }: CheckinPageProps) {
     };
   }, [token]);
 
-  // Persist cart on every change so the user can navigate to login/auth and come back.
   useEffect(() => {
     if (!data) return;
-    persistCart(
-      items.length === 0
-        ? null
-        : { token, partnerName: data.partner.nome, items }
-    );
+    persistCart(items.length === 0 ? null : { token, partnerName: data.partner.nome, items });
   }, [items, data, token]);
 
   const total = useMemo(
@@ -94,9 +89,7 @@ function CheckinPage({ token }: CheckinPageProps) {
       if (quantidade <= 0) return current.filter((item) => item.product_id !== productId);
       const existing = current.find((item) => item.product_id === productId);
       if (existing) {
-        return current.map((item) =>
-          item.product_id === productId ? { ...item, quantidade } : item
-        );
+        return current.map((item) => (item.product_id === productId ? { ...item, quantidade } : item));
       }
       if (!product) return current;
       return [
@@ -120,133 +113,163 @@ function CheckinPage({ token }: CheckinPageProps) {
 
   if (error) {
     return (
-      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
-        <section className="mx-auto max-w-xl rounded-md border border-red-200 bg-red-50 p-6">
-          <h1 className="font-display text-2xl font-black text-red-800">QR code indisponivel</h1>
-          <p className="mt-2 text-sm font-bold text-red-700">
-            Este check-in expirou ou esta pausado. Procure um atendente do parceiro.
-          </p>
-        </section>
+      <main className="min-h-screen bg-surface px-margin-mobile py-12 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+        <div className="mx-auto max-w-xl">
+          <EmptyState
+            tone="warning"
+            icon="warning"
+            title="QR code indisponível"
+            description="Este check-in expirou ou está pausado. Procure um atendente do parceiro para gerar um novo."
+          />
+        </div>
       </main>
     );
   }
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
-        <p className="mx-auto max-w-xl text-sm font-bold text-[#68748a]">Carregando ofertas do parceiro...</p>
+      <main className="min-h-screen bg-surface px-margin-mobile py-12 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+        <div className="mx-auto max-w-3xl space-y-4">
+          <Skeleton height={120} rounded="2xl" />
+          <Skeleton height={140} rounded="2xl" />
+          <Skeleton height={140} rounded="2xl" />
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-5 pb-32 pt-8 text-[#111827]">
-      <section className="mx-auto max-w-3xl">
-        <header className="rounded-md border border-[#dfe5ef] bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-gold">Check-in Open Driver</p>
-          <h1 className="mt-2 font-display text-3xl font-black">{data.partner.nome}</h1>
-          <p className="mt-2 text-sm font-semibold text-[#68748a]">
+    <main className="min-h-screen bg-surface px-margin-mobile pb-32 pt-8 text-on-surface dark:bg-dark-bg dark:text-dark-text lg:px-margin-desktop">
+      <div className="mx-auto max-w-3xl">
+        <Card surface="bright" tactile rounded="3xl" padding="lg" className="relative isolate overflow-hidden">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-accent/20 blur-3xl" />
+          <Chip tone="accent" uppercase icon="qr_code_2">
+            Check-in DriverHub
+          </Chip>
+          <h1 className="mt-4 font-display text-headline-md text-on-surface dark:text-dark-text">
+            {data.partner.nome}
+          </h1>
+          <p className="mt-2 flex items-center gap-2 text-body-md text-on-surface-variant dark:text-dark-textMuted">
+            <Icon name="location_on" size={18} />
             {data.location?.nome ?? `${data.partner.cidade}/${data.partner.estado}`}
             {data.location?.endereco ? ` — ${data.location.endereco}` : ""}
           </p>
           {data.qrcode.label && (
-            <p className="mt-3 inline-block rounded-md bg-brand-gold/20 px-3 py-1 text-xs font-black text-brand-ink">
+            <Chip tone="ghost" className="mt-3">
               {data.qrcode.label}
-            </p>
+            </Chip>
           )}
-          <p className="mt-4 text-sm font-bold text-[#425166]">
-            Monte seu pedido: adicione varios itens ao carrinho e finalize numa unica compra com cashback.
+          <p className="mt-4 text-body-md text-on-surface dark:text-dark-text">
+            Monte seu pedido: adicione vários itens ao carrinho e finalize numa única compra com cashback.
           </p>
-        </header>
+        </Card>
 
         <ul className="mt-6 grid gap-4">
           {data.products.length === 0 ? (
-            <li className="rounded-md border border-[#dfe5ef] bg-white p-6 text-sm font-bold text-[#68748a]">
-              Nenhuma oferta vinculada a este check-in ainda.
+            <li>
+              <EmptyState
+                title="Nenhuma oferta vinculada"
+                description="Este check-in ainda não tem produtos cadastrados."
+                icon="shopping_bag"
+              />
             </li>
           ) : (
             data.products.map((product) => {
               const cartItem = items.find((item) => item.product_id === product.id);
               const quantidade = cartItem?.quantidade ?? 0;
               return (
-                <li key={product.id} className="rounded-md border border-[#dfe5ef] bg-white p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <div className="h-24 w-32 overflow-hidden rounded-md bg-[#e6ebf2]">
-                      {product.imagem_url && (
-                        <img src={assetUrl(product.imagem_url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="font-black text-lg">{product.nome}</h2>
-                      <p className="mt-1 text-sm font-semibold text-[#68748a]">{product.descricao_curta}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-                        <span className="line-through text-[#7a8496] font-bold">{money(product.preco_original)}</span>
-                        <strong className="text-xl font-black">{money(product.preco_desconto)}</strong>
-                        {product.cashback_percent != null && product.cashback_percent > 0 && (
-                          <span className="rounded-md bg-brand-gold/20 px-2 py-1 text-xs font-black text-brand-ink">
-                            +{product.cashback_percent}% cashback
+                <li key={product.id}>
+                  <Card surface="bright" tactile rounded="2xl" padding="md">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="h-24 w-32 overflow-hidden rounded-xl surface-inset">
+                        {product.imagem_url ? (
+                          <img
+                            src={assetUrl(product.imagem_url)}
+                            alt={product.nome}
+                            loading="lazy"
+                            decoding="async"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-on-surface-variant dark:text-dark-textMuted">
+                            <Icon name="shopping_bag" size={28} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h2 className="font-display text-title-md text-on-surface dark:text-dark-text">{product.nome}</h2>
+                        <p className="mt-1 text-body-sm text-on-surface-variant dark:text-dark-textMuted">
+                          {product.descricao_curta}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-baseline gap-3">
+                          <span className="text-label-sm text-on-surface-variant line-through dark:text-dark-textMuted">
+                            {money(product.preco_original)}
+                          </span>
+                          <strong className="font-display text-title-lg text-on-surface dark:text-dark-text">
+                            {money(product.preco_desconto)}
+                          </strong>
+                          {product.cashback_percent != null && product.cashback_percent > 0 && (
+                            <Chip tone="accent" size="sm" icon="payments">
+                              +{product.cashback_percent}% cashback
+                            </Chip>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        {quantidade > 0 ? (
+                          <div className="flex items-center gap-2 rounded-pill border border-accent/40 bg-accent/10 p-1">
+                            <button
+                              type="button"
+                              onClick={() => setQuantity(product.id, quantidade - 1, product)}
+                              className="focus-ring h-9 w-9 rounded-pill bg-surface-bright text-title-md font-black text-on-surface dark:bg-dark-surfaceElevated dark:text-dark-text"
+                              aria-label="Diminuir"
+                            >
+                              −
+                            </button>
+                            <strong className="min-w-6 text-center font-display text-title-md">{quantidade}</strong>
+                            <button
+                              type="button"
+                              onClick={() => setQuantity(product.id, quantidade + 1, product)}
+                              className="focus-ring h-9 w-9 rounded-pill bg-surface-bright text-title-md font-black text-on-surface dark:bg-dark-surfaceElevated dark:text-dark-text"
+                              aria-label="Aumentar"
+                            >
+                              +
+                            </button>
+                          </div>
+                        ) : (
+                          <Button variant="accent" size="sm" leftIcon="shopping_cart" onClick={() => setQuantity(product.id, 1, product)}>
+                            Adicionar
+                          </Button>
+                        )}
+                        {quantidade > 0 && (
+                          <span className="text-label-sm text-on-surface-variant dark:text-dark-textMuted">
+                            Subtotal {money(quantidade * product.preco_desconto)}
                           </span>
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      {quantidade > 0 ? (
-                        <div className="flex items-center gap-2 rounded-md border border-brand-gold bg-brand-gold/10 px-2 py-1">
-                          <button
-                            type="button"
-                            onClick={() => setQuantity(product.id, quantidade - 1, product)}
-                            className="h-8 w-8 rounded-md bg-white text-lg font-black text-brand-ink"
-                          >
-                            −
-                          </button>
-                          <strong className="min-w-6 text-center text-base font-black">{quantidade}</strong>
-                          <button
-                            type="button"
-                            onClick={() => setQuantity(product.id, quantidade + 1, product)}
-                            className="h-8 w-8 rounded-md bg-white text-lg font-black text-brand-ink"
-                          >
-                            +
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setQuantity(product.id, 1, product)}
-                          className="rounded-md bg-brand-gold px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-brand-ink"
-                        >
-                          Adicionar
-                        </button>
-                      )}
-                      {quantidade > 0 && (
-                        <span className="text-xs font-bold text-[#5f6b7b]">
-                          Subtotal: {money(quantidade * product.preco_desconto)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  </Card>
                 </li>
               );
             })
           )}
         </ul>
-      </section>
+      </div>
 
       {items.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-[#dfe5ef] bg-white shadow-[0_-12px_24px_rgba(8,17,31,0.08)]">
-          <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-outline-variant bg-surface/95 backdrop-blur dark:border-dark-outline dark:bg-dark-bg/95">
+          <div className="mx-auto flex max-w-3xl flex-col gap-3 px-margin-mobile py-4 sm:flex-row sm:items-center sm:justify-between lg:px-margin-desktop">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">
+              <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
                 Carrinho ({itemCount} {itemCount === 1 ? "item" : "itens"})
               </p>
-              <strong className="mt-1 block text-2xl font-black">{money(total)}</strong>
+              <strong className="mt-1 block font-display text-headline-sm text-on-surface dark:text-dark-text">
+                {money(total)}
+              </strong>
             </div>
-            <button
-              type="button"
-              onClick={goCheckout}
-              className="rounded-md bg-brand-ink px-6 py-4 text-sm font-black uppercase tracking-[0.14em] text-white"
-            >
+            <Button variant="primary" size="lg" rightIcon="arrow_forward" onClick={goCheckout}>
               Finalizar compra
-            </button>
+            </Button>
           </div>
         </div>
       )}

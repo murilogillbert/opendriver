@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 import { assetUrl } from "../../lib/assets";
+import { Button, Chip, Icon } from "../ui";
 
 type VoucherCardProps = {
   produtoNome: string;
@@ -78,58 +79,58 @@ function VoucherCard(props: VoucherCardProps) {
 
   return (
     <article
-      className={`overflow-hidden rounded-md border bg-white shadow-soft ${
-        usableStatus ? "border-brand-gold/50" : "border-[#e2e8f0] opacity-80"
+      className={`tactile-pop overflow-hidden rounded-2xl border bg-surface-bright transition dark:bg-dark-surface ${
+        usableStatus ? "border-accent/50" : "border-outline-variant/60 opacity-80 dark:border-dark-outline"
       }`}
     >
       <div className="grid gap-4 p-5 sm:grid-cols-[6rem_1fr]">
-        <div className="h-24 w-24 overflow-hidden rounded-md bg-[#e6ebf2]">
-          {props.imagemUrl && (
-            <img src={assetUrl(props.imagemUrl)} alt="" className="h-full w-full object-cover" />
+        <div className="h-24 w-24 overflow-hidden rounded-xl surface-inset">
+          {props.imagemUrl ? (
+            <img src={assetUrl(props.imagemUrl)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-on-surface-variant dark:text-dark-textMuted">
+              <Icon name="confirmation_number" size={28} />
+            </div>
           )}
         </div>
         <div className="grid gap-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h3 className="text-lg font-black leading-tight">{props.produtoNome}</h3>
+            <h3 className="font-display text-title-md text-on-surface dark:text-dark-text">{props.produtoNome}</h3>
             {props.status && (
-              <span
-                className={`rounded-md px-2 py-1 text-xs font-black uppercase tracking-[0.1em] ${
-                  usableStatus ? "bg-emerald-50 text-emerald-700" : "bg-[#fef2f2] text-red-700"
-                }`}
-              >
+              <Chip tone={usableStatus ? "success" : "danger"} size="sm" uppercase>
                 {props.status}
-              </span>
+              </Chip>
             )}
           </div>
-          <p className="text-xs font-semibold leading-5 text-[#5f6b7b]">
+          <p className="text-body-sm text-on-surface-variant dark:text-dark-textMuted">
             {channelHint(props.offerType, props.deliveryMethod)} {limitLabel}.
-            {props.expiresAt &&
-              ` Expira em ${new Date(props.expiresAt).toLocaleDateString("pt-BR")}.`}
+            {props.expiresAt && ` Expira em ${new Date(props.expiresAt).toLocaleDateString("pt-BR")}.`}
           </p>
         </div>
       </div>
 
       {props.voucherCode && (
-        <div className="grid gap-2 border-t border-[#edf1f6] bg-[#f8fafc] px-5 py-4">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">Codigo do voucher</p>
+        <div className="grid gap-2 border-t border-outline-variant/60 px-5 py-4 surface-inset dark:border-dark-outline">
+          <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">Código do voucher</p>
           <div className="flex flex-wrap items-center gap-2">
-            <code className="rounded-md bg-white px-3 py-2 font-mono text-sm font-black text-[#0f172a]">
+            <code className="rounded-xl bg-surface-bright px-3 py-2 font-mono text-body-md font-bold text-on-surface dark:bg-dark-surfaceElevated dark:text-dark-text">
               {props.voucherCode}
             </code>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={copiedVoucher ? "check" : "content_copy"}
               onClick={() => void copy(props.voucherCode!, "voucher")}
-              className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#475569]"
             >
-              {copiedVoucher ? "Copiado!" : "Copiar codigo"}
-            </button>
+              {copiedVoucher ? "Copiado!" : "Copiar código"}
+            </Button>
           </div>
         </div>
       )}
 
       {token && (
-        <div className="grid gap-3 border-t border-[#edf1f6] px-5 py-4">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#6c7788]">
+        <div className="grid gap-3 border-t border-outline-variant/60 px-5 py-4 dark:border-dark-outline">
+          <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">
             Token de resgate (mostre ao parceiro)
           </p>
           <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
@@ -137,32 +138,29 @@ function VoucherCard(props: VoucherCardProps) {
               <img
                 src={qrDataUrl}
                 alt={`QR ${token}`}
-                className="h-32 w-32 rounded-md border border-[#e2e8f0] bg-white p-1"
+                className="h-32 w-32 rounded-xl border border-outline-variant bg-white p-1 dark:border-dark-outline"
               />
             ) : (
-              <div className="grid h-32 w-32 place-items-center rounded-md border border-dashed border-[#cbd5e1] text-xs font-bold text-[#64748b]">
-                Gerando QR...
+              <div className="grid h-32 w-32 place-items-center rounded-xl border border-dashed border-outline-variant text-body-sm font-bold text-on-surface-variant dark:border-dark-outline dark:text-dark-textMuted">
+                <span className="inline-flex items-center gap-1"><Icon name="sync" size={14} className="animate-spin" /> Gerando...</span>
               </div>
             )}
             <div className="grid gap-2 self-center">
-              <code className="rounded-md bg-[#0f172a] px-3 py-2 text-center font-mono text-lg font-black tracking-[0.2em] text-white">
+              <code className="rounded-xl bg-inverse-surface px-3 py-2 text-center font-mono text-title-lg font-black tracking-[0.2em] text-inverse-on-surface">
                 {token}
               </code>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={copiedToken ? "check" : "content_copy"}
                   onClick={() => void copy(token, "token")}
-                  className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#475569]"
                 >
                   {copiedToken ? "Copiado!" : "Copiar token"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowFullscreen(true)}
-                  className="rounded-md bg-brand-ink px-3 py-2 text-xs font-black text-white"
-                >
-                  Mostrar no balcao
-                </button>
+                </Button>
+                <Button variant="primary" size="sm" leftIcon="qr_code_2" onClick={() => setShowFullscreen(true)}>
+                  Mostrar no balcão
+                </Button>
               </div>
             </div>
           </div>
@@ -170,8 +168,8 @@ function VoucherCard(props: VoucherCardProps) {
       )}
 
       {props.usageRules && (
-        <div className="border-t border-[#edf1f6] bg-[#fefce8] px-5 py-3 text-xs font-semibold leading-5 text-[#854d0e]">
-          <strong className="font-black">Regras de uso:</strong> {props.usageRules}
+        <div className="border-t border-outline-variant/60 bg-warning/10 px-5 py-3 text-body-sm text-on-surface-variant dark:border-dark-outline dark:bg-warning/10">
+          <strong className="text-warning">Regras de uso:</strong> {props.usageRules}
         </div>
       )}
 
@@ -179,23 +177,21 @@ function VoucherCard(props: VoucherCardProps) {
         <button
           type="button"
           onClick={() => setShowFullscreen(false)}
-          className="fixed inset-0 z-50 grid place-items-center bg-black/85 p-6"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/90 p-6 backdrop-blur"
           aria-label="Fechar QR"
         >
-          <div className="grid max-w-md gap-4 rounded-md bg-white p-6 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#6c7788]">
-              Aproxime para o parceiro escanear
-            </p>
-            <h2 className="font-display text-xl font-black">{props.produtoNome}</h2>
+          <div className="grid max-w-md gap-4 rounded-3xl bg-white p-8 text-center shadow-glass">
+            <Chip tone="accent" uppercase className="mx-auto">Aproxime para o parceiro escanear</Chip>
+            <h2 className="font-display text-headline-sm text-on-surface">{props.produtoNome}</h2>
             <img
               src={qrDataUrl}
               alt={`QR ${token}`}
-              className="mx-auto h-72 w-72 rounded-md bg-white p-2"
+              className="mx-auto h-72 w-72 rounded-2xl bg-white p-2"
             />
-            <code className="rounded-md bg-[#0f172a] px-4 py-3 font-mono text-xl font-black tracking-[0.24em] text-white">
+            <code className="rounded-xl bg-inverse-surface px-4 py-3 font-mono text-headline-sm font-black tracking-[0.24em] text-inverse-on-surface">
               {token}
             </code>
-            <p className="text-xs font-bold text-[#64748b]">Toque para fechar</p>
+            <p className="text-body-sm font-bold text-on-surface-variant">Toque para fechar</p>
           </div>
         </button>
       )}

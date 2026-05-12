@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 
 import { marketplaceApi, money } from "../../lib/marketplaceApi";
+import { Button, Card, Chip, Icon } from "../ui";
+import type { ChipTone } from "../ui";
 
 type ReferralData = Awaited<ReturnType<typeof marketplaceApi.myReferrals>>;
 
-const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
-  pendente: { label: "Aguardando 1ª compra", tone: "bg-slate-100 text-slate-700" },
-  qualificado: { label: "Qualificado", tone: "bg-emerald-100 text-emerald-800" },
-  pago: { label: "Bonus pago", tone: "bg-emerald-200 text-emerald-900" },
-  cancelado: { label: "Cancelado", tone: "bg-rose-100 text-rose-800" }
+const STATUS_LABELS: Record<string, { label: string; tone: ChipTone }> = {
+  pendente: { label: "Aguardando 1ª compra", tone: "neutral" },
+  qualificado: { label: "Qualificado", tone: "info" },
+  pago: { label: "Bônus pago", tone: "success" },
+  cancelado: { label: "Cancelado", tone: "danger" }
 };
 
 export default function ReferralCard() {
@@ -31,7 +33,7 @@ export default function ReferralCard() {
     };
   }, []);
 
-  if (error) return null; // silently hide if user is not authenticated, etc.
+  if (error) return null;
 
   const link = data ? `${window.location.origin}/?ref=${data.code}` : "";
 
@@ -48,81 +50,77 @@ export default function ReferralCard() {
 
   const shareWhatsApp = () => {
     const message = encodeURIComponent(
-      `Te chamo aqui pro Open Driver — uma plataforma com beneficios e cashback pra motorista. Usa meu link e a gente ganha bonus juntos: ${link}`
+      `Te chamo aqui pro DriverHub — uma plataforma com benefícios e cashback pra motorista. Usa meu link e a gente ganha bônus juntos: ${link}`
     );
     window.open(`https://wa.me/?text=${message}`, "_blank", "noopener,noreferrer");
   };
 
   return (
-    <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/50 p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+    <Card surface="bright" tactile rounded="3xl" padding="lg" className="relative isolate overflow-hidden">
+      <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-success/25 blur-3xl" />
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Programa de Indicacao</p>
-          <h3 className="mt-1 font-display text-xl font-black text-slate-800">
-            Indique e ganhe <span className="text-emerald-700">R$ 10</span> em cashback
+          <Chip tone="success" uppercase icon="star">
+            Programa de indicação
+          </Chip>
+          <h3 className="mt-3 font-display text-headline-sm text-on-surface dark:text-dark-text">
+            Indique e ganhe <span className="text-success">R$ 10</span> em cashback
           </h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Voce e a pessoa indicada ganham um bonus apos a primeira compra dela.
+          <p className="mt-1 text-body-md text-on-surface-variant dark:text-dark-textMuted">
+            Você e a pessoa indicada ganham bônus após a primeira compra dela.
           </p>
         </div>
-        <span className="hidden text-4xl sm:block">🎁</span>
       </div>
 
       {data && (
         <>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex-1 rounded-xl border border-emerald-300 bg-white px-4 py-3">
-              <p className="text-[0.65rem] font-black uppercase tracking-wider text-slate-500">Seu codigo</p>
-              <p className="mt-0.5 font-mono text-2xl font-black tracking-widest text-emerald-800">{data.code}</p>
-            </div>
-
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Card surface="inset" rounded="xl" padding="md" className="flex-1 border-success/30">
+              <p className="text-label-sm uppercase text-on-surface-variant dark:text-dark-textMuted">Seu código</p>
+              <p className="mt-1 font-mono text-headline-sm font-black tracking-widest text-success">{data.code}</p>
+            </Card>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={copyLink}
-                className="rounded-full bg-emerald-700 px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-800"
-              >
+              <Button variant="primary" leftIcon={copied ? "check" : "content_copy"} onClick={copyLink}>
                 {copied ? "Copiado!" : "Copiar link"}
-              </button>
-              <button
-                type="button"
-                onClick={shareWhatsApp}
-                className="rounded-full border border-emerald-700 bg-white px-4 py-3 text-xs font-black uppercase tracking-wider text-emerald-700 transition hover:bg-emerald-50"
-              >
+              </Button>
+              <Button variant="secondary" leftIcon="arrow_forward" onClick={shareWhatsApp}>
                 WhatsApp
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-            <div className="rounded-xl bg-white/70 px-3 py-2">
-              <p className="text-xs font-bold text-slate-500">Indicados</p>
-              <p className="text-xl font-black text-slate-800">{data.stats.total_indicados}</p>
-            </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2">
-              <p className="text-xs font-bold text-slate-500">Qualificados</p>
-              <p className="text-xl font-black text-emerald-700">{data.stats.qualificados}</p>
-            </div>
-            <div className="rounded-xl bg-white/70 px-3 py-2">
-              <p className="text-xs font-bold text-slate-500">Total ganho</p>
-              <p className="text-xl font-black text-emerald-800">{money(data.stats.total_ganho)}</p>
-            </div>
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <Card surface="inset" rounded="xl" padding="sm" className="text-center border-0">
+              <p className="text-label-sm text-on-surface-variant dark:text-dark-textMuted">Indicados</p>
+              <p className="mt-1 font-display text-title-lg text-on-surface dark:text-dark-text">{data.stats.total_indicados}</p>
+            </Card>
+            <Card surface="inset" rounded="xl" padding="sm" className="text-center border-0">
+              <p className="text-label-sm text-on-surface-variant dark:text-dark-textMuted">Qualificados</p>
+              <p className="mt-1 font-display text-title-lg text-success">{data.stats.qualificados}</p>
+            </Card>
+            <Card surface="inset" rounded="xl" padding="sm" className="text-center border-0">
+              <p className="text-label-sm text-on-surface-variant dark:text-dark-textMuted">Total ganho</p>
+              <p className="mt-1 font-display text-title-lg text-success">{money(data.stats.total_ganho)}</p>
+            </Card>
           </div>
 
           {data.recent.length > 0 && (
-            <details className="mt-4 rounded-xl bg-white/60 px-4 py-3">
-              <summary className="cursor-pointer text-sm font-bold text-slate-700">
-                Ultimas indicacoes ({data.recent.length})
+            <details className="mt-4 rounded-2xl surface-inset px-4 py-3">
+              <summary className="cursor-pointer text-label-bold text-on-surface dark:text-dark-text">
+                Últimas indicações ({data.recent.length})
               </summary>
               <ul className="mt-2 space-y-2">
                 {data.recent.map((ref) => {
-                  const status = STATUS_LABELS[ref.status] ?? { label: ref.status, tone: "bg-slate-100 text-slate-700" };
+                  const status = STATUS_LABELS[ref.status] ?? { label: ref.status, tone: "neutral" as ChipTone };
                   return (
-                    <li key={ref.id} className="flex items-center justify-between text-sm">
-                      <span className="font-semibold text-slate-700">{ref.indicado_nome.split(" ")[0]}</span>
-                      <span className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider ${status.tone}`}>
-                        {status.label}
+                    <li key={ref.id} className="flex items-center justify-between text-body-sm">
+                      <span className="flex items-center gap-2 font-bold text-on-surface dark:text-dark-text">
+                        <Icon name="person" size={16} className="text-on-surface-variant dark:text-dark-textMuted" />
+                        {ref.indicado_nome.split(" ")[0]}
                       </span>
+                      <Chip tone={status.tone} size="sm" uppercase>
+                        {status.label}
+                      </Chip>
                     </li>
                   );
                 })}
@@ -131,6 +129,6 @@ export default function ReferralCard() {
           )}
         </>
       )}
-    </section>
+    </Card>
   );
 }

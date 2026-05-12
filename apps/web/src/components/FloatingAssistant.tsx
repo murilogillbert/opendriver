@@ -9,6 +9,7 @@ import {
 } from "../lib/localAssistantEngine";
 import { createLeadFromAssistant, recordBotInteraction, sendChatMessage, ChatMessage } from "../lib/api";
 import { createWhatsAppLeadUrl } from "../lib/whatsapp";
+import { Icon } from "./ui";
 import MessageBubble, { AssistantMessage } from "./assistant/MessageBubble";
 import QuickReplies from "./assistant/QuickReplies";
 
@@ -205,15 +206,15 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Abrir assistente da DriverHub"
-        className={`fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-full bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-wide text-brand-ink shadow-gold transition duration-300 hover:-translate-y-1 hover:scale-105 hover:bg-brand-goldLight focus:outline-none focus:ring-4 focus:ring-brand-gold/30 sm:bottom-6 sm:right-6 ${
+        aria-label="Abrir assistente DriverHub"
+        className={`focus-ring fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-pill bg-accent px-5 py-3.5 text-label-bold uppercase text-on-accent shadow-gold transition duration-300 hover:-translate-y-1 hover:scale-[1.03] hover:brightness-105 sm:bottom-6 sm:right-6 ${
           isOpen ? "pointer-events-none translate-y-3 opacity-0" : "opacity-100"
         }`}
       >
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-ink text-xs text-white">
-          AI
+        <span className="flex h-8 w-8 items-center justify-center rounded-pill bg-brand-ink text-white">
+          <Icon name="star" size={16} filled />
         </span>
-        Assistente Open
+        Assistente
       </button>
 
       {/* Chat window */}
@@ -223,14 +224,14 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
         }`}
         aria-hidden={!isOpen}
       >
-        <section className="overflow-hidden rounded-t-[2rem] border border-white/10 bg-brand-ink shadow-navy sm:rounded-[2rem]">
+        <section className="glass-card overflow-hidden rounded-t-3xl shadow-glass sm:rounded-3xl">
           {/* Header */}
-          <header className="flex items-center justify-between border-b border-white/10 bg-white/[0.06] px-5 py-4">
+          <header className="flex items-center justify-between border-b border-white/10 px-5 py-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-gold">
+              <p className="text-label-sm uppercase text-accent-soft">
                 {isReady ? "IA · Groq / Llama 3.3" : "IA local"}
               </p>
-              <h2 className="mt-1 font-display text-lg font-black text-white">
+              <h2 className="mt-1 font-display text-title-md text-white">
                 Assistente DriverHub
               </h2>
             </div>
@@ -239,7 +240,7 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
               <button
                 type="button"
                 onClick={resetSession}
-                className="rounded-full border border-white/10 px-3 py-2 text-[0.65rem] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-brand-gold hover:text-brand-gold"
+                className="focus-ring rounded-pill border border-white/15 px-3 py-1.5 text-label-sm uppercase text-white/70 transition hover:border-accent hover:text-accent-soft"
               >
                 Reiniciar
               </button>
@@ -247,15 +248,15 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
                 type="button"
                 onClick={onClose}
                 aria-label="Fechar assistente"
-                className="grid h-9 w-9 place-items-center rounded-full bg-white text-lg font-black text-brand-ink transition hover:bg-brand-gold"
+                className="focus-ring grid h-9 w-9 place-items-center rounded-pill bg-white text-brand-ink transition hover:bg-accent"
               >
-                ×
+                <Icon name="close" size={18} />
               </button>
             </div>
           </header>
 
           {/* Messages */}
-          <div className="max-h-[68vh] overflow-y-auto bg-brand-navy/80 px-4 py-5 sm:max-h-[31rem]">
+          <div className="max-h-[68vh] overflow-y-auto bg-brand-navy/70 px-4 py-5 sm:max-h-[31rem]">
             <div className="space-y-3">
               {session.messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
@@ -264,10 +265,10 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
               {/* Typing indicator */}
               {isTyping && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-1 rounded-full bg-white px-4 py-3">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-brand-gold" />
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-brand-gold [animation-delay:120ms]" />
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-brand-gold [animation-delay:240ms]" />
+                  <div className="flex items-center gap-1 rounded-pill bg-white px-4 py-3">
+                    <span className="h-2 w-2 animate-pulse rounded-pill bg-accent" />
+                    <span className="h-2 w-2 animate-pulse rounded-pill bg-accent [animation-delay:120ms]" />
+                    <span className="h-2 w-2 animate-pulse rounded-pill bg-accent [animation-delay:240ms]" />
                   </div>
                 </div>
               )}
@@ -279,14 +280,14 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
 
               {/* Ready state: WhatsApp CTA + AI chat enabled */}
               {isReady && !isTyping && session.aiHistory.length === 0 && (
-                <div className="rounded-[1.5rem] border border-brand-gold/30 bg-brand-gold/10 p-4">
-                  <p className="text-sm font-semibold leading-6 text-white/80">
-                    Perfil capturado! Agora você pode tirar dúvidas direto aqui com a IA, ou continuar pelo WhatsApp com um atendente.
+                <div className="rounded-2xl border border-accent/30 bg-accent/10 p-4">
+                  <p className="text-body-sm text-white/85">
+                    Perfil capturado! Tire dúvidas aqui com a IA ou continue pelo WhatsApp com um atendente.
                   </p>
                   <button
                     type="button"
                     onClick={openWhatsApp}
-                    className="mt-4 w-full rounded-full bg-brand-gold px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-brand-ink shadow-gold transition duration-300 hover:-translate-y-1 hover:bg-brand-goldLight"
+                    className="focus-ring mt-4 w-full rounded-pill bg-accent px-5 py-3.5 text-label-bold uppercase text-on-accent shadow-gold transition duration-300 hover:-translate-y-1 hover:brightness-105"
                   >
                     Continuar pelo WhatsApp
                   </button>
@@ -308,13 +309,14 @@ function FloatingAssistant({ isOpen, onClose, onOpen }: FloatingAssistantProps) 
                   ? "Pergunte qualquer coisa sobre a DriverHub..."
                   : "Digite sua resposta..."
               }
-              className="min-w-0 flex-1 rounded-full border border-white/10 bg-white px-4 py-3 text-sm font-bold text-brand-ink outline-none transition placeholder:text-brand-navy/45 focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/20 disabled:opacity-60"
+              className="focus-ring min-w-0 flex-1 rounded-pill border border-white/10 bg-white px-4 py-3 text-body-sm font-bold text-brand-ink outline-none transition placeholder:text-brand-navy/45 focus:border-accent disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={isTyping || input.trim().length === 0}
-              className="rounded-full bg-brand-gold px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-brand-ink transition hover:bg-brand-goldLight disabled:cursor-not-allowed disabled:opacity-50"
+              className="focus-ring flex items-center gap-1 rounded-pill bg-accent px-5 py-3 text-label-bold uppercase text-on-accent transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
+              <Icon name="arrow_forward" size={16} />
               Enviar
             </button>
           </form>

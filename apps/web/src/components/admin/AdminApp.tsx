@@ -610,10 +610,10 @@ function AdminApp() {
 
   if (isCheckingAuth) {
     return (
-      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
-        <section className="mx-auto max-w-4xl rounded-md border border-[#e2e8f0] bg-white p-6 shadow-sm">
+      <main className="min-h-screen bg-surface dark:bg-dark-bg px-5 py-10 text-on-surface dark:text-dark-text">
+        <section className="mx-auto max-w-4xl rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm">
           <img src={logoUrl} alt="DriverHub" className="h-16 w-auto" />
-          <h1 className="mt-2 font-display text-3xl font-black">Verificando acesso admin</h1>
+          <h1 className="mt-2 font-display text-headline-md font-black">Verificando acesso admin</h1>
           <p className="mt-2 text-sm font-semibold leading-6 text-[#64748b]">
             O painel sera carregado somente depois que a sessao admin for validada.
           </p>
@@ -624,24 +624,24 @@ function AdminApp() {
 
   if (!hasAdminToken) {
     return (
-      <main className="min-h-screen bg-[#f6f8fb] px-5 py-10 text-[#111827]">
+      <main className="min-h-screen bg-surface dark:bg-dark-bg px-5 py-10 text-on-surface dark:text-dark-text">
         <section className="mx-auto max-w-4xl">
           <div className="mb-6">
             <img src={logoUrl} alt="DriverHub" className="h-20 w-auto" />
-            <h1 className="mt-2 font-display text-3xl font-black">Acesso administrativo</h1>
+            <h1 className="mt-2 font-display text-headline-md font-black">Acesso administrativo</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#64748b]">
               Entre com uma conta admin para carregar painel, metricas, usuarios, pedidos e catalogo.
             </p>
           </div>
 
           {error && (
-            <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 shadow-sm">
+            <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 shadow-sm">
               {error}
             </div>
           )}
 
           {formMessage && (
-            <div className="mb-5 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
+            <div className="mb-5 rounded-xl border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
               {formMessage}
             </div>
           )}
@@ -653,10 +653,10 @@ function AdminApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb] text-[#111827] lg:grid lg:grid-cols-[18rem_1fr]">
+    <main className="min-h-screen bg-surface dark:bg-dark-bg text-on-surface dark:text-dark-text lg:grid lg:grid-cols-[18rem_1fr]">
       <aside className="border-b border-[#101827] bg-[#050b18] text-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-full flex-col px-4 py-5">
-          <div className="rounded-md border border-white/10 bg-white/[0.04] p-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
             <img src={logoUrl} alt="DriverHub" className="h-14 w-auto" />
             <p className="mt-3 text-[0.65rem] font-black uppercase tracking-[0.22em] text-[#7dd3fc]">
               Admin console
@@ -675,7 +675,7 @@ function AdminApp() {
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`rounded-md px-3 py-2.5 text-left text-sm font-black transition ${
+                      className={`rounded-xl px-3 py-2.5 text-left text-sm font-black transition ${
                         activeTab === tab.id
                           ? "bg-[#0ea5e9] text-white shadow-[0_12px_32px_rgba(14,165,233,0.24)]"
                           : "text-white/68 hover:bg-white/[0.07] hover:text-white"
@@ -689,7 +689,7 @@ function AdminApp() {
             ))}
           </nav>
 
-          <div className="mt-auto hidden rounded-md border border-[#1f2a44] bg-[#071222] p-4 lg:block">
+          <div className="mt-auto hidden rounded-xl border border-[#1f2a44] bg-[#071222] p-4 lg:block">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#a3e635]">Operacao</p>
             <p className="mt-2 text-sm font-semibold leading-6 text-white/68">
               {alerts.filter((alert) => alert.status === "pendente").length} alertas geo pendentes e{" "}
@@ -705,7 +705,7 @@ function AdminApp() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0ea5e9]">
               {tabMeta[activeTab].group}
             </p>
-            <h1 className="mt-2 font-display text-3xl font-black tracking-tight text-[#0f172a]">
+            <h1 className="mt-2 font-display text-headline-md font-black tracking-tight text-[#0f172a]">
               {tabMeta[activeTab].label}
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#64748b]">
@@ -716,7 +716,7 @@ function AdminApp() {
             <button
               type="button"
               onClick={() => void reload()}
-              className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2.5 text-sm font-black text-[#334155] shadow-sm transition hover:border-[#0ea5e9] hover:text-[#0369a1]"
+              className="rounded-xl border border-[#cbd5e1] bg-white px-4 py-2.5 text-sm font-black text-[#334155] shadow-sm transition hover:border-[#0ea5e9] hover:text-[#0369a1]"
             >
               Atualizar
             </button>
@@ -725,26 +725,26 @@ function AdminApp() {
               onClick={() => {
                 void adminApi.logoutAdmin().finally(() => setHasAdminToken(false));
               }}
-              className="rounded-md bg-[#050b18] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
+              className="rounded-xl bg-[#050b18] px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
             >
               Sair
             </button>
           </div>
         </header>
         {error && (
-          <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
             {error}
           </div>
         )}
 
         {formMessage && (
-          <div className="mb-5 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
+          <div className="mb-5 rounded-xl border border-[#bae6fd] bg-[#ecfeff] px-4 py-3 text-sm font-bold text-[#075985] shadow-sm">
             {formMessage}
           </div>
         )}
 
         {isLoading ? (
-          <div className="rounded-md border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold shadow-sm">
+          <div className="rounded-xl border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold shadow-sm">
             Carregando dados...
           </div>
         ) : (
@@ -764,7 +764,7 @@ function AdminApp() {
                 </div>
 
                 <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-                  <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                  <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">
@@ -782,7 +782,7 @@ function AdminApp() {
                     </div>
                   </section>
 
-                  <section className="rounded-md border border-[#e2e8f0] bg-[#050b18] p-5 text-white shadow-sm">
+                  <section className="rounded-xl border border-[#e2e8f0] bg-[#050b18] p-5 text-white shadow-sm">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-[#a3e635]">
                       Fila operacional
                     </p>
@@ -841,7 +841,7 @@ function AdminApp() {
                       key={order.id}
                       value={order.status}
                       onChange={(event) => setOrderStatus(order.id, event.target.value)}
-                      className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
+                      className="rounded-xl border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
                     >
                       <option value="pendente_pagamento">Pendente</option>
                       <option value="confirmado">Confirmado</option>
@@ -854,7 +854,7 @@ function AdminApp() {
                         key={`refund-${order.id}`}
                         type="button"
                         onClick={() => void refundOrder(order.id)}
-                        className="rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-black text-red-700"
+                        className="rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-black text-red-700"
                       >
                         Reembolsar
                       </button>
@@ -870,7 +870,7 @@ function AdminApp() {
 
             {activeTab === "checkin" && (
               <div className="grid gap-6 lg:grid-cols-[26rem_1fr]">
-                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Novo QR de check-in</h2>
                   <p className="mt-2 text-xs font-semibold text-[#64748b]">
                     Vincule um QR a um parceiro e a um conjunto de produtos. Os clientes que escanearem
@@ -889,7 +889,7 @@ function AdminApp() {
                           setCheckinLocationId("");
                         }}
                         required
-                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5"
                       >
                         <option value="">Selecione</option>
                         {partners.map((partner) => (
@@ -905,7 +905,7 @@ function AdminApp() {
                         value={checkinLocationId}
                         onChange={(event) => setCheckinLocationId(event.target.value ? Number(event.target.value) : "")}
                         disabled={!checkinPartnerId}
-                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5 disabled:bg-[#f1f5f9]"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5 disabled:bg-[#f1f5f9]"
                       >
                         <option value="">Sem local especifico</option>
                         {partnerLocationOptions.map((loc) => (
@@ -921,10 +921,10 @@ function AdminApp() {
                         value={checkinLabel}
                         onChange={(event) => setCheckinLabel(event.target.value)}
                         placeholder="ex: Balcao 2"
-                        className="rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
+                        className="rounded-xl border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
                       />
                     </label>
-                    <fieldset className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                    <fieldset className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-3">
                       <legend className="px-1 text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
                         Produtos do parceiro ({checkinSelectedProductIds.length} selecionados)
                       </legend>
@@ -945,7 +945,7 @@ function AdminApp() {
                             return (
                               <label
                                 key={product.id}
-                                className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs font-bold ${
+                                className={`flex cursor-pointer items-center gap-2 rounded-xl border px-2 py-1.5 text-xs font-bold ${
                                   checked ? "border-[#0ea5e9] bg-[#e0f2fe]" : "border-transparent hover:bg-white"
                                 }`}
                               >
@@ -964,7 +964,7 @@ function AdminApp() {
                     </fieldset>
                     <button
                       disabled={!checkinPartnerId || checkinSelectedProductIds.length === 0}
-                      className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-xl bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Gerar QR code
                     </button>
@@ -996,7 +996,7 @@ function AdminApp() {
                         key={`toggle-${qr.id}`}
                         type="button"
                         onClick={() => void toggleCheckinStatus(qr)}
-                        className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]"
+                        className="rounded-xl bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]"
                       >
                         {qr.status === "ativo" ? "Pausar" : "Ativar"}
                       </button>
@@ -1028,7 +1028,7 @@ function AdminApp() {
                     />
                   </>
                 ) : (
-                  <div className="rounded-md border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold">
+                  <div className="rounded-xl border border-[#e2e8f0] bg-white px-5 py-4 text-sm font-bold">
                     Sem dados de cashback ainda.
                   </div>
                 )}
@@ -1052,7 +1052,7 @@ function AdminApp() {
             {activeTab === "produtos" && (
               hasAdminToken ? (
                 <div className="grid gap-6 xl:grid-cols-[26rem_1fr]">
-                  <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                  <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0ea5e9]">
@@ -1066,7 +1066,7 @@ function AdminApp() {
                         <button
                           type="button"
                           onClick={() => setEditingProduct(null)}
-                          className="rounded-md border border-[#cbd5e1] px-3 py-2 text-xs font-black text-[#475569]"
+                          className="rounded-xl border border-[#cbd5e1] px-3 py-2 text-xs font-black text-[#475569]"
                         >
                           Novo
                         </button>
@@ -1079,13 +1079,13 @@ function AdminApp() {
                       className="mt-4 grid gap-3"
                     >
                       {editingProduct && (
-                        <p className="rounded-md bg-[#e0f2fe] px-3 py-2 text-xs font-bold text-[#0369a1]">
+                        <p className="rounded-xl bg-[#e0f2fe] px-3 py-2 text-xs font-bold text-[#0369a1]">
                           Editando produto #{editingProduct.id}: {editingProduct.nome}
                         </p>
                       )}
                       <label className="grid gap-1 text-sm font-bold">
                         Categoria
-                        <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <select name="category_id" defaultValue={editingProduct?.category_id ?? ""} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="">Selecione</option>
                           {categories.map((category) => (
                             <option key={category.id} value={category.id}>{category.nome}</option>
@@ -1094,7 +1094,7 @@ function AdminApp() {
                       </label>
                       <label className="grid gap-1 text-sm font-bold">
                         Parceiro
-                        <select name="partner_id" defaultValue={editingProduct?.partner_id ?? ""} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <select name="partner_id" defaultValue={editingProduct?.partner_id ?? ""} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="">Sem parceiro</option>
                           {partners.map((partner) => (
                             <option key={partner.id} value={partner.id}>{partner.nome_fantasia}</option>
@@ -1107,7 +1107,7 @@ function AdminApp() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1 text-sm font-bold">
                           Tipo de oferta
-                          <select name="offer_type" defaultValue={editingProduct?.offer_type ?? "produto_digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                          <select name="offer_type" defaultValue={editingProduct?.offer_type ?? "produto_digital"} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="produto_fisico">Produto fisico</option>
                             <option value="produto_digital">Produto digital</option>
                             <option value="servico">Servico</option>
@@ -1119,7 +1119,7 @@ function AdminApp() {
                         </label>
                         <label className="grid gap-1 text-sm font-bold">
                           Forma de entrega
-                          <select name="delivery_method" defaultValue={editingProduct?.delivery_method ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                          <select name="delivery_method" defaultValue={editingProduct?.delivery_method ?? "digital"} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="presencial">Presencial</option>
                             <option value="fisica">Fisica</option>
@@ -1128,19 +1128,19 @@ function AdminApp() {
                       </div>
                       <label className="grid gap-1 text-sm font-bold">
                         Descricao completa
-                        <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
+                        <textarea name="descricao" required defaultValue={editingProduct?.descricao} className="min-h-28 rounded-xl border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
                       </label>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1 text-sm font-bold">
                           Tipo
-                          <select name="tipo" defaultValue={editingProduct?.tipo ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                          <select name="tipo" defaultValue={editingProduct?.tipo ?? "digital"} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="fisico">Fisico</option>
                           </select>
                         </label>
                         <label className="grid gap-1 text-sm font-bold">
                           Entrega
-                          <select name="tipo_entrega" defaultValue={editingProduct?.tipo_entrega ?? "digital"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                          <select name="tipo_entrega" defaultValue={editingProduct?.tipo_entrega ?? "digital"} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                             <option value="digital">Digital</option>
                             <option value="fisico">Fisica</option>
                             <option value="ambos">Ambos</option>
@@ -1161,7 +1161,7 @@ function AdminApp() {
                       <Input name="delivery_deadline" label="Prazo de entrega" defaultValue={editingProduct?.delivery_deadline} />
                       <label className="grid gap-1 text-sm font-bold">
                         Regras de uso
-                        <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
+                        <textarea name="usage_rules" defaultValue={editingProduct?.usage_rules} className="min-h-24 rounded-xl border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10" />
                       </label>
                       <Input name="estoque" label="Estoque" type="number" defaultValue={editingProduct?.estoque} />
                       <Input
@@ -1179,14 +1179,14 @@ function AdminApp() {
                       </label>
                       <label className="grid gap-1 text-sm font-bold">
                         Status
-                        <select name="status" defaultValue={editingProduct?.status ?? "ativo"} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <select name="status" defaultValue={editingProduct?.status ?? "ativo"} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="ativo">Ativo</option>
                           <option value="pausado">Pausado</option>
                           <option value="esgotado">Esgotado</option>
                           <option value="rascunho">Rascunho</option>
                         </select>
                       </label>
-                      <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+                      <button className="rounded-xl bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                         Salvar produto
                       </button>
                     </form>
@@ -1205,18 +1205,18 @@ function AdminApp() {
                     <button
                       type="button"
                       onClick={activateAllProducts}
-                      className="rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
+                      className="rounded-xl bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]"
                     >
                       Ativar todos beneficios
                     </button>
                   </div>
-                  <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
                     <label className="grid gap-1 text-xs font-black uppercase tracking-[0.12em] text-[#64748b]">
                       Categoria
                       <select
                         value={productCategoryFilter}
                         onChange={(event) => setProductCategoryFilter(event.target.value)}
-                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
                       >
                         <option value="">Todas</option>
                         {categories.map((category) => (
@@ -1229,7 +1229,7 @@ function AdminApp() {
                       <select
                         value={productPartnerFilter}
                         onChange={(event) => setProductPartnerFilter(event.target.value)}
-                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold normal-case text-[#0f172a]"
                       >
                         <option value="">Todos</option>
                         <option value="none">Sem parceiro</option>
@@ -1245,7 +1245,7 @@ function AdminApp() {
                           setProductCategoryFilter("");
                           setProductPartnerFilter("");
                         }}
-                        className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#475569]"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#475569]"
                       >
                         Limpar filtros
                       </button>
@@ -1274,7 +1274,7 @@ function AdminApp() {
                       })
                       .map((product) => [
                       <div className="flex items-center gap-3" key={`product-${product.id}`}>
-                        <div className="h-12 w-16 overflow-hidden rounded-md bg-[#e2e8f0]">
+                        <div className="h-12 w-16 overflow-hidden rounded-xl bg-[#e2e8f0]">
                           {product.imagem_url && (
                             <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover" />
                           )}
@@ -1292,7 +1292,7 @@ function AdminApp() {
                         key={`${product.id}-status`}
                         value={product.status}
                         onChange={(event) => setProductStatus(product.id, event.target.value)}
-                        className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
+                        className="rounded-xl border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-bold"
                       >
                         <option value="ativo">Ativo</option>
                         <option value="pausado">Pausado</option>
@@ -1300,7 +1300,7 @@ function AdminApp() {
                         <option value="rascunho">Rascunho</option>
                       </select>,
                       <div className="flex gap-2" key={product.id}>
-                        <button onClick={() => setEditingProduct(product)} className="rounded-md bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]">
+                        <button onClick={() => setEditingProduct(product)} className="rounded-xl bg-[#e0f2fe] px-2.5 py-1.5 text-xs font-black text-[#0369a1]">
                           Editar
                         </button>
                         <button
@@ -1312,7 +1312,7 @@ function AdminApp() {
                               setFormMessage(err instanceof Error ? err.message : "Falha ao excluir produto.");
                             });
                           }}
-                          className="rounded-md bg-[#fee2e2] px-2.5 py-1.5 text-xs font-black text-red-700"
+                          className="rounded-xl bg-[#fee2e2] px-2.5 py-1.5 text-xs font-black text-red-700"
                         >
                           Excluir
                         </button>
@@ -1328,7 +1328,7 @@ function AdminApp() {
 
             {activeTab === "parceiros" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Novo parceiro</h2>
                   <form onSubmit={submitPartner} className="mt-4 grid gap-3">
                     <Input name="razao_social" label="Razao social" required />
@@ -1338,19 +1338,19 @@ function AdminApp() {
                     <Input name="email" label="Email" />
                     <Input name="cidade" label="Cidade" required />
                     <Input name="estado" label="UF" required maxLength={2} />
-                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+                    <button className="rounded-xl bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                       Salvar parceiro
                     </button>
                   </form>
                 </section>
 
                 <section className="space-y-6">
-                  <div className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                  <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                     <h2 className="text-lg font-black">Novo servico</h2>
                     <form onSubmit={submitService} className="mt-4 grid gap-3 md:grid-cols-3">
                       <label className="grid gap-1 text-sm font-bold">
                         Parceiro
-                        <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <select name="partner_id" required className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="">Selecione</option>
                           {partners.map((partner) => (
                             <option key={partner.id} value={partner.id}>
@@ -1361,7 +1361,7 @@ function AdminApp() {
                       </label>
                       <label className="grid gap-1 text-sm font-bold">
                         Categoria
-                        <select name="categoria" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                        <select name="categoria" required className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                           <option value="troca_oleo">Troca de oleo</option>
                           <option value="pneus">Pneus</option>
                           <option value="lava_jato">Lava jato</option>
@@ -1372,7 +1372,7 @@ function AdminApp() {
                       <Input name="nome_servico" label="Servico" required />
                       <Input name="preco_padrao" label="Preco padrao" type="number" step="0.01" />
                       <Input name="preco_open_driver" label="Preco DriverHub" type="number" step="0.01" />
-                      <button className="self-end rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
+                      <button className="self-end rounded-xl bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
                         Salvar servico
                       </button>
                     </form>
@@ -1389,7 +1389,7 @@ function AdminApp() {
                         key={`partner-login-${partner.id}`}
                         type="button"
                         onClick={() => void generatePartnerLogin(partner.id, partner.nome_fantasia)}
-                        className="rounded-md bg-[#fef3c7] px-2.5 py-1.5 text-xs font-black text-[#854d0e]"
+                        className="rounded-xl bg-[#fef3c7] px-2.5 py-1.5 text-xs font-black text-[#854d0e]"
                       >
                         Gerar/Resetar senha
                       </button>
@@ -1411,7 +1411,7 @@ function AdminApp() {
                     <button onClick={() => updateLead(lead.id, "enviado_ao_parceiro")} className="rounded bg-[#e8edf5] px-2 py-1 text-xs font-black">
                       Enviar
                     </button>
-                    <button onClick={() => updateLead(lead.id, "convertido")} className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]">
+                    <button onClick={() => updateLead(lead.id, "convertido")} className="rounded-xl bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]">
                       Converter
                     </button>
                     <button onClick={() => updateLead(lead.id, "perdido")} className="rounded bg-[#fee2e2] px-2 py-1 text-xs font-black text-red-700">
@@ -1439,7 +1439,7 @@ function AdminApp() {
 
             {activeTab === "validacao" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Validar token de beneficio</h2>
                   <p className="mt-2 text-xs font-semibold text-[#64748b]">
                     Use o codigo de 12 caracteres exibido no QR ou na area do cliente. A confirmacao gera o
@@ -1449,7 +1449,7 @@ function AdminApp() {
                     <Input name="redemption_token" label="Token (12 letras)" required maxLength={12} />
                     <label className="grid gap-1 text-sm font-bold">
                       Parceiro
-                      <select name="partner_id" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                      <select name="partner_id" className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="">Auto (do produto)</option>
                         {partners.map((partner) => (
                           <option key={partner.id} value={partner.id}>
@@ -1460,7 +1460,7 @@ function AdminApp() {
                     </label>
                     <label className="grid gap-1 text-sm font-bold">
                       Metodo
-                      <select name="confirmation_method" className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                      <select name="confirmation_method" className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="token">Token digitado</option>
                         <option value="qr">QR Code</option>
                         <option value="partner">Confirmado por parceiro</option>
@@ -1470,12 +1470,12 @@ function AdminApp() {
                     </label>
                     <Input name="valor_referencia" label="Valor de referencia" type="number" step="0.01" />
                     <Input name="notes" label="Observacao" />
-                    <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+                    <button className="rounded-xl bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
                       Confirmar resgate
                     </button>
                   </form>
                   {redeemResult && (
-                    <div className="mt-4 rounded-md border border-[#bae6fd] bg-[#ecfeff] px-3 py-2 text-xs font-bold text-[#075985]">
+                    <div className="mt-4 rounded-xl border border-[#bae6fd] bg-[#ecfeff] px-3 py-2 text-xs font-bold text-[#075985]">
                       {redeemResult}
                     </div>
                   )}
@@ -1536,7 +1536,7 @@ function AdminApp() {
                     </button>
                     <button
                       onClick={() => updateAlert(alert.id, "confirmado")}
-                      className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
+                      className="rounded-xl bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
                     >
                       Confirmar
                     </button>
@@ -1570,7 +1570,7 @@ function AdminApp() {
                     </button>
                     <button
                       onClick={() => updateReceivable(receivable.id, "pago")}
-                      className="rounded-md bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
+                      className="rounded-xl bg-[#dcfce7] px-2.5 py-1.5 text-xs font-black text-[#166534]"
                     >
                       Marcar pago
                     </button>
@@ -1587,7 +1587,7 @@ function AdminApp() {
 
             {activeTab === "locations" && (
               <div className="grid gap-6 lg:grid-cols-[24rem_1fr]">
-                <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
                   <h2 className="text-lg font-black">Novo local de parceiro</h2>
                   <p className="mt-2 text-xs font-semibold text-[#64748b]">
                     Locais ativos sao usados para gerar alertas de presenca quando o usuario consente
@@ -1596,7 +1596,7 @@ function AdminApp() {
                   <form onSubmit={submitPartnerLocation} className="mt-4 grid gap-3">
                     <label className="grid gap-1 text-sm font-bold">
                       Parceiro
-                      <select name="partner_id" required className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2.5">
+                      <select name="partner_id" required className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2.5">
                         <option value="">Selecione</option>
                         {partners.map((partner) => (
                           <option key={partner.id} value={partner.id}>
@@ -1610,7 +1610,7 @@ function AdminApp() {
                     <Input name="latitude" label="Latitude" type="number" step="0.0000001" required />
                     <Input name="longitude" label="Longitude" type="number" step="0.0000001" required />
                     <Input name="raio_metros" label="Raio (m)" type="number" min={20} max={5000} defaultValue={120} />
-                    <button className="rounded-md bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
+                    <button className="rounded-xl bg-[#050b18] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f172a]">
                       Salvar local
                     </button>
                   </form>
@@ -1697,7 +1697,7 @@ function Metric({
         : "border-[#e2e8f0] bg-white";
 
   return (
-    <div className={`rounded-md border p-5 shadow-sm ${toneClass}`}>
+    <div className={`rounded-xl border p-5 shadow-sm ${toneClass}`}>
       <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">{label}</p>
       <strong className="mt-3 block text-2xl font-black text-[#0f172a]">{value}</strong>
     </div>
@@ -1706,7 +1706,7 @@ function Metric({
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-md border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
+    <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748b]">{label}</p>
       <p className="mt-2 text-lg font-black text-[#0f172a]">{value}</p>
     </div>
@@ -1715,7 +1715,7 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
 
 function OperationItem({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.05] px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3">
       <span className="text-sm font-bold text-white/72">{label}</span>
       <strong className="text-lg font-black text-[#a3e635]">{value}</strong>
     </div>
@@ -1747,7 +1747,7 @@ function StatusChip({ value }: { value: string | number | boolean }) {
         : "border-[#bae6fd] bg-[#f0f9ff] text-[#075985]";
 
   return (
-    <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-black uppercase tracking-[0.08em] ${className}`}>
+    <span className={`inline-flex rounded-xl border px-2.5 py-1 text-xs font-black uppercase tracking-[0.08em] ${className}`}>
       {text}
     </span>
   );
@@ -1755,7 +1755,7 @@ function StatusChip({ value }: { value: string | number | boolean }) {
 
 function ProductPreview({ product }: { product: AdminProduct }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-md border border-[#e2e8f0] bg-[#f8fafc]">
+    <div className="mt-4 overflow-hidden rounded-xl border border-[#e2e8f0] bg-[#f8fafc]">
       <div className="aspect-[16/9] bg-[#e2e8f0]">
         {product.imagem_url && <img src={assetUrl(product.imagem_url)} alt="" className="h-full w-full object-cover" />}
       </div>
@@ -1783,7 +1783,7 @@ function Input(props: InputHTMLAttributes<HTMLInputElement> & { label: string; n
       {label}
       <input
         {...inputProps}
-        className="rounded-md border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
+        className="rounded-xl border border-[#cbd5e1] px-3 py-2.5 outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10"
       />
     </label>
   );
@@ -1802,7 +1802,7 @@ function AdminAuthCard({
 }) {
   const minPassword = includeBootstrapToken ? 12 : 8;
   return (
-    <section className="rounded-md border border-[#e2e8f0] bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
       <h2 className="text-lg font-black">{title}</h2>
       <form onSubmit={onSubmit} className="mt-4 grid gap-3">
         {includeName && <Input name="nome" label="Nome" required />}
@@ -1817,7 +1817,7 @@ function AdminAuthCard({
             autoComplete="off"
           />
         )}
-        <button className="rounded-md bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
+        <button className="rounded-xl bg-[#0ea5e9] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0284c7]">
           Continuar
         </button>
       </form>
@@ -1873,7 +1873,7 @@ function DataTable({
   }, [query, rows]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-[#e2e8f0] bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-4 py-4 md:flex-row md:items-center md:justify-between">
         <div>
           {title ? (
@@ -1887,7 +1887,7 @@ function DataTable({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Buscar..."
-          className="w-full rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10 md:w-64"
+          className="w-full rounded-xl border border-[#cbd5e1] px-3 py-2 text-sm font-bold outline-none transition focus:border-[#0ea5e9] focus:ring-4 focus:ring-[#0ea5e9]/10 md:w-64"
         />
       </div>
       <div className="overflow-x-auto">
