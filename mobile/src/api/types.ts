@@ -136,6 +136,8 @@ export interface Ride {
     vehicle: { plate: string; brand: string; model: string; color: string } | null;
   } | null;
   passenger: { name: string; avatarUrl: string | null; rating: number | null } | null;
+  /** Instante previsto de chegada do motorista ao embarque (só enquanto a caminho). */
+  pickupEta?: string | null;
   /** Ações válidas AGORA para quem está vendo (a API decide — UX07/UX14). */
   actions: RideAction[];
   requestedAt: string;

@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
-import { ActivityIndicator, Share } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Share, Vibration } from 'react-native';
 import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Ride } from '@/api/types';
@@ -18,7 +19,8 @@ import { driverLocationStore } from '@/context/RealtimeContext';
 import { formatCurrency, formatDistance, formatTime } from '@/lib/format';
 import { haversineMeters } from '@/lib/geo';
 import { alertError, confirm } from '@/lib/recovery';
-import { can, passengerHeadline } from '@/lib/ride';
+import { useNow } from '@/hooks/useNow';
+import { can, passengerHeadline, pickupEtaText, searchingHint } from '@/lib/ride';
 import { useStore } from '@/lib/store';
 import { dismissRide, tripDraftStore } from '@/lib/tripDraft';
 import { colors, spacing } from '@/theme/tokens';
@@ -51,6 +53,17 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const [comment, setComment] = useState('');
   const driverLoc = useStore(driverLocationStore);
   const live = driverLoc?.rideId === ride.id ? driverLoc : null;
+  const now = useNow(15_000, ride.status === 'Searching' || ride.status === 'DriverAssigned');
+
+  // Motorista chegou: avisa com vibração (o passageiro pode estar com o celular no bolso).
+  const lastStatus = useRef(ride.status);
+  useEffect(() => {
+    if (ride.status === 'DriverArrived' && lastStatus.current === 'DriverAssigned') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      Vibration.vibrate([0, 300, 150, 300]);
+    }
+    lastStatus.current = ride.status;
+  }, [ride.status]);
 
   const update = (next: Ride) => {
     queryClient.setQueryData(qk.ride(next.id), next);
@@ -131,7 +144,9 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
     case 'Searching':
       body = (
         <>
-          <AppText variant="small">Normalmente leva menos de um minuto.</AppText>
+          <AppText variant="small" accessibilityLiveRegion="polite">
+            {searchingHint(ride.requestedAt, now)}
+          </AppText>
           <Card style={{ gap: 4 }}>
             <Row gap={6}>
               <Icon name="radio-button-on" size={14} color={colors.navy} />
@@ -156,8 +171,11 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
     case 'DriverArrived':
       body = (
         <>
-          {ride.status === 'DriverAssigned' && live ? (
-            <AppText variant="small">A {formatDistance(haversineMeters(live, ride.origin))} de você</AppText>
+          {ride.status === 'DriverAssigned' ? (
+            <AppText variant="bodyStrong">
+              {[pickupEtaText(ride.pickupEta, now), live ? `a ${formatDistance(haversineMeters(live, ride.origin))}` : null].filter(Boolean).join(' · ') ||
+                'A caminho do embarque'}
+            </AppText>
           ) : null}
           {ride.status === 'DriverArrived' ? <AppText variant="small">Confira a placa antes de entrar.</AppText> : null}
           {ride.driver ? <PersonCard name={ride.driver.name} avatarUrl={ride.driver.avatarUrl} rating={ride.driver.rating} vehicle={ride.driver.vehicle} /> : null}
