@@ -149,3 +149,15 @@ describe('autenticação compartilhada com o hub (RF11)', () => {
     expect(r.status).toBe(200);
   });
 });
+
+describe('páginas legais (lojas)', () => {
+  it('privacidade e termos são públicos, em HTML e com a exclusão de conta descrita', async () => {
+    const priv = await fetch(`${srv.url}/legal/privacidade`);
+    expect(priv.status).toBe(200);
+    expect(priv.headers.get('content-type')).toMatch(/text\/html/);
+    const html = await priv.text();
+    expect(html).toContain('Excluir minha conta');
+    expect(html).toContain('30 dias');
+    expect((await fetch(`${srv.url}/legal/termos`)).status).toBe(200);
+  });
+});

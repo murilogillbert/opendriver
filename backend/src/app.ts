@@ -6,6 +6,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { driverRouter } from './modules/driver/driver.routes.js';
 import { geoRouter } from './modules/geo/geo.routes.js';
+import { legalRouter } from './modules/legal/legal.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { meRouter } from './modules/me/me.routes.js';
 import { recordingRouter } from './modules/recording/recording.routes.js';
@@ -26,6 +27,8 @@ export function createApp() {
 
   // Link público de acompanhamento da viagem (RF15).
   app.use(trackingRouter);
+  // Privacidade e termos públicos (URL exigida pelas lojas).
+  app.use(legalRouter);
 
   const api = express.Router();
   api.use(authRouter);

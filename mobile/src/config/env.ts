@@ -34,9 +34,9 @@ export const env = {
   mapStyleUrl: process.env.EXPO_PUBLIC_MAP_STYLE_URL || extra.mapStyleUrl || 'https://demotiles.maplibre.org/style.json',
 } as const;
 
-/** As lojas exigem URL pública de política de privacidade e canal de suporte. */
+/** As lojas exigem URL pública de política de privacidade e canal de suporte (servidas pela API). */
 export const links = {
-  privacyPolicy: process.env.EXPO_PUBLIC_PRIVACY_URL || `${hubUrl}/privacidade`,
-  terms: process.env.EXPO_PUBLIC_TERMS_URL || `${hubUrl}/termos`,
+  privacyPolicy: process.env.EXPO_PUBLIC_PRIVACY_URL || `${apiUrl}/legal/privacidade`,
+  terms: process.env.EXPO_PUBLIC_TERMS_URL || `${apiUrl}/legal/termos`,
   supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL || 'suporte@opendriver.com.br',
 } as const;

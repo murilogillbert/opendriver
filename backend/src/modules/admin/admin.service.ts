@@ -169,7 +169,10 @@ export async function reviewDriver(adminId: string, userId: string, decision: 'a
     suspend: ['Approved'],
     reactivate: ['Suspended'],
   };
-  if (!allowed[decision].includes(d.status)) throw new AppError(`Não é possível ${decision} um motorista com status ${d.status}.`, 409, 'invalid_state');
+  const verb: Record<typeof decision, string> = { approve: 'aprovar', reject: 'recusar', suspend: 'suspender', reactivate: 'reativar' };
+  const statusPt: Record<string, string> = { PendingDocuments: 'cadastro incompleto', InReview: 'em análise', Approved: 'aprovado', Rejected: 'recusado', Suspended: 'suspenso' };
+  if (!allowed[decision].includes(d.status))
+    throw new AppError(`Não é possível ${verb[decision]} um motorista com status "${statusPt[d.status] ?? d.status}".`, 409, 'invalid_state');
   if (decision === 'approve' && (!d.cnhNumber || !d.cnhPhotoKey || !d.selfieKey)) throw new AppError('Cadastro incompleto.', 409, 'incomplete');
   const status = decision === 'approve' || decision === 'reactivate' ? 'Approved' : decision === 'reject' ? 'Rejected' : 'Suspended';
   if (decision === 'suspend') {
