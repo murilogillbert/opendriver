@@ -76,7 +76,7 @@ administração. O app mobile tem um E2E próprio contra esta API
    app publicado com `EAS_PROJECT_ID`.
 
 Jobs internos (rodam no próprio processo): varredura de ofertas expiradas,
-reconciliação de pagamentos pendentes e expurgo de gravações após
+reconciliação de pagamentos pendentes, motorista online sem sinal há 15 min → offline, e expurgo de gravações após
 `RECORDING_RETENTION_DAYS` (30). Rode **uma** réplica, ou mova os jobs para
 um worker único antes de escalar horizontalmente (o Socket.IO também
 precisaria de adapter Redis).
