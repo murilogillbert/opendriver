@@ -7,3 +7,7 @@ process.env.RATE_LIMIT_AUTH_PERMIT ??= '10000';
 process.env.PAYMENT_PROVIDER ??= 'mock';
 process.env.PAYMENT_WEBHOOK_REQUIRE_TOKEN ??= 'false';
 process.env.DISPATCH_OFFER_TIMEOUT_SECONDS ??= '2';
+process.env.FREE_CANCEL_SECONDS ??= '1';
+process.env.DISPATCH_SEARCH_TIMEOUT_SECONDS ??= '120';
+process.env.STORAGE_DRIVER ??= 'local';
+process.env.STORAGE_LOCAL_DIR ??= '/tmp/od-test-storage';

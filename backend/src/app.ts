@@ -6,6 +6,9 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { driverRouter } from './modules/driver/driver.routes.js';
 import { geoRouter } from './modules/geo/geo.routes.js';
+import { meRouter } from './modules/me/me.routes.js';
+import { paymentsRouter } from './modules/payments/payments.routes.js';
+import { ridesRouter } from './modules/rides/rides.routes.js';
 
 export function createApp() {
   const app = express();
@@ -22,6 +25,9 @@ export function createApp() {
   api.use(authRouter);
   api.use(geoRouter);
   api.use(driverRouter);
+  api.use(ridesRouter);
+  api.use(paymentsRouter);
+  api.use(meRouter);
   app.use('/api/v1', api);
 
   app.use((_req, res) => res.status(404).json({ error: 'Recurso não encontrado.', code: 'not_found' }));

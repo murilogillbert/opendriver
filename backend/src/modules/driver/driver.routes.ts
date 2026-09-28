@@ -5,6 +5,7 @@ import { envelope } from '../../lib/envelope.js';
 import { imageUpload, requireImage } from '../../lib/upload.js';
 import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
+import { broadcastDriverLocation } from '../rides/publish.js';
 import * as driver from './driver.service.js';
 
 export const driverRouter = Router();
@@ -64,6 +65,7 @@ driverRouter.post('/driver/offline', ...asDriver, async (req, res) => {
 
 driverRouter.post('/driver/location', ...asDriver, validateBody(driver.locationSchema), async (req, res) => {
   await driver.updateLocation(userId(req), req.body);
+  await broadcastDriverLocation(userId(req), req.body);
   res.status(204).send();
 });
 
