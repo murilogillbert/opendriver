@@ -106,3 +106,12 @@ export function sniff(buf: Buffer): { ext: string; mime: string } | null {
   if (buf.subarray(0, 4).toString() === 'OggS') return { ext: 'ogg', mime: 'audio/ogg' };
   return null;
 }
+
+/** Grava/lê bytes já cifrados pelo chamador (IV/tag guardados no banco). */
+export async function rawPut(key: string, data: Buffer): Promise<void> {
+  await current().put(key, data);
+}
+
+export async function rawGet(key: string): Promise<Buffer> {
+  return current().get(key);
+}

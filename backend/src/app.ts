@@ -6,7 +6,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { driverRouter } from './modules/driver/driver.routes.js';
 import { geoRouter } from './modules/geo/geo.routes.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
 import { meRouter } from './modules/me/me.routes.js';
+import { recordingRouter } from './modules/recording/recording.routes.js';
+import { safetyRouter, trackingRouter } from './modules/safety/safety.routes.js';
 import { paymentsRouter } from './modules/payments/payments.routes.js';
 import { ridesRouter } from './modules/rides/rides.routes.js';
 
@@ -21,6 +24,9 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+  // Link público de acompanhamento da viagem (RF15).
+  app.use(trackingRouter);
+
   const api = express.Router();
   api.use(authRouter);
   api.use(geoRouter);
@@ -28,6 +34,9 @@ export function createApp() {
   api.use(ridesRouter);
   api.use(paymentsRouter);
   api.use(meRouter);
+  api.use(safetyRouter);
+  api.use(recordingRouter);
+  api.use(adminRouter);
   app.use('/api/v1', api);
 
   app.use((_req, res) => res.status(404).json({ error: 'Recurso não encontrado.', code: 'not_found' }));

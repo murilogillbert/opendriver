@@ -119,6 +119,20 @@ model IntegrationSetting {
   @@schema("public")
 }
 
+/// Trilha de auditoria do hub — ações administrativas do OpenDriver também são registradas aqui.
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  payloadJson String?  @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+  @@schema("public")
+}
+
 /// Extrato de cashback do hub — o OpenDriver lança "Used" ao abater saldo numa corrida.
 model CashbackEntry {
   id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

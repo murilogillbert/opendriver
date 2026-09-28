@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hub
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub?schema=opendriver
+      HUB_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: murilogillbert/hub
+          path: hub
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            hub/backend/package-lock.json
+      # Banco igual ao de produção: primeiro as migrations do hub, depois as do OpenDriver.
+      - name: Aplicar migrations do hub
+        working-directory: hub/backend
+        run: |
+          npm ci
+          DATABASE_URL=$HUB_DATABASE_URL DIRECT_URL=$HUB_DATABASE_URL npx prisma migrate deploy
+      - run: npm ci
+      - name: Aplicar migrations do OpenDriver
+        run: |
+          psql "$HUB_DATABASE_URL" -f prisma/bootstrap/001_migrations_table.sql
+          npx prisma migrate deploy
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub?schema=opendriver
