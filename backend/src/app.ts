@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import { config } from './config.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { driverRouter } from './modules/driver/driver.routes.js';
+import { geoRouter } from './modules/geo/geo.routes.js';
 
 export function createApp() {
   const app = express();
@@ -18,6 +20,8 @@ export function createApp() {
 
   const api = express.Router();
   api.use(authRouter);
+  api.use(geoRouter);
+  api.use(driverRouter);
   app.use('/api/v1', api);
 
   app.use((_req, res) => res.status(404).json({ error: 'Recurso não encontrado.', code: 'not_found' }));

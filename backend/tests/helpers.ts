@@ -43,3 +43,20 @@ export const uniqueEmail = (p: string) => `${p}.${Date.now()}.${Math.random().to
 export const PASSWORD = 'Senha1234';
 /** CPF válido de teste. */
 export const CPF = '52998224725';
+
+/** Imagem JPEG mínima válida (magic bytes) para testar uploads. */
+export const TINY_JPEG = Buffer.from(
+  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+  'base64',
+);
+
+export async function upload(base: string, path: string, token: string, file: Buffer, name = 'foto.jpg', type = 'image/jpeg') {
+  const form = new FormData();
+  form.append('file', new Blob([file], { type }), name);
+  const res = await fetch(`${base}/api/v1${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, data: json.data, error: json.error, code: json.code };
+}
+
+/** CNH válida de teste. */
+export const CNH = '02650306461';
