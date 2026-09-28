@@ -9,6 +9,8 @@ export const rideInclude = {
   paymentMethod: true,
   ratings: { select: { raterId: true } },
   payments: { orderBy: { createdAt: 'desc' as const }, take: 1 },
+  // Oferta aceita: estimativa de chegada do motorista ao embarque (no aceite).
+  offers: { where: { status: 'Accepted' as const }, select: { pickupEtaS: true, respondedAt: true }, orderBy: { respondedAt: 'desc' as const }, take: 1 },
 } satisfies Prisma.RideInclude;
 
 export type RideRow = Prisma.RideGetPayload<{ include: typeof rideInclude }>;
@@ -77,6 +79,11 @@ export function toRideDto(r: RideRow, viewerId: string) {
             avatarUrl: r.passenger.avatarUrl,
             rating: rating(r.passenger.passengerProfile?.ratingSum, r.passenger.passengerProfile?.ratingCount),
           }
+        : null,
+    /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
+    pickupEta:
+      r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]
+        ? new Date(r.acceptedAt.getTime() + r.offers[0].pickupEtaS * 1000)
         : null,
     actions: role === 'driver' ? driverActions(ctx) : passengerActions(ctx),
     requestedAt: r.requestedAt,

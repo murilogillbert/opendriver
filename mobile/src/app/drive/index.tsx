@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
@@ -36,6 +37,16 @@ export default function Drive() {
   const online = !!me?.driver?.isOnline;
 
   const ride = active.data && active.data.role === 'driver' && !dismissed.has(active.data.id) ? active.data : null;
+
+  // Motorista online ou dirigindo: a tela não apaga (oferta chega a qualquer momento; mapa à vista).
+  const keepAwake = online || !!ride;
+  useEffect(() => {
+    if (!keepAwake) return;
+    activateKeepAwakeAsync('drive').catch(() => undefined);
+    return () => {
+      void deactivateKeepAwake('drive').catch(() => undefined);
+    };
+  }, [keepAwake]);
 
   // Oferta atual: chega pelo socket; a consulta recupera após reconexão/abrir pelo push.
   const offerQ = useQuery({

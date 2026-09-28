@@ -10,6 +10,8 @@ import type { Address, Place } from '@/api/types';
 import { ListRow } from '@/components/ui/Controls';
 import { TextField } from '@/components/ui/TextField';
 import { AppText } from '@/components/ui/primitives';
+import { formatDistance } from '@/lib/format';
+import { haversineMeters } from '@/lib/geo';
 import { alertError } from '@/lib/recovery';
 import { tripDraftStore } from '@/lib/tripDraft';
 import { getCurrentPosition } from '@/services/location';
@@ -132,7 +134,9 @@ export default function Search() {
         renderItem={({ item }) => {
           const place = item as Partial<Place> & { label?: string } & Address;
           const title = place.label ?? place.title ?? place.address.split(',')[0] ?? place.address;
-          const subtitle = place.subtitle ?? place.address;
+          // Distância a partir de onde a pessoa está: ajuda a escolher entre lugares com o mesmo nome.
+          const away = near ? formatDistance(haversineMeters(near, place)) : null;
+          const subtitle = [place.subtitle ?? place.address, away].filter(Boolean).join(' · ');
           return (
             <ListRow
               icon={place.label ? 'star-outline' : showSuggestions ? 'time-outline' : 'location-outline'}

@@ -1,8 +1,9 @@
 import { Camera, GeoJSONSource, Layer, Map, Marker, UserLocation } from '@maplibre/maplibre-react-native';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import type { LatLng } from '@/api/types';
-import { Icon } from '@/components/ui/primitives';
+import { Button } from '@/components/ui/Button';
+import { AppText, Icon } from '@/components/ui/primitives';
 import { env } from '@/config/env';
 import { boundsOf, decodePolyline, isValidLatLng, toLngLat } from '@/lib/geo';
 import { colors } from '@/theme/tokens';
@@ -40,6 +41,9 @@ export const RideMap = memo(function RideMap({
   style,
 }: RideMapProps) {
   const route = useMemo(() => (polyline ? decodePolyline(polyline) : []), [polyline]);
+  // Sem mapa (sem internet, servidor de tiles fora): a corrida segue; só avisa e deixa tentar de novo.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const routeGeoJson = useMemo<GeoJSON.Feature<GeoJSON.LineString> | null>(
     () =>
@@ -70,6 +74,9 @@ export const RideMap = memo(function RideMap({
   return (
     <View style={[StyleSheet.absoluteFill, style]}>
       <Map
+        key={attempt}
+        onDidFailLoadingMap={() => setFailed(true)}
+        onDidFinishLoadingMap={() => setFailed(false)}
         style={StyleSheet.absoluteFill}
         mapStyle={env.mapStyleUrl}
         logo={false}
@@ -125,11 +132,44 @@ export const RideMap = memo(function RideMap({
           </Marker>
         ) : null}
       </Map>
+      {failed ? (
+        <View style={[styles.fallback, { paddingBottom: bottomInset }]} pointerEvents="box-none">
+          <Icon name="map-outline" size={32} color={colors.textMuted} />
+          <AppText variant="bodyStrong" center>
+            Não foi possível carregar o mapa
+          </AppText>
+          <AppText variant="small" center>
+            Sua corrida continua normalmente. Confira a internet e tente de novo.
+          </AppText>
+          <Button
+            title="Tentar de novo"
+            variant="outline"
+            size="sm"
+            icon="refresh-outline"
+            onPress={() => {
+              setFailed(false);
+              setAttempt((a) => a + 1);
+            }}
+          />
+        </View>
+      ) : null}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
+  fallback: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 24,
+  },
   originDot: {
     width: 18,
     height: 18,

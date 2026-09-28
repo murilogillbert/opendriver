@@ -73,6 +73,8 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect(upd.driver.phone).toBeUndefined(); // telefone nunca é exposto
     expect(upd.driverEarning).toBeUndefined(); // passageiro não vê o repasse
     expect(upd.actions).toEqual(['cancel', 'share', 'safety']);
+    // Previsão de chegada do motorista (a partir do ETA calculado na oferta)
+    expect(new Date(upd.pickupEta).getTime()).toBeGreaterThan(Date.now() - 5000);
 
     // Localização em tempo real (RF06)
     await moveDriver(drv, near(REGION.happy, 0.001, 0.001));

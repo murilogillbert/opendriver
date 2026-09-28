@@ -85,3 +85,23 @@ export function paymentLabel(r: Ride): string {
 export function vehicleLine(v: { brand: string; model: string; color: string } | null | undefined): string {
   return v ? `${v.brand} ${v.model} · ${v.color}` : '';
 }
+
+/**
+ * "Chega em ~4 min" a partir da previsão da API (ETA calculado no aceite).
+ * Passado o horário previsto, "Chegando" — nunca um número negativo.
+ */
+export function pickupEtaText(pickupEta: string | null | undefined, now: number): string | null {
+  if (!pickupEta) return null;
+  const ms = new Date(pickupEta).getTime() - now;
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 30_000) return 'Chegando';
+  return `Chega em ~${Math.ceil(ms / 60_000)} min`;
+}
+
+/** Busca demorando: tranquiliza o passageiro em vez de só mostrar um spinner. */
+export function searchingHint(requestedAt: string, now: number): string {
+  const s = (now - new Date(requestedAt).getTime()) / 1000;
+  if (s < 60) return 'Normalmente leva menos de um minuto.';
+  if (s < 180) return 'Ainda procurando. Estamos chamando mais motoristas por perto.';
+  return 'Está demorando mais que o normal. Você pode continuar esperando ou cancelar sem custo.';
+}
