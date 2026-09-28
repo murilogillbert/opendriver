@@ -5,6 +5,7 @@ import { isValidLatLng } from '../../domain/geo.js';
 import { ageOn, isValidCnh, normalizePixKey, normalizePlate, type PixKeyType } from '../../domain/validators.js';
 import { AppError } from '../../errors.js';
 import { issueTokens } from '../../infra/auth/jwt.js';
+import { verifyPassword } from '../../infra/auth/password.js';
 import { prisma } from '../../infra/prisma.js';
 import { putEncrypted } from '../../infra/storage/storage.js';
 import { d, round2 } from '../../lib/money.js';
@@ -40,6 +41,8 @@ export const vehicleSchema = z.object({
 export const pixSchema = z.object({
   pixKeyType: z.enum(['CPF', 'CNPJ', 'Email', 'Phone', 'Random']),
   pixKey: z.string().min(1, 'Informe a chave Pix.').max(140),
+  /** Obrigatória para TROCAR uma chave já cadastrada (protege os ganhos se a sessão vazar). */
+  password: z.string().max(128).optional(),
 });
 
 export const locationSchema = z.object({
@@ -227,9 +230,14 @@ export async function removeVehicle(userId: string, vehicleId: string) {
 }
 
 export async function setPixKey(userId: string, input: z.infer<typeof pixSchema>) {
-  await loadProfile(userId);
+  const p = await loadProfile(userId);
   const key = normalizePixKey(input.pixKey, input.pixKeyType as PixKeyType);
   if (!key) throw new AppError('Chave Pix inválida para o tipo escolhido.', 400, 'invalid_pix');
+  if (p.pixKey && p.pixKey !== key) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+    if (!input.password || !user || !(await verifyPassword(input.password, user.passwordHash)))
+      throw new AppError('Confirme sua senha para trocar a chave Pix.', 403, 'password_required');
+  }
   await prisma.driverProfile.update({ where: { userId }, data: { pixKey: key, pixKeyType: input.pixKeyType } });
   return getProfile(userId);
 }

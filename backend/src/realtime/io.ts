@@ -1,7 +1,7 @@
 import type http from 'node:http';
 import { Server } from 'socket.io';
 import { config } from '../config.js';
-import { authFromToken } from '../middleware/auth.js';
+import { authFromToken, isUserActive } from '../middleware/auth.js';
 import { locationSchema, updateLocation } from '../modules/driver/driver.service.js';
 import { broadcastDriverLocation } from '../modules/rides/publish.js';
 import { setEmitter } from './bus.js';
@@ -23,12 +23,20 @@ export function attachRealtime(server: http.Server): Server {
 
   io.use((socket, next) => {
     const token = (socket.handshake.auth?.token as string | undefined) ?? '';
+    let auth: ReturnType<typeof authFromToken>;
     try {
-      socket.data.auth = authFromToken(token);
-      next();
+      auth = authFromToken(token);
     } catch {
       next(new Error('unauthorized'));
+      return;
     }
+    isUserActive(auth.userId)
+      .then((active) => {
+        if (!active) return next(new Error('unauthorized'));
+        socket.data.auth = auth;
+        next();
+      })
+      .catch(() => next(new Error('unavailable')));
   });
 
   io.on('connection', (socket) => {

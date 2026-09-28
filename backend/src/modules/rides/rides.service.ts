@@ -256,11 +256,20 @@ export async function payRide(rideId: string, passengerId: string, paymentMethod
   if (!['Completed', 'Cancelled'].includes(ride.status) || !['Failed', 'Pending'].includes(ride.paymentStatus))
     throw new AppError('Não há pagamento pendente nesta corrida.', 409, 'nothing_to_pay');
 
-  // Pix pendente ainda válido e mesmo meio: só confere (evita gerar outro QR).
+  // Cartão ainda em processamento: nunca cobra de novo por cima (cobrança dupla).
+  const pendingCard = await prisma.ridePayment.findFirst({ where: { rideId, method: 'Card', status: 'Pending' }, orderBy: { createdAt: 'desc' } });
+  if (pendingCard) {
+    const s = await syncRidePayment(pendingCard.id);
+    if (s !== 'failed') await publishRide(rideId);
+    if (s === 'paid') return getRide(rideId, passengerId);
+    if (s === 'pending') throw new AppError('Seu pagamento com cartão ainda está sendo processado. Aguarde alguns instantes.', 409, 'payment_processing');
+  }
+  // Pix pendente: confere antes de tudo — se já foi pago, não cobra outro meio.
+  // Mesmo meio (sem troca): mantém o QR atual em vez de gerar outro.
   const pendingPix = await latestPendingPix(rideId);
-  if (pendingPix && !paymentMethodId) {
+  if (pendingPix) {
     const s = await syncRidePayment(pendingPix.id);
-    if (s !== 'failed') {
+    if (s === 'paid' || (s === 'pending' && !paymentMethodId)) {
       await publishRide(rideId);
       return getRide(rideId, passengerId);
     }
@@ -269,7 +278,7 @@ export async function payRide(rideId: string, passengerId: string, paymentMethod
     ? await prisma.paymentMethod.findFirst({ where: { id: paymentMethodId, userId: passengerId, deletedAt: null } })
     : await resolveDefault(passengerId);
   if (!method) throw new AppError('Forma de pagamento não encontrada.', 404, 'payment_method_not_found');
-  if (pendingPix && method.type === 'Card') {
+  if (pendingPix && (await prisma.ridePayment.count({ where: { id: pendingPix.id, status: 'Pending' } }))) {
     await prisma.ridePayment.update({ where: { id: pendingPix.id }, data: { status: 'Failed', statusDetail: 'Substituído por outro meio' } });
   }
   await prisma.ride.updateMany({ where: { id: rideId, paymentStatus: 'Pending' }, data: { paymentStatus: 'Failed' } });

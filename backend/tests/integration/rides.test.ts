@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { call, startServer, type TestServer } from '../helpers.js';
+import { approveMockPix } from '../../src/infra/payments/mock.js';
 import { db, driver, moveDriver, offline, passenger, waitRide } from '../rideKit.js';
 
 let srv: TestServer;
@@ -20,6 +21,7 @@ const REGION = {
   race: { lat: -10.0, lng: -56.0 },
   driverCancel: { lat: -13.0, lng: -57.0 },
   fee: { lat: -14.0, lng: -58.0 },
+  paidPix: { lat: -11.0, lng: -60.0 },
 };
 const near = (p: { lat: number; lng: number }, dLat = 0.004, dLng = 0.004) => ({ lat: p.lat + dLat, lng: p.lng + dLng });
 
@@ -186,6 +188,32 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect((await hook.json()).status).toBe('paid');
     const done = await pax.waitFor('ride:update', (r) => r.payment.status === 'Paid');
     expect(done.actions).toEqual(['rate']);
+
+    pax.close();
+    await offline(srv.url, drv);
+  });
+
+  it('Pix já pago no banco e o passageiro troca para cartão: não cobra de novo', async () => {
+    const pax = await passenger(srv.url); // sem cartão: a corrida sai no Pix
+    const drv = await driver(srv.url, near(REGION.paidPix));
+    const { ride } = await quoteAndRequest(srv.url, pax.token, REGION.paidPix, { useCashback: false });
+    const offer = await drv.waitFor('ride:offer');
+    await call(srv.url, 'POST', `/driver/offers/${offer.offerId}/accept`, {}, drv.token);
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/arrived`, {}, drv.token);
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/start`, {}, drv.token);
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/finish`, {}, drv.token);
+    const pending = await waitRide(srv.url, pax.token, ride.data.id, (r) => r.payment.status === 'Pending' && !!r.payment.pix);
+    expect(pending.actions).toContain('pay');
+
+    // Passageiro pagou o Pix no banco, mas o webhook ainda não chegou…
+    const pix = await db.ridePayment.findFirst({ where: { rideId: ride.data.id, method: 'Pix', status: 'Pending' } });
+    expect(approveMockPix(pix!.externalId!)).toBe(true);
+    // …e em seguida escolhe pagar com um cartão novo.
+    const card = await call(srv.url, 'POST', '/payment-methods/card', { number: '4111 1111 1111 1111', holder: 'PAULA P', expiry: '12/35', cvv: '123', postalCode: '78000-000', addressNumber: '10' }, pax.token);
+    const pay = await call(srv.url, 'POST', `/rides/${ride.data.id}/pay`, { paymentMethodId: card.data.id }, pax.token);
+    expect(pay.status).toBe(200);
+    expect(pay.data.payment.status).toBe('Paid');
+    expect(await db.ridePayment.count({ where: { rideId: ride.data.id, method: 'Card' } })).toBe(0);
 
     pax.close();
     await offline(srv.url, drv);

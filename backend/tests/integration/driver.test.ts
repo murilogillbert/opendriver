@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { call, CNH, CPF, PASSWORD, startServer, type TestServer, TINY_JPEG, uniqueEmail, upload } from '../helpers.js';
@@ -72,6 +74,17 @@ describe('motorista (RF12, RF13, RF14)', () => {
     expect(pixBad.code).toBe('invalid_pix');
     prof = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Phone', pixKey: '(65) 99999-0003' }, token);
     expect(prof.data.pixKey).toBe('+5565999990003');
+    // Trocar uma chave existente exige a senha (protege os ganhos se a sessão vazar).
+    const swap = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Email', pixKey: 'outra@exemplo.com' }, token);
+    expect(swap.status).toBe(403);
+    expect(swap.code).toBe('password_required');
+    const swapWrong = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Email', pixKey: 'outra@exemplo.com', password: 'errada123' }, token);
+    expect(swapWrong.status).toBe(403);
+    const same = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Phone', pixKey: '65999990003' }, token);
+    expect(same.status).toBe(200); // mesma chave: sem senha
+    const swapped = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Email', pixKey: 'Outra@Exemplo.com', password: PASSWORD }, token);
+    expect(swapped.data.pixKey).toBe('outra@exemplo.com');
+    prof = await call(srv.url, 'PUT', '/driver/pix', { pixKeyType: 'Phone', pixKey: '(65) 99999-0003', password: PASSWORD }, token);
 
     const submitted = await call(srv.url, 'POST', '/driver/submit', {}, token);
     expect(submitted.data.status).toBe('InReview');
@@ -92,5 +105,22 @@ describe('motorista (RF12, RF13, RF14)', () => {
     const sum = await call(srv.url, 'GET', '/driver/earnings/summary', undefined, token);
     expect(sum.data).toMatchObject({ today: 0, balance: 0, withdrawable: 0 });
     expect((await call(srv.url, 'POST', '/driver/payouts', { amount: 50 }, token)).code).toBe('email_not_verified');
+  });
+  it('excluir a conta apaga as fotos de documentos do armazenamento (LGPD)', async () => {
+    const email = uniqueEmail('del');
+    const reg = await call(srv.url, 'POST', '/auth/register', { name: 'Ivo Motorista', email, password: PASSWORD, phone: '65999990004', cpf: CPF, role: 'Driver' });
+    const token = reg.data.token as string;
+    await upload(srv.url, '/driver/documents/cnh', token, TINY_JPEG);
+    const v = await call(srv.url, 'POST', '/driver/vehicles', { plate: `DEL${Math.floor(Math.random() * 9)}A${Math.floor(Math.random() * 90 + 10)}`, brand: 'Fiat', model: 'Argo', color: 'Branco', year: 2022 }, token);
+    await upload(srv.url, `/driver/vehicles/${v.data.id}/crlv`, token, TINY_JPEG);
+    const dp = await db.driverProfile.findUnique({ where: { userId: reg.data.user.id } });
+    const veh = await db.vehicle.findUnique({ where: { id: v.data.id } });
+    const files = [dp!.cnhPhotoKey!, veh!.crlvKey!].map((k) => path.resolve('/tmp/od-test-storage', k));
+    expect(files.every((f) => existsSync(f))).toBe(true);
+
+    expect((await call(srv.url, 'POST', '/me/delete', { password: PASSWORD }, token)).status).toBe(204);
+    expect(files.some((f) => existsSync(f))).toBe(false);
+    const after = await db.vehicle.findUnique({ where: { id: v.data.id } });
+    expect(after!.crlvKey).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { call, CPF, PASSWORD, startServer, type TestServer, uniqueEmail } from '../helpers.js';
 
@@ -105,9 +106,15 @@ describe('auth (RF01, RF02)', () => {
     expect(wrong.code).toBe('wrong_password');
     expect((await call(srv.url, 'POST', '/me/delete', { password: PASSWORD }, reg.data.token)).status).toBe(204);
     expect((await call(srv.url, 'POST', '/auth/login', { email, password: PASSWORD })).status).toBe(401);
-    const me = await call(srv.url, 'GET', '/me', undefined, reg.data.token);
-    expect(me.data.name).toBe('Conta excluída');
-    expect(me.data.email).not.toBe(email);
+    // Tokens emitidos antes da exclusão deixam de valer (acesso e renovação).
+    expect((await call(srv.url, 'GET', '/me', undefined, reg.data.token)).status).toBe(401);
+    expect((await call(srv.url, 'POST', '/auth/refresh', { refreshToken: reg.data.refreshToken })).status).toBe(401);
+    const db = new PrismaClient();
+    const row = await db.user.findUnique({ where: { id: reg.data.user.id } });
+    await db.$disconnect();
+    expect(row!.name).toBe('Conta excluída');
+    expect(row!.email).not.toBe(email);
+    expect(row!.cpf).toBeNull();
   });
 });
 

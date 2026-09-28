@@ -8,6 +8,8 @@ import { hashPassword, verifyPassword } from '../../infra/auth/password.js';
 import { randomToken } from '../../infra/crypto.js';
 import { escapeHtml, sendEmail } from '../../infra/email.js';
 import { prisma } from '../../infra/prisma.js';
+import { deleteObject } from '../../infra/storage/storage.js';
+import { DELETED_EMAIL_SUFFIX, markUserRevoked } from '../../middleware/auth.js';
 import { round2 } from '../../lib/money.js';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -148,7 +150,7 @@ export async function refresh(refreshToken: string) {
   const id = validateRefreshToken(refreshToken);
   if (!id) throw new AppError('Sua sessão expirou. Entre novamente.', 401, 'unauthenticated');
   const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new AppError('Sua sessão expirou. Entre novamente.', 401, 'unauthenticated');
+  if (!user || user.email.endsWith(DELETED_EMAIL_SUFFIX)) throw new AppError('Sua sessão expirou. Entre novamente.', 401, 'unauthenticated');
   return build(user);
 }
 
@@ -269,15 +271,23 @@ export async function deleteAccount(id: string, password: string): Promise<void>
 
   const anonymized: Prisma.UserUpdateInput = {
     name: 'Conta excluída',
-    email: `excluido+${id}@invalid.opendriver`,
+    email: `excluido+${id}${DELETED_EMAIL_SUFFIX}`,
     passwordHash: await hashPassword(randomToken(32)),
     phone: null,
     cpf: null,
     avatarUrl: null,
     emailVerifiedAt: null,
   };
+  // Fotos de documentos (CNH, selfie, CRLV) saem do armazenamento — LGPD.
+  const [dp, vehicles] = await Promise.all([
+    prisma.driverProfile.findUnique({ where: { userId: id }, select: { cnhPhotoKey: true, selfieKey: true } }),
+    prisma.vehicle.findMany({ where: { driverId: id, crlvKey: { not: null } }, select: { crlvKey: true } }),
+  ]);
+  const documentKeys = [dp?.cnhPhotoKey, dp?.selfieKey, ...vehicles.map((v) => v.crlvKey)].filter((k): k is string => !!k);
+
   await prisma.$transaction([
     prisma.user.update({ where: { id }, data: anonymized }),
+    prisma.vehicle.updateMany({ where: { driverId: id }, data: { active: false, crlvKey: null } }),
     prisma.driverProfile.updateMany({
       where: { userId: id },
       data: { status: 'Suspended', isOnline: false, pixKey: null, pixKeyType: null, cnhNumber: null, cnhPhotoKey: null, selfieKey: null },
@@ -289,4 +299,6 @@ export async function deleteAccount(id: string, password: string): Promise<void>
     prisma.driverLocation.deleteMany({ where: { driverId: id } }),
     prisma.authToken.updateMany({ where: { userId: id, usedAt: null }, data: { usedAt: new Date() } }),
   ]);
+  markUserRevoked(id);
+  await Promise.all(documentKeys.map((k) => deleteObject(k).catch(() => undefined)));
 }
