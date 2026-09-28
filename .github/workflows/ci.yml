@@ -36,6 +36,7 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             hub/backend/package-lock.json
+            mobile/package-lock.json
       # Banco igual ao de produção: primeiro as migrations do hub, depois as do OpenDriver.
       - name: Aplicar migrations do hub
         working-directory: hub/backend
@@ -51,3 +52,48 @@ jobs:
       - run: npm test
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub?schema=opendriver
+      # E2E do app: a camada de dados do mobile (HTTP + Socket.IO) contra esta API.
+      - name: Subir a API para o E2E do app
+        run: |
+          nohup npx tsx src/server.ts > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:5199/health && break; sleep 1; done
+        env:
+          NODE_ENV: test
+          PORT: '5199'
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub?schema=opendriver
+          JWT_SECRET: ci-only-secret-0123456789abcdef0123456789abcdef
+          RATE_LIMIT_AUTH_PERMIT: '10000'
+          PAYMENT_PROVIDER: mock
+          PAYMENT_WEBHOOK_REQUIRE_TOKEN: 'false'
+          DISPATCH_OFFER_TIMEOUT_SECONDS: '15'
+          STORAGE_DRIVER: local
+          STORAGE_LOCAL_DIR: /tmp/od-e2e-storage
+      - name: E2E do app contra a API
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run test:e2e
+        env:
+          E2E_API_URL: http://localhost:5199
+          E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hub
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Bundle iOS/Android (garante que todas as rotas compilam)
+        run: npm run export:check
+        env:
+          EXPO_OFFLINE: '1'
