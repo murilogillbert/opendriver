@@ -1,0 +1,696 @@
+// OpenDriver — API de mobilidade (passageiro + motorista).
+//
+// Banco COMPARTILHADO com o OpenDriverHub (repositório murilogillbert/hub):
+//  - schema "public": tabelas do hub. Os modelos abaixo espelham só as
+//    colunas que o OpenDriver usa e NUNCA são alterados por migrations deste
+//    repositório (a fonte da verdade delas é hub/backend/prisma/schema.prisma).
+//  - schema "opendriver": tabelas exclusivas deste serviço. A tabela
+//    _prisma_migrations do OpenDriver também vive aqui (?schema=opendriver na
+//    DATABASE_URL), isolada do histórico de migrations do hub.
+//
+// Migrations são escritas à mão em prisma/migrations (banco de produção,
+// somente mudanças aditivas) — ver docs/arquitetura.md §2.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["opendriver", "public"]
+}
+
+// ============================================================================
+// public (hub) — espelho somente das colunas usadas
+// ============================================================================
+
+enum UserRole {
+  Client
+  Passenger
+  Driver
+  Partner
+  Admin
+  Financeiro
+
+  @@schema("public")
+}
+
+enum AuthTokenPurpose {
+  EmailVerification
+  PasswordReset
+
+  @@schema("public")
+}
+
+enum CashbackEntryType {
+  Earned
+  Used
+
+  @@schema("public")
+}
+
+model User {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String    @db.VarChar(160)
+  email           String    @unique @db.VarChar(180)
+  passwordHash    String    @map("password_hash")
+  role            UserRole  @default(Client)
+  cashbackBalance Decimal   @default(0) @map("cashback_balance") @db.Decimal(12, 2)
+  avatarUrl       String?   @map("avatar_url")
+  phone           String?
+  cpf             String?   @db.VarChar(20)
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  partnerId       String?   @map("partner_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  authTokens      AuthToken[]
+  cashbackEntries CashbackEntry[]
+
+  driverProfile    DriverProfile?
+  passengerProfile PassengerProfile?
+  vehicles         Vehicle[]
+  driverLocation   DriverLocation?
+  paymentMethods   PaymentMethod[]
+  asaasCustomer    AsaasCustomer?
+  ridesAsPassenger Ride[]            @relation("RidePassenger")
+  ridesAsDriver    Ride[]            @relation("RideDriver")
+  rideOffers       RideOffer[]
+  ratingsGiven     RideRating[]      @relation("RatingRater")
+  ratingsReceived  RideRating[]      @relation("RatingRatee")
+  earnings         DriverEarning[]
+  payoutRequests   PayoutRequest[]
+  trustedContacts  TrustedContact[]
+  safetyIncidents  SafetyIncident[]
+  recordings       RideRecording[]
+  pushTokens       PushToken[]
+  savedPlaces      SavedPlace[]
+  quotes           RideQuote[]
+
+  @@map("users")
+  @@schema("public")
+}
+
+model AuthToken {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   AuthTokenPurpose
+  tokenHash String           @unique @map("token_hash")
+  expiresAt DateTime         @map("expires_at")
+  usedAt    DateTime?        @map("used_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, purpose])
+  @@map("auth_tokens")
+  @@schema("public")
+}
+
+/// Credenciais editáveis no admin do hub (Asaas, e-mail) — lidas, nunca escritas aqui.
+model IntegrationSetting {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique @db.VarChar(120)
+  value     String   @db.VarChar(1024)
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("integration_settings")
+  @@schema("public")
+}
+
+/// Trilha de auditoria do hub — ações administrativas do OpenDriver também são registradas aqui.
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  payloadJson String?  @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+  @@schema("public")
+}
+
+/// Extrato de cashback do hub — o OpenDriver lança "Used" ao abater saldo numa corrida.
+model CashbackEntry {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId     String?           @map("order_id") @db.Uuid
+  type        CashbackEntryType
+  amount      Decimal           @db.Decimal(12, 2)
+  description String            @db.VarChar(240)
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("cashback_entries")
+  @@schema("public")
+}
+
+// ============================================================================
+// opendriver — tabelas deste serviço
+// ============================================================================
+
+enum DriverStatus {
+  /// Cadastro iniciado, faltam documentos.
+  PendingDocuments
+  /// Documentos enviados, aguardando análise do admin.
+  InReview
+  Approved
+  Rejected
+  Suspended
+
+  @@schema("opendriver")
+}
+
+enum VehicleCategory {
+  Economy
+  Comfort
+
+  @@schema("opendriver")
+}
+
+enum VehicleStatus {
+  InReview
+  Approved
+  Rejected
+
+  @@schema("opendriver")
+}
+
+enum PixKeyType {
+  CPF
+  CNPJ
+  Email
+  Phone
+  Random
+
+  @@schema("opendriver")
+}
+
+enum PaymentMethodType {
+  Card
+  Pix
+
+  @@schema("opendriver")
+}
+
+enum RideStatus {
+  Searching
+  DriverAssigned
+  DriverArrived
+  InProgress
+  Completed
+  Cancelled
+  NoDrivers
+
+  @@schema("opendriver")
+}
+
+enum RideActor {
+  Passenger
+  Driver
+  System
+  Admin
+
+  @@schema("opendriver")
+}
+
+enum RidePaymentStatus {
+  /// Corrida ainda não finalizada.
+  NotDue
+  Pending
+  Paid
+  Failed
+  Refunded
+  /// Coberta 100% pelo cashback ou corrida sem cobrança (cancelada sem taxa).
+  NotRequired
+
+  @@schema("opendriver")
+}
+
+enum OfferStatus {
+  Pending
+  Accepted
+  Declined
+  Expired
+  Withdrawn
+
+  @@schema("opendriver")
+}
+
+enum EarningType {
+  RideEarning
+  CancellationFee
+  Payout
+  Adjustment
+
+  @@schema("opendriver")
+}
+
+enum PayoutStatus {
+  Pending
+  Paid
+  Rejected
+
+  @@schema("opendriver")
+}
+
+enum IncidentType {
+  Emergency
+  Report
+
+  @@schema("opendriver")
+}
+
+enum IncidentStatus {
+  Open
+  InReview
+  Closed
+
+  @@schema("opendriver")
+}
+
+model DriverProfile {
+  userId           String       @id @map("user_id") @db.Uuid
+  user             User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status           DriverStatus @default(PendingDocuments)
+  cnhNumber        String?      @map("cnh_number") @db.VarChar(20)
+  cnhCategory      String?      @map("cnh_category") @db.VarChar(5)
+  cnhExpiresAt     DateTime?    @map("cnh_expires_at") @db.Date
+  birthDate        DateTime?    @map("birth_date") @db.Date
+  cnhPhotoKey      String?      @map("cnh_photo_key")
+  selfieKey        String?      @map("selfie_key")
+  rejectionReason  String?      @map("rejection_reason") @db.VarChar(400)
+  reviewedAt       DateTime?    @map("reviewed_at")
+  reviewedBy       String?      @map("reviewed_by") @db.Uuid
+  pixKey           String?      @map("pix_key") @db.VarChar(140)
+  pixKeyType       PixKeyType?  @map("pix_key_type")
+  isOnline         Boolean      @default(false) @map("is_online")
+  onlineSince      DateTime?    @map("online_since")
+  currentVehicleId String?      @map("current_vehicle_id") @db.Uuid
+  ratingSum        Int          @default(0) @map("rating_sum")
+  ratingCount      Int          @default(0) @map("rating_count")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([isOnline])
+  @@map("driver_profiles")
+  @@schema("opendriver")
+}
+
+model PassengerProfile {
+  userId                 String    @id @map("user_id") @db.Uuid
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  defaultPaymentMethodId String?   @map("default_payment_method_id") @db.Uuid
+  useHubCashback         Boolean   @default(true) @map("use_hub_cashback")
+  ratingSum              Int       @default(0) @map("rating_sum")
+  ratingCount            Int       @default(0) @map("rating_count")
+  /// Gravação de áudio (RF16): opt-in explícito, versionado.
+  recordingEnabled       Boolean   @default(false) @map("recording_enabled")
+  recordingConsentAt     DateTime? @map("recording_consent_at")
+  recordingConsentVer    String?   @map("recording_consent_version") @db.VarChar(40)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("passenger_profiles")
+  @@schema("opendriver")
+}
+
+model Vehicle {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId    String          @map("driver_id") @db.Uuid
+  driver      User            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  plate       String          @db.VarChar(10)
+  brand       String          @db.VarChar(60)
+  model       String          @db.VarChar(60)
+  color       String          @db.VarChar(40)
+  year        Int
+  category    VehicleCategory @default(Economy)
+  crlvKey     String?         @map("crlv_key")
+  status      VehicleStatus   @default(InReview)
+  rejectionReason String?     @map("rejection_reason") @db.VarChar(400)
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now()) @map("created_at")
+  rides       Ride[]
+
+  @@index([driverId])
+  @@map("vehicles")
+  @@schema("opendriver")
+}
+
+/// Última posição conhecida do motorista (1 linha por motorista, upsert).
+model DriverLocation {
+  driverId  String   @id @map("driver_id") @db.Uuid
+  driver    User     @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  lat       Float
+  lng       Float
+  heading   Float?
+  speed     Float?
+  accuracy  Float?
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([lat, lng])
+  @@index([updatedAt])
+  @@map("driver_locations")
+  @@schema("opendriver")
+}
+
+model AsaasCustomer {
+  userId     String   @id @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  customerId String   @map("customer_id") @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("asaas_customers")
+  @@schema("opendriver")
+}
+
+model PaymentMethod {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  user        User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type        PaymentMethodType
+  brand       String?           @db.VarChar(30)
+  last4       String?           @db.VarChar(4)
+  holderName  String?           @map("holder_name") @db.VarChar(80)
+  expiryMonth Int?              @map("expiry_month")
+  expiryYear  Int?              @map("expiry_year")
+  /// Token do cartão no gateway, cifrado (AES-256-GCM) — nunca o número.
+  tokenEnc    String?           @map("token_enc")
+  provider    String            @default("mock") @db.VarChar(20)
+  deletedAt   DateTime?         @map("deleted_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  rides       Ride[]
+
+  @@index([userId])
+  @@map("payment_methods")
+  @@schema("opendriver")
+}
+
+model SavedPlace {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  label     String   @db.VarChar(40)
+  address   String   @db.VarChar(300)
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("saved_places")
+  @@schema("opendriver")
+}
+
+/// Tabela de preços por categoria — editável pelo admin (RF17).
+model Pricing {
+  category           VehicleCategory @id
+  label              String          @db.VarChar(40)
+  baseFare           Decimal         @map("base_fare") @db.Decimal(10, 2)
+  perKm              Decimal         @map("per_km") @db.Decimal(10, 2)
+  perMinute          Decimal         @map("per_minute") @db.Decimal(10, 2)
+  minimumFare        Decimal         @map("minimum_fare") @db.Decimal(10, 2)
+  platformFeePercent Decimal         @map("platform_fee_percent") @db.Decimal(5, 2)
+  cancellationFee    Decimal         @map("cancellation_fee") @db.Decimal(10, 2)
+  active             Boolean         @default(true)
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
+  updatedBy          String?         @map("updated_by") @db.Uuid
+
+  @@map("pricing")
+  @@schema("opendriver")
+}
+
+/// Cotação feita no servidor; o pedido referencia a cotação e trava o preço.
+model RideQuote {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  passengerId    String   @map("passenger_id") @db.Uuid
+  passenger      User     @relation(fields: [passengerId], references: [id], onDelete: Restrict)
+  originLat      Float    @map("origin_lat")
+  originLng      Float    @map("origin_lng")
+  originAddress  String   @map("origin_address") @db.VarChar(300)
+  destLat        Float    @map("dest_lat")
+  destLng        Float    @map("dest_lng")
+  destAddress    String   @map("dest_address") @db.VarChar(300)
+  distanceM      Int      @map("distance_m")
+  durationS      Int      @map("duration_s")
+  polyline       String?
+  routeSource    String   @map("route_source") @db.VarChar(20)
+  /// [{category, fare, platformFee}] no momento da cotação.
+  prices         Json
+  expiresAt      DateTime @map("expires_at")
+  usedAt         DateTime? @map("used_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([passengerId, createdAt])
+  @@map("ride_quotes")
+  @@schema("opendriver")
+}
+
+model Ride {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  passengerId       String            @map("passenger_id") @db.Uuid
+  passenger         User              @relation("RidePassenger", fields: [passengerId], references: [id], onDelete: Restrict)
+  driverId          String?           @map("driver_id") @db.Uuid
+  driver            User?             @relation("RideDriver", fields: [driverId], references: [id], onDelete: Restrict)
+  vehicleId         String?           @map("vehicle_id") @db.Uuid
+  vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  quoteId           String            @unique @map("quote_id") @db.Uuid
+  status            RideStatus        @default(Searching)
+  category          VehicleCategory
+  originLat         Float             @map("origin_lat")
+  originLng         Float             @map("origin_lng")
+  originAddress     String            @map("origin_address") @db.VarChar(300)
+  destLat           Float             @map("dest_lat")
+  destLng           Float             @map("dest_lng")
+  destAddress       String            @map("dest_address") @db.VarChar(300)
+  distanceM         Int               @map("distance_m")
+  durationS         Int               @map("duration_s")
+  polyline          String?
+  fare              Decimal           @db.Decimal(10, 2)
+  platformFee       Decimal           @map("platform_fee") @db.Decimal(10, 2)
+  driverEarning     Decimal           @map("driver_earning") @db.Decimal(10, 2)
+  cashbackUsed      Decimal           @default(0) @map("cashback_used") @db.Decimal(10, 2)
+  cancellationFee   Decimal           @default(0) @map("cancellation_fee") @db.Decimal(10, 2)
+  paymentMethodType PaymentMethodType @map("payment_method_type")
+  paymentMethodId   String?           @map("payment_method_id") @db.Uuid
+  paymentMethod     PaymentMethod?    @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  useCashback       Boolean           @default(false) @map("use_cashback")
+  paymentStatus     RidePaymentStatus @default(NotDue) @map("payment_status")
+  /// Tentativas de oferta já feitas (matching sequencial).
+  dispatchRound     Int               @default(0) @map("dispatch_round")
+  shareToken        String?           @unique @map("share_token") @db.VarChar(64)
+  requestedAt       DateTime          @default(now()) @map("requested_at")
+  acceptedAt        DateTime?         @map("accepted_at")
+  arrivedAt         DateTime?         @map("arrived_at")
+  startedAt         DateTime?         @map("started_at")
+  completedAt       DateTime?         @map("completed_at")
+  cancelledAt       DateTime?         @map("cancelled_at")
+  cancelledBy       RideActor?        @map("cancelled_by")
+  cancelReason      String?           @map("cancel_reason") @db.VarChar(200)
+  updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  offers     RideOffer[]
+  events     RideEvent[]
+  payments   RidePayment[]
+  ratings    RideRating[]
+  earnings   DriverEarning[]
+  incidents  SafetyIncident[]
+  recordings RideRecording[]
+
+  @@index([passengerId, requestedAt])
+  @@index([driverId, requestedAt])
+  @@index([status])
+  // Corrida ativa do motorista/passageiro: consultada a cada posição enviada (~4 s).
+  @@index([driverId, status])
+  @@index([passengerId, status])
+  @@map("rides")
+  @@schema("opendriver")
+}
+
+model RideOffer {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId          String      @map("ride_id") @db.Uuid
+  ride            Ride        @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  driverId        String      @map("driver_id") @db.Uuid
+  driver          User        @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  status          OfferStatus @default(Pending)
+  pickupDistanceM Int         @map("pickup_distance_m")
+  pickupEtaS      Int         @map("pickup_eta_s")
+  sentAt          DateTime    @default(now()) @map("sent_at")
+  expiresAt       DateTime    @map("expires_at")
+  respondedAt     DateTime?   @map("responded_at")
+
+  @@unique([rideId, driverId])
+  @@index([status, expiresAt])
+  @@index([driverId, status])
+  @@map("ride_offers")
+  @@schema("opendriver")
+}
+
+model RideEvent {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId    String     @map("ride_id") @db.Uuid
+  ride      Ride       @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  type      String     @db.VarChar(40)
+  actor     RideActor
+  actorId   String?    @map("actor_id") @db.Uuid
+  payload   Json?
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([rideId, createdAt])
+  @@map("ride_events")
+  @@schema("opendriver")
+}
+
+model RidePayment {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId       String            @map("ride_id") @db.Uuid
+  ride         Ride              @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  provider     String            @db.VarChar(20)
+  method       PaymentMethodType
+  amount       Decimal           @db.Decimal(10, 2)
+  status       RidePaymentStatus
+  externalId   String?           @map("external_id") @db.VarChar(80)
+  statusDetail String?           @map("status_detail") @db.VarChar(200)
+  pixCopyPaste String?           @map("pix_copy_paste")
+  pixExpiresAt DateTime?         @map("pix_expires_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  @@index([rideId])
+  @@index([externalId])
+  @@map("ride_payments")
+  @@schema("opendriver")
+}
+
+model RideRating {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId    String   @map("ride_id") @db.Uuid
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  raterId   String   @map("rater_id") @db.Uuid
+  rater     User     @relation("RatingRater", fields: [raterId], references: [id], onDelete: Restrict)
+  rateeId   String   @map("ratee_id") @db.Uuid
+  ratee     User     @relation("RatingRatee", fields: [rateeId], references: [id], onDelete: Restrict)
+  stars     Int
+  comment   String   @default("") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([rideId, raterId])
+  @@index([rateeId])
+  @@map("ride_ratings")
+  @@schema("opendriver")
+}
+
+/// Livro-caixa do motorista: saldo = soma dos lançamentos.
+model DriverEarning {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId    String      @map("driver_id") @db.Uuid
+  driver      User        @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  rideId      String?     @map("ride_id") @db.Uuid
+  ride        Ride?       @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  payoutId    String?     @unique @map("payout_id") @db.Uuid
+  type        EarningType
+  amount      Decimal     @db.Decimal(10, 2)
+  description String      @db.VarChar(200)
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@unique([rideId, type])
+  @@index([driverId, createdAt])
+  @@map("driver_earnings")
+  @@schema("opendriver")
+}
+
+model PayoutRequest {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId    String       @map("driver_id") @db.Uuid
+  driver      User         @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  amount      Decimal      @db.Decimal(10, 2)
+  status      PayoutStatus @default(Pending)
+  pixKey      String       @map("pix_key") @db.VarChar(140)
+  pixKeyType  PixKeyType   @map("pix_key_type")
+  note        String       @default("") @db.VarChar(400)
+  requestedAt DateTime     @default(now()) @map("requested_at")
+  resolvedAt  DateTime?    @map("resolved_at")
+  resolvedBy  String?      @map("resolved_by") @db.Uuid
+
+  @@index([driverId, requestedAt])
+  @@index([status])
+  @@map("payout_requests")
+  @@schema("opendriver")
+}
+
+model TrustedContact {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name      String   @db.VarChar(80)
+  phone     String   @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("trusted_contacts")
+  @@schema("opendriver")
+}
+
+model SafetyIncident {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId      String?        @map("ride_id") @db.Uuid
+  ride        Ride?          @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  reporterId  String         @map("reporter_id") @db.Uuid
+  reporter    User           @relation(fields: [reporterId], references: [id], onDelete: Restrict)
+  type        IncidentType
+  status      IncidentStatus @default(Open)
+  description String         @default("") @db.VarChar(1000)
+  lat         Float?
+  lng         Float?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  resolvedAt  DateTime?      @map("resolved_at")
+  resolvedBy  String?        @map("resolved_by") @db.Uuid
+
+  @@index([status, createdAt])
+  @@index([rideId])
+  @@map("safety_incidents")
+  @@schema("opendriver")
+}
+
+/// Áudio da viagem (RF16): arquivo cifrado no storage, apagado após a retenção.
+model RideRecording {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId         String    @map("ride_id") @db.Uuid
+  ride           Ride      @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  userId         String    @map("user_id") @db.Uuid
+  user           User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  storageKey     String    @map("storage_key")
+  /// IV + tag do AES-256-GCM (base64); a chave vem de RECORDING_ENCRYPTION_KEY.
+  iv             String    @db.VarChar(40)
+  authTag        String    @map("auth_tag") @db.VarChar(40)
+  sizeBytes      Int       @map("size_bytes")
+  mimeType       String    @map("mime_type") @db.VarChar(40)
+  consentVersion String    @map("consent_version") @db.VarChar(40)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  expiresAt      DateTime  @map("expires_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  @@index([expiresAt, deletedAt])
+  @@index([rideId])
+  @@map("ride_recordings")
+  @@schema("opendriver")
+}
+
+model PushToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  token     String   @unique @db.VarChar(200)
+  platform  String   @db.VarChar(10)
+  createdAt DateTime @default(now()) @map("created_at")
+  lastSeen  DateTime @default(now()) @map("last_seen")
+
+  @@index([userId])
+  @@map("push_tokens")
+  @@schema("opendriver")
+}
