@@ -504,6 +504,9 @@ model Ride {
   @@index([passengerId, requestedAt])
   @@index([driverId, requestedAt])
   @@index([status])
+  // Corrida ativa do motorista/passageiro: consultada a cada posição enviada (~4 s).
+  @@index([driverId, status])
+  @@index([passengerId, status])
   @@map("rides")
   @@schema("opendriver")
 }
@@ -649,6 +652,7 @@ model SafetyIncident {
   resolvedBy  String?        @map("resolved_by") @db.Uuid
 
   @@index([status, createdAt])
+  @@index([rideId])
   @@map("safety_incidents")
   @@schema("opendriver")
 }

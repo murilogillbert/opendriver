@@ -8,7 +8,7 @@ import { prisma } from '../../infra/prisma.js';
 import { getSetting } from '../../infra/settings.js';
 import { envelope } from '../../lib/envelope.js';
 import { requireAuth, userId } from '../../middleware/auth.js';
-import { authRateLimiter } from '../../middleware/rateLimit.js';
+import { authRateLimiter, limits } from '../../middleware/rateLimit.js';
 import { validateBody } from '../../middleware/validate.js';
 import { publishRide } from '../rides/publish.js';
 import * as methods from './paymentMethods.service.js';
@@ -20,7 +20,7 @@ paymentsRouter.get('/payment-methods', requireAuth, async (req, res) => {
   res.json(envelope(await methods.list(userId(req))));
 });
 
-paymentsRouter.post('/payment-methods/card', requireAuth, authRateLimiter, validateBody(methods.cardSchema), async (req, res) => {
+paymentsRouter.post('/payment-methods/card', requireAuth, authRateLimiter, limits.addCard, validateBody(methods.cardSchema), async (req, res) => {
   res.status(201).json(envelope(await methods.addCard(userId(req), req.body, req.ip ?? '127.0.0.1')));
 });
 

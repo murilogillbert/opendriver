@@ -82,11 +82,18 @@ export async function report(userId: string, input: z.infer<typeof reportSchema>
 }
 
 /** Dados públicos mínimos do acompanhamento compartilhado (sem telefone, sem sobrenome). */
+const TRACKING_GRACE_MS = 30 * 60_000;
+
+export const isTrackingToken = (token: string) => /^[\w-]{20,64}$/.test(token);
+
 export async function trackingData(token: string) {
-  if (!/^[\w-]{20,64}$/.test(token)) return null;
+  if (!isTrackingToken(token)) return null;
   const ride = await prisma.ride.findUnique({ where: { shareToken: token }, include: { driver: true, vehicle: true } });
   if (!ride) return null;
   const active = ['DriverAssigned', 'DriverArrived', 'InProgress'].includes(ride.status);
+  // Privacidade: o link só vale durante a viagem e por pouco tempo depois dela.
+  const endedAt = ride.completedAt ?? ride.cancelledAt;
+  if (!active && (!endedAt || Date.now() - endedAt.getTime() > TRACKING_GRACE_MS)) return null;
   const loc = active && ride.driverId ? await prisma.driverLocation.findUnique({ where: { driverId: ride.driverId } }) : null;
   const statusLabel: Record<string, string> = {
     DriverAssigned: 'Motorista a caminho do embarque',

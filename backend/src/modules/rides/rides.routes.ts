@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { envelope } from '../../lib/envelope.js';
 import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
-import { geoRateLimiter } from '../../middleware/rateLimit.js';
+import { geoRateLimiter, limits } from '../../middleware/rateLimit.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { acceptOffer, currentOffer, declineOffer } from './dispatch.js';
 import { createQuote, quoteSchema } from './quote.service.js';
@@ -17,7 +17,7 @@ ridesRouter.post('/rides/quote', requireAuth, geoRateLimiter, validateBody(quote
   res.json(envelope(await createQuote(userId(req), req.body)));
 });
 
-ridesRouter.post('/rides', requireAuth, validateBody(rides.requestSchema), async (req, res) => {
+ridesRouter.post('/rides', requireAuth, limits.requestRide, validateBody(rides.requestSchema), async (req, res) => {
   res.status(201).json(envelope(await rides.requestRide(userId(req), req.body)));
 });
 
@@ -51,7 +51,7 @@ ridesRouter.post('/rides/:id/rating', requireAuth, validateBody(rides.ratingSche
   res.json(envelope(await rides.rateRide(id(req.params.id), userId(req), req.body)));
 });
 
-ridesRouter.post('/rides/:id/share', requireAuth, async (req, res) => {
+ridesRouter.post('/rides/:id/share', requireAuth, limits.share, async (req, res) => {
   res.json(envelope(await rides.shareRide(id(req.params.id), userId(req))));
 });
 

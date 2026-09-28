@@ -12,6 +12,18 @@ import { setEmitter } from './bus.js';
  * cada 4 s); ela é repassada ao passageiro só nos estados em que o
  * compartilhamento é permitido (RF06).
  */
+// Janela deslizante: o app manda a cada ~4 s; aceita rajadas curtas, barra inundação.
+const LOCATION_WINDOW_MS = 5000;
+const LOCATION_MAX_PER_WINDOW = 5;
+let current: Server | null = null;
+
+/** Encerra os sockets (deploy/reinício): os apps reconectam sozinhos na nova instância. */
+export async function closeRealtime(): Promise<void> {
+  const io = current;
+  current = null;
+  if (io) await new Promise<void>((resolve) => void io.close(() => resolve()));
+}
+
 export function attachRealtime(server: http.Server): Server {
   const io = new Server(server, {
     path: '/realtime',
@@ -43,9 +55,17 @@ export function attachRealtime(server: http.Server): Server {
     const auth = socket.data.auth as { userId: string; role: string };
     void socket.join(`user:${auth.userId}`);
 
+    const recent: number[] = [];
     socket.on('driver:location', async (raw: unknown, ack?: (r: { ok: boolean; error?: string }) => void) => {
       try {
         if (auth.role !== 'Driver') throw new Error('forbidden');
+        const now = Date.now();
+        while (recent.length && now - recent[0]! > LOCATION_WINDOW_MS) recent.shift();
+        if (recent.length >= LOCATION_MAX_PER_WINDOW) {
+          ack?.({ ok: true }); // descarta sem gravar; a próxima posição válida chega em segundos
+          return;
+        }
+        recent.push(now);
         const loc = locationSchema.parse(raw);
         await updateLocation(auth.userId, loc);
         await broadcastDriverLocation(auth.userId, loc);
@@ -56,6 +76,7 @@ export function attachRealtime(server: http.Server): Server {
     });
   });
 
+  current = io;
   setEmitter({
     toUser: (userId, event, payload) => io.to(`user:${userId}`).emit(event, payload),
     toRide: (rideId, event, payload) => io.to(`ride:${rideId}`).emit(event, payload),

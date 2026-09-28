@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { api, http, subscribeSession, tokenStorage } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import type { AuthResponse, Me } from '@/api/types';
@@ -102,6 +103,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [applyMe]);
+
+  // Volta do segundo plano: atualiza o perfil (cadastro aprovado, ficou
+  // offline por falta de sinal, saldo de cashback…). No máximo a cada 30 s.
+  const lastSync = useRef(0);
+  useEffect(() => {
+    if (status !== 'signedIn') return;
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active' || Date.now() - lastSync.current < 30_000) return;
+      lastSync.current = Date.now();
+      refreshMe().catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [status, refreshMe]);
 
   useEffect(
     () =>

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { call, startServer, type TestServer } from '../helpers.js';
 import { approveMockPix } from '../../src/infra/payments/mock.js';
+import { offlineStaleDrivers } from '../../src/jobs/staleDrivers.js';
 import { db, driver, moveDriver, offline, passenger, waitRide } from '../rideKit.js';
 
 let srv: TestServer;
@@ -22,6 +23,7 @@ const REGION = {
   driverCancel: { lat: -13.0, lng: -57.0 },
   fee: { lat: -14.0, lng: -58.0 },
   paidPix: { lat: -11.0, lng: -60.0 },
+  stale: { lat: -9.0, lng: -61.0 },
 };
 const near = (p: { lat: number; lng: number }, dLat = 0.004, dLng = 0.004) => ({ lat: p.lat + dLat, lng: p.lng + dLng });
 
@@ -268,5 +270,17 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect(Number(earn!.amount)).toBe(5);
     pax.close();
     await offline(srv.url, drv);
+  });
+  it('motorista online sem enviar posição há 15 min fica offline sozinho (quem está ativo continua)', async () => {
+    const quiet = await driver(srv.url, near(REGION.stale));
+    const active = await driver(srv.url, near(REGION.stale, 0.01, 0.01));
+    const old = new Date(Date.now() - 20 * 60_000);
+    await db.driverProfile.updateMany({ where: { userId: { in: [quiet.id, active.id] } }, data: { onlineSince: old } });
+    await db.driverLocation.update({ where: { driverId: quiet.id }, data: { updatedAt: old } });
+    expect(await offlineStaleDrivers()).toBeGreaterThanOrEqual(1);
+    expect((await db.driverProfile.findUniqueOrThrow({ where: { userId: quiet.id } })).isOnline).toBe(false);
+    expect((await db.driverProfile.findUniqueOrThrow({ where: { userId: active.id } })).isOnline).toBe(true);
+    quiet.close();
+    await offline(srv.url, active);
   });
 });

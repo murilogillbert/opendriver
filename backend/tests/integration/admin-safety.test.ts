@@ -135,6 +135,10 @@ describe('segurança e gravação (RF15, RF16)', () => {
     expect(cancelled.data.ride.status).toBe('Cancelled');
     const after = await (await fetch(`${srv.url}/t/${token}/data`)).json();
     expect(after).toMatchObject({ active: false, location: null });
+    // Passados 30 min do fim, o link deixa de expor qualquer dado da viagem.
+    await db.ride.update({ where: { id: ride.id }, data: { cancelledAt: new Date(Date.now() - 31 * 60_000) } });
+    expect((await fetch(`${srv.url}/t/${token}/data`)).status).toBe(404);
+    expect((await fetch(`${srv.url}/t/abc<script>`)).status).toBe(404);
 
     // Retenção de 30 dias: vencida → apagada do storage e inacessível
     const row = await db.rideRecording.findUniqueOrThrow({ where: { id: rec.data.id } });
@@ -170,6 +174,16 @@ describe('segurança e gravação (RF15, RF16)', () => {
     expect((await call(srv.url, 'POST', `/admin/payouts/${payout.id}/paid`, {}, adminToken)).code).toBe('already_resolved');
     expect((await call(srv.url, 'GET', '/driver/earnings/summary', undefined, drv.token)).data).toMatchObject({ balance: 12.5, pendingPayout: 0 });
     await offline(srv.url, drv);
+  });
+  it('limite por usuário: relatos em excesso são recusados sem afetar outra pessoa', async () => {
+    const reg = async (tag: string) =>
+      (await call(srv.url, 'POST', '/auth/register', { name: 'Rita Relato', email: uniqueEmail(tag), password: PASSWORD, phone: '65999990077', role: 'Passenger' })).data.token as string;
+    const [a, b] = [await reg('rl-a'), await reg('rl-b')];
+    for (let i = 0; i < 10; i++) expect((await call(srv.url, 'POST', '/safety/incidents', { description: `Relato de teste número ${i}` }, a)).status).toBe(201);
+    const blocked = await call(srv.url, 'POST', '/safety/incidents', { description: 'Relato de teste excedente' }, a);
+    expect(blocked.status).toBe(429);
+    expect(blocked.code).toBe('rate_limited');
+    expect((await call(srv.url, 'POST', '/safety/incidents', { description: 'Relato de outra pessoa' }, b)).status).toBe(201);
   });
 });
 

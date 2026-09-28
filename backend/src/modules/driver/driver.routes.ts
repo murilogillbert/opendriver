@@ -7,6 +7,7 @@ import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { broadcastDriverLocation } from '../rides/publish.js';
 import * as driver from './driver.service.js';
+import { limits } from '../../middleware/rateLimit.js';
 
 export const driverRouter = Router();
 const asDriver = [requireAuth, requireRole('Driver')] as const;
@@ -24,7 +25,7 @@ driverRouter.put('/driver/profile', ...asDriver, validateBody(driver.driverDataS
   res.json(envelope(await driver.updateDriverData(userId(req), req.body)));
 });
 
-driverRouter.post('/driver/documents/:kind', ...asDriver, imageUpload, async (req, res) => {
+driverRouter.post('/driver/documents/:kind', ...asDriver, limits.upload, imageUpload, async (req, res) => {
   const kind = req.params.kind;
   if (kind !== 'cnh' && kind !== 'selfie') throw new AppError('Documento inválido.', 400, 'invalid_document');
   res.json(envelope(await driver.uploadDocument(userId(req), kind, requireImage(req))));
@@ -38,7 +39,7 @@ driverRouter.post('/driver/vehicles', ...asDriver, validateBody(driver.vehicleSc
   res.status(201).json(envelope(await driver.addVehicle(userId(req), req.body)));
 });
 
-driverRouter.post('/driver/vehicles/:id/crlv', ...asDriver, imageUpload, async (req, res) => {
+driverRouter.post('/driver/vehicles/:id/crlv', ...asDriver, limits.upload, imageUpload, async (req, res) => {
   res.json(envelope(await driver.uploadCrlv(userId(req), String(req.params.id), requireImage(req))));
 });
 
@@ -81,6 +82,6 @@ driverRouter.get('/driver/payouts', ...asDriver, async (req, res) => {
   res.json(envelope(await driver.listPayouts(userId(req))));
 });
 
-driverRouter.post('/driver/payouts', ...asDriver, validateBody(driver.payoutSchema), async (req, res) => {
+driverRouter.post('/driver/payouts', ...asDriver, limits.payout, validateBody(driver.payoutSchema), async (req, res) => {
   res.status(201).json(envelope(await driver.requestPayout(userId(req), req.body.amount)));
 });
