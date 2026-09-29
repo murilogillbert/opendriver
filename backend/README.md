@@ -38,6 +38,8 @@ administração. O app mobile tem um E2E próprio contra esta API
 
 ## Deploy (Coolify, junto do hub)
 
+> Alternativa em AWS (EC2 + ECR + Caddy, via Terraform): veja [`infra/README.md`](../infra/README.md).
+
 1. **Banco** — o mesmo Postgres do hub. Uma única vez, antes da primeira
    migration (o Prisma exige a tabela de histórico no schema próprio):
    ```bash

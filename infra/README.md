@@ -1,0 +1,73 @@
+# Infra AWS (Terraform)
+
+Sobe **uma instância EC2** (Ubuntu 24.04) com Docker + Caddy (HTTPS automático,
+WebSocket do Socket.IO incluso), IP fixo (Elastic IP), repositório **ECR** para a
+imagem da API e uma role IAM só-leitura do ECR. A imagem é construída no seu PC
+e enviada ao ECR: nenhuma credencial do GitHub nem segredo vai para o servidor
+ou para o Terraform/git.
+
+```
+PC ── docker push ──▶ ECR ◀── docker pull ── EC2 (caddy :443 ─▶ api :5100) ──▶ Postgres (DATABASE_URL)
+```
+
+## Pré-requisitos (no seu PC)
+`terraform` ≥ 1.6, `aws` CLI configurado (`aws configure` / SSO) com permissão
+para EC2, ECR e IAM, `docker`, `ssh`, `git`. No Windows, use WSL ou Git Bash.
+
+## 1. Criar a infra
+```bash
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars   # edite: e-mail, chave SSH, seu IP
+terraform init
+terraform plan
+terraform apply
+```
+- `ssh_allowed_cidrs` é obrigatório e **não aceita `0.0.0.0/0`**: só esses IPs
+  chegam à porta 22. Para dar acesso a um agente de IA, use uma chave SSH
+  dedicada (`extra_ssh_public_keys`, só vale no primeiro boot) e inclua o IP de
+  onde ele conecta. Para revogar, remova a chave de `~/.ssh/authorized_keys`
+  na instância.
+- O estado (`terraform.tfstate`) fica local e **é ignorado pelo git**. Guarde-o
+  (ou configure um backend S3 antes do primeiro `apply`) — sem ele o Terraform
+  perde o controle dos recursos.
+
+## 2. DNS
+Crie o registro `A` do domínio (padrão `api-app.opendriver.com.br`) apontando
+para o output `public_ip`. Na Cloudflare, deixe **sem proxy** (nuvem cinza) até
+o certificado ser emitido; depois pode ativar o proxy em modo *Full (strict)*.
+
+## 3. Segredos da API
+```bash
+ssh ubuntu@<public_ip>
+nano /opt/opendriver/.env      # modelo: backend/.env.example
+```
+Obrigatórias em produção: `NODE_ENV=production`, `DATABASE_URL` (com
+`?schema=opendriver`), `JWT_SECRET` **igual ao do hub**, `DATA_ENCRYPTION_KEY`
+(`openssl rand -base64 32`, guarde fora do servidor), `PUBLIC_BASE_URL` https e
+`PAYMENT_PROVIDER=asaas`.
+
+O Postgres precisa ser o **mesmo do hub** (schema `public` = hub, `opendriver` =
+esta API) e estar alcançável a partir da instância; libere o IP público
+(output) no firewall/`pg_hba` desse banco e prefira TLS na conexão.
+
+## 4. Deploy
+Da raiz do repositório:
+```bash
+./infra/deploy.sh push      # build linux/amd64 + envio ao ECR
+# ANTES de migrar: backup do banco + pg_dump --schema-only do schema public
+./infra/deploy.sh migrate   # bootstrap + prisma migrate deploy (só schema opendriver)
+# DEPOIS: novo pg_dump --schema-only do public e diff — se algo mudou, pare.
+./infra/deploy.sh up        # sobe/atualiza a API
+./infra/deploy.sh status
+```
+Nunca rode `prisma migrate dev` nem `db push` contra o banco compartilhado.
+As atualizações seguintes: `push` → (`migrate`, se houver migration nova) → `up`.
+
+## Custos e limites
+`t3.small` + 30 GB gp3 + Elastic IP + ECR: ordem de US$ 20–25/mês em `sa-east-1`.
+Rode **uma** réplica (os jobs internos e o Socket.IO não escalam horizontalmente
+sem Redis/worker — ver `backend/README.md`).
+
+## Destruir
+`terraform destroy` remove instância, IP, ECR e IAM (imagens incluídas). Não toca
+no banco, que é externo.

@@ -1,0 +1,14 @@
+# Copie para terraform.tfvars (ignorado pelo git) e ajuste.
+aws_region = "sa-east-1"
+domain     = "api-app.opendriver.com.br"
+acme_email = "voce@exemplo.com.br"
+
+# cat ~/.ssh/id_ed25519.pub
+ssh_public_key = "ssh-ed25519 AAAA... voce@pc"
+
+# Seu IP público (curl https://checkip.amazonaws.com) — nunca 0.0.0.0/0.
+ssh_allowed_cidrs = ["203.0.113.10/32"]
+
+# Chave dedicada para agentes de IA (opcional; só vale no primeiro boot —
+# para revogar depois, remova a linha de ~/.ssh/authorized_keys na instância).
+# extra_ssh_public_keys = ["ssh-ed25519 AAAA... agente-ia"]
