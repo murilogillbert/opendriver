@@ -3,6 +3,12 @@ aws_region = "sa-east-1"
 domain     = "api-app.opendriver.com.br"
 acme_email = "voce@exemplo.com.br"
 
+# Alertas de custo (AWS Budgets): e-mail quando o gasto passar de 50% de US$ 100.
+alert_emails = ["voce@exemplo.com.br"]
+# budget_limit_usd     = 100
+# budget_alert_percent = 50
+# budget_time_unit     = "ANNUALLY"   # ou "MONTHLY"
+
 # cat ~/.ssh/id_ed25519.pub
 ssh_public_key = "ssh-ed25519 AAAA... voce@pc"
 

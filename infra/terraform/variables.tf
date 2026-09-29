@@ -65,3 +65,36 @@ variable "subnet_id" {
   type        = string
   default     = ""
 }
+
+variable "alert_emails" {
+  description = "E-mails que recebem os alertas de custo (AWS Budgets)."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.alert_emails) > 0
+    error_message = "Informe ao menos um e-mail para os alertas de custo."
+  }
+}
+
+variable "budget_limit_usd" {
+  description = "Orçamento total em dólares (o seu teto de US$ 100)."
+  type        = number
+  default     = 100
+}
+
+variable "budget_alert_percent" {
+  description = "Percentual do orçamento em que o primeiro alerta dispara (50 = metade = US$ 50)."
+  type        = number
+  default     = 50
+}
+
+variable "budget_time_unit" {
+  description = "Janela do orçamento: MONTHLY, QUARTERLY ou ANNUALLY (ano-calendário). ANNUALLY trata os US$ 100 como total do ano; MONTHLY zera todo mês."
+  type        = string
+  default     = "ANNUALLY"
+
+  validation {
+    condition     = contains(["MONTHLY", "QUARTERLY", "ANNUALLY"], var.budget_time_unit)
+    error_message = "Use MONTHLY, QUARTERLY ou ANNUALLY."
+  }
+}

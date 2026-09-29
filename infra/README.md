@@ -63,6 +63,19 @@ Da raiz do repositório:
 Nunca rode `prisma migrate dev` nem `db push` contra o banco compartilhado.
 As atualizações seguintes: `push` → (`migrate`, se houver migration nova) → `up`.
 
+## Alerta de custo
+`budgets.tf` cria um AWS Budget de **US$ 100** (`budget_limit_usd`) na conta toda,
+com e-mail para `alert_emails` quando o **gasto real** passar de **50%** (US$ 50),
+de 80%, e quando a **previsão** da AWS indicar estouro de 100%.
+- Só avisa: **não desliga nada**. Ao receber o alerta, olhe o Cost Explorer.
+- Conta o consumo bruto (`include_credit = false`), sem abater créditos.
+- `budget_time_unit = "ANNUALLY"` (padrão) trata os US$ 100 como total do ano;
+  use `"MONTHLY"` se o teto for por mês.
+- Os dados de custo atrasam de 8 a 24 h. Os dois primeiros budgets da conta são
+  gratuitos. Cada destinatário recebe um e-mail de confirmação da AWS na
+  primeira vez.
+- Permissão IAM necessária para quem roda o `apply`: `budgets:*`.
+
 ## Custos e limites
 `t3.small` + 30 GB gp3 + Elastic IP + ECR: ordem de US$ 20–25/mês em `sa-east-1`.
 Rode **uma** réplica (os jobs internos e o Socket.IO não escalam horizontalmente
