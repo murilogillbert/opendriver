@@ -3,7 +3,7 @@ export const qk = {
   me: ['me'] as const,
   activeRide: ['ride', 'active'] as const,
   ride: (id: string) => ['ride', id] as const,
-  pickupRoute: (id: string) => ['ride', id, 'pickup-route'] as const,
+  liveRoute: (id: string, phase: string) => ['ride', id, 'live-route', phase] as const,
   history: (role: 'passenger' | 'driver') => ['rides', 'history', role] as const,
   places: ['me', 'places'] as const,
   payments: ['payments'] as const,

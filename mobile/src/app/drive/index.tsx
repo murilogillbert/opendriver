@@ -17,6 +17,7 @@ import { DriverRidePanel } from '@/features/driver/DriverRidePanel';
 import { IdlePanel } from '@/features/driver/IdlePanel';
 import { OfferModal } from '@/features/driver/OfferModal';
 import { useHere } from '@/hooks/useHere';
+import { useLiveRoute } from '@/hooks/useLiveRoute';
 import { alertError } from '@/lib/recovery';
 import { useStore } from '@/lib/store';
 import { dismissedRidesStore } from '@/lib/tripDraft';
@@ -79,19 +80,8 @@ export default function Drive() {
   };
 
   const toPickup = !!ride && (ride.status === 'DriverAssigned' || ride.status === 'DriverArrived');
-
-  // Caminho até o embarque: enquanto vai buscar o passageiro, a rota é dele até o embarque
-  // (depois de iniciar, volta a ser a da corrida). Atualiza sozinho; sem rota, o mapa
-  // segue com os marcadores — nunca bloqueia a corrida.
-  const pickupRoute = useQuery({
-    queryKey: qk.pickupRoute(ride?.id ?? ''),
-    queryFn: () => api.rides.pickupRoute(ride!.id),
-    enabled: toPickup,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-    retry: false,
-    placeholderData: (prev) => prev,
-  });
+  // Trajeto até o embarque e, depois, até o destino (o que resta da rota, não a rota inteira).
+  const live = useLiveRoute(ride);
 
   if (active.isPending && !active.data) return <LoadingState />;
 
@@ -104,7 +94,7 @@ export default function Drive() {
         bottomInset={panelHeight}
         origin={ride && ride.status !== 'InProgress' ? ride.origin : null}
         destination={ride && !toPickup ? ride.destination : null}
-        polyline={!ride ? null : toPickup ? (pickupRoute.data?.polyline ?? null) : ride.polyline}
+        polyline={!ride ? null : (live.polyline ?? (toPickup ? null : ride.polyline))}
         driver={ride && position ? position : null}
         showUser={!ride}
       />

@@ -201,19 +201,39 @@ async function assertDriverOf(rideId: string, driverId: string) {
   return ride;
 }
 
+// Cache curto: passageiro e motorista consultam a mesma rota; posição arredondada (~11 m).
+const liveRouteCache = new Map<string, { at: number; value: LiveRoute }>();
+const LIVE_ROUTE_TTL_MS = 10_000;
+
+export interface LiveRoute {
+  /** pickup = motorista → embarque; dropoff = motorista → destino (viagem em andamento). */
+  phase: 'pickup' | 'dropoff';
+  polyline: string;
+  distanceM: number;
+  durationS: number;
+  routeSource: 'osrm' | 'estimate';
+}
+
 /**
- * Trajeto do motorista até o embarque (da última posição conhecida dele ao
- * ponto de embarque). Só existe enquanto ele está indo buscar o passageiro;
- * depois disso a rota da corrida é a `polyline` (embarque → destino).
+ * Trajeto restante do carro: da última posição do motorista até o embarque
+ * (motorista a caminho) ou até o destino (viagem em andamento). Passageiro e
+ * motorista da corrida podem consultar; fora desses estados não há trajeto.
  */
-export async function pickupRoute(rideId: string, driverId: string) {
-  const ride = await assertDriverOf(rideId, driverId);
-  if (ride.status !== 'DriverAssigned' && ride.status !== 'DriverArrived')
-    throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
-  const loc = await prisma.driverLocation.findUnique({ where: { driverId } });
-  if (!loc) throw new AppError('Não sabemos onde você está. Ative a localização e tente de novo.', 409, 'location_unavailable');
-  const r = await route({ lat: loc.lat, lng: loc.lng }, { lat: ride.originLat, lng: ride.originLng });
-  return { polyline: r.polyline, distanceM: r.distanceM, durationS: r.durationS, routeSource: r.source };
+export async function liveRoute(rideId: string, userId: string): Promise<LiveRoute> {
+  const ride = await loadForUser(rideId, userId);
+  const phase = ride.status === 'InProgress' ? 'dropoff' : ride.status === 'DriverAssigned' || ride.status === 'DriverArrived' ? 'pickup' : null;
+  if (!phase || !ride.driverId) throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+  const loc = await prisma.driverLocation.findUnique({ where: { driverId: ride.driverId } });
+  if (!loc) throw new AppError('Ainda não recebemos a localização do motorista.', 409, 'location_unavailable');
+  const key = `${rideId}:${phase}:${loc.lat.toFixed(4)},${loc.lng.toFixed(4)}`;
+  const hit = liveRouteCache.get(key);
+  if (hit && Date.now() - hit.at < LIVE_ROUTE_TTL_MS) return hit.value;
+  const target = phase === 'pickup' ? { lat: ride.originLat, lng: ride.originLng } : { lat: ride.destLat, lng: ride.destLng };
+  const r = await route({ lat: loc.lat, lng: loc.lng }, target);
+  const value: LiveRoute = { phase, polyline: r.polyline, distanceM: r.distanceM, durationS: r.durationS, routeSource: r.source };
+  if (liveRouteCache.size > 200) liveRouteCache.delete(liveRouteCache.keys().next().value!);
+  liveRouteCache.set(key, { at: Date.now(), value });
+  return value;
 }
 
 export async function markArrived(rideId: string, driverId: string) {

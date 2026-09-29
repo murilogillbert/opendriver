@@ -105,8 +105,9 @@ export interface Quote {
   prices: QuotePrice[];
 }
 
-/** Trajeto do motorista até o embarque (só enquanto ele vai buscar o passageiro). */
-export interface PickupRoute {
+/** Trajeto restante do carro: até o embarque (`pickup`) ou até o destino (`dropoff`). */
+export interface LiveRoute {
+  phase: 'pickup' | 'dropoff';
   polyline: string;
   distanceM: number;
   durationS: number;

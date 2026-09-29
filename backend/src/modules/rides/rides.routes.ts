@@ -39,6 +39,10 @@ ridesRouter.get('/rides/:id', requireAuth, async (req, res) => {
   res.json(envelope(await rides.getRide(id(req.params.id), userId(req))));
 });
 
+ridesRouter.get('/rides/:id/live-route', requireAuth, geoRateLimiter, async (req, res) => {
+  res.json(envelope(await rides.liveRoute(id(req.params.id), userId(req))));
+});
+
 ridesRouter.post('/rides/:id/cancel', requireAuth, validateBody(rides.cancelSchema), async (req, res) => {
   res.json(envelope(await rides.cancelRide(id(req.params.id), userId(req), req.body.reason)));
 });
@@ -68,10 +72,6 @@ ridesRouter.post('/driver/offers/:offerId/accept', ...asDriver, async (req, res)
 ridesRouter.post('/driver/offers/:offerId/decline', ...asDriver, async (req, res) => {
   await declineOffer(z.string().uuid().parse(req.params.offerId), userId(req));
   res.status(204).send();
-});
-
-ridesRouter.get('/rides/:id/pickup-route', ...asDriver, geoRateLimiter, async (req, res) => {
-  res.json(envelope(await rides.pickupRoute(id(req.params.id), userId(req))));
 });
 
 ridesRouter.post('/rides/:id/arrived', ...asDriver, async (req, res) => {

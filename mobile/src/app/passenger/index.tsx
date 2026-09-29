@@ -11,6 +11,7 @@ import { PassengerRidePanel } from '@/features/passenger/RidePanel';
 import { QuotePanel } from '@/features/passenger/QuotePanel';
 import { WhereToPanel } from '@/features/passenger/WhereToPanel';
 import { useHere } from '@/hooks/useHere';
+import { useLiveRoute } from '@/hooks/useLiveRoute';
 import { useStore } from '@/lib/store';
 import { dismissedRidesStore, tripDraftStore } from '@/lib/tripDraft';
 import { colors } from '@/theme/tokens';
@@ -30,6 +31,8 @@ export default function Trip() {
 
   const ride = active.data && active.data.role === 'passenger' && !dismissed.has(active.data.id) ? active.data : null;
   const origin = draft.origin ?? here;
+  // Trajeto do carro até o embarque e, depois, até o destino.
+  const liveRoute = useLiveRoute(ride);
 
   if (active.isPending && !active.data) return <LoadingState />;
 
@@ -43,7 +46,7 @@ export default function Trip() {
       bottomInset: panelHeight,
       origin: ride.status === 'InProgress' ? null : ride.origin,
       destination: toPickup ? null : ride.destination,
-      polyline: toPickup ? null : ride.polyline,
+      polyline: liveRoute.polyline ?? (toPickup ? null : ride.polyline),
       driver: live,
       showUser: ride.status !== 'InProgress',
     };

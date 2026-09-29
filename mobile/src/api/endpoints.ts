@@ -21,7 +21,7 @@ import type {
   Quote,
   RecordingSetting,
   RecordingTerms,
-  PickupRoute,
+  LiveRoute,
   Ride,
   SavedPlace,
   TrustedContact,
@@ -77,6 +77,7 @@ export function createApi(http: HttpClient) {
       request: (input: { quoteId: string; category?: string; paymentMethodId?: string; useCashback?: boolean }) => http.post<Ride>('/rides', input),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),
+      liveRoute: (id: string) => http.get<LiveRoute>(`/rides/${enc(id)}/live-route`),
       history: (role: 'passenger' | 'driver', cursor?: string | null) =>
         http.get<Page<Ride>>(`/rides?role=${role}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
       cancel: (id: string, reason?: string) => http.post<{ cancelled: boolean; cancellationFee?: number }>(`/rides/${enc(id)}/cancel`, { reason }),
@@ -87,7 +88,6 @@ export function createApi(http: HttpClient) {
       uploadRecording: (id: string, file: UploadFile) =>
         http.request<{ id: string; expiresAt: string }>(`/rides/${enc(id)}/recordings`, { method: 'POST', body: form(file), timeoutMs: 120_000 }),
       // Motorista
-      pickupRoute: (id: string) => http.get<PickupRoute>(`/rides/${enc(id)}/pickup-route`),
       arrived: (id: string) => http.post<Ride>(`/rides/${enc(id)}/arrived`),
       start: (id: string) => http.post<Ride>(`/rides/${enc(id)}/start`),
       finish: (id: string) => http.post<Ride>(`/rides/${enc(id)}/finish`),

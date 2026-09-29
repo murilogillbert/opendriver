@@ -1,7 +1,7 @@
 import { formatCurrency, formatDistance, formatDuration, formatPhone } from '@/lib/format';
 import { boundsOf, decodePolyline } from '@/lib/geo';
 import { brDateToIso, isoToBrDate, maskDate, maskPlate, parseMoney } from '@/lib/masks';
-import { can, isActive, passengerHeadline } from '@/lib/ride';
+import { can, isActive, liveRoutePhase, passengerHeadline } from '@/lib/ride';
 import { isCpf, isEmail, isPhone, passwordProblem } from '@/lib/validation';
 import type { Ride } from '@/api/types';
 
@@ -81,5 +81,12 @@ describe('corrida', () => {
     expect(isActive(base)).toBe(true);
     expect(isActive({ ...base, status: 'Completed' })).toBe(false);
     expect(passengerHeadline({ ...base, status: 'DriverArrived' })).toBe('Seu motorista chegou');
+  });
+  it('trajeto do carro: até o embarque, depois até o destino, nunca fora da corrida', () => {
+    expect(liveRoutePhase({ status: 'DriverAssigned' })).toBe('pickup');
+    expect(liveRoutePhase({ status: 'DriverArrived' })).toBe('pickup');
+    expect(liveRoutePhase({ status: 'InProgress' })).toBe('dropoff');
+    for (const status of ['Searching', 'Completed', 'Cancelled', 'NoDrivers'] as const) expect(liveRoutePhase({ status })).toBeNull();
+    expect(liveRoutePhase(null)).toBeNull();
   });
 });
