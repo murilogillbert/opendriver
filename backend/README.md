@@ -89,7 +89,7 @@ precisaria de adapter Redis).
 | --- | --- |
 | Auth (mesma conta do hub) | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/forgot-password`; `GET /me`; `PUT /me/profile`, `/me/password`; `POST /me/delete` |
 | Passageiro | `POST /rides/quote`, `POST /rides`, `GET /rides/active`, `GET /rides`, `GET /rides/:id`, `POST /rides/:id/{cancel,pay,rating,share}` |
-| Motorista | `POST /driver/become`, `GET/PUT /driver/profile`, `POST /driver/documents/:kind`, `POST /driver/vehicles`, `PUT /driver/pix`, `POST /driver/{online,offline,location}`, `GET /driver/offers/current`, `POST /driver/offers/:id/{accept,decline}`, `POST /rides/:id/{arrived,start,finish}`, ganhos e saques |
+| Motorista | `POST /driver/become`, `GET/PUT /driver/profile`, `POST /driver/documents/:kind`, `POST /driver/vehicles`, `PUT /driver/pix`, `POST /driver/{online,offline,location}`, `GET /driver/offers/current`, `POST /driver/offers/:id/{accept,decline}`, `GET /rides/:id/pickup-route`, `POST /rides/:id/{arrived,start,finish}`, ganhos e saques |
 | Pagamento | `GET /payment-methods`, `POST /payment-methods/card`, `PUT /payment-methods/:id/default`, `PUT /payment-methods/preferences` |
 | Segurança | contatos de confiança, `POST /rides/:id/emergency`, `POST /safety/incidents`, gravação (`/me/recording`, `POST /rides/:id/recordings`), acompanhamento público `GET /t/:token` |
 | Admin (papel Admin do hub) | `/admin/metrics`, `/admin/drivers`, `/admin/vehicles`, `/admin/rides`, `/admin/payouts`, `/admin/pricing`, `/admin/incidents`, `/admin/recordings/:id` |

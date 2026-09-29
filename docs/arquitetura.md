@@ -147,6 +147,9 @@ motorista é transmitida ao passageiro **só** nos estados `DriverAssigned`,
   apontar para instâncias próprias (ou provedor gerenciado compatível).
 - Mapa no app: **MapLibre** com estilo configurável (`EXPO_PUBLIC_MAP_STYLE_URL`,
   tiles próprios ou provedor compatível com OSM).
+- Motorista a caminho do embarque: `GET /api/v1/rides/:id/pickup-route` devolve a rota
+  da última posição dele até o embarque (só nos estados DriverAssigned/DriverArrived);
+  o app atualiza a cada 30 s e, depois de iniciar, volta a desenhar a rota da corrida.
 - Sem OSRM disponível, a API usa estimativa por distância em linha reta ×
   fator de sinuosidade (apenas fallback; sinalizado na cotação).
 

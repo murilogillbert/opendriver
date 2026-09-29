@@ -70,6 +70,10 @@ ridesRouter.post('/driver/offers/:offerId/decline', ...asDriver, async (req, res
   res.status(204).send();
 });
 
+ridesRouter.get('/rides/:id/pickup-route', ...asDriver, geoRateLimiter, async (req, res) => {
+  res.json(envelope(await rides.pickupRoute(id(req.params.id), userId(req))));
+});
+
 ridesRouter.post('/rides/:id/arrived', ...asDriver, async (req, res) => {
   res.json(envelope(await rides.markArrived(id(req.params.id), userId(req))));
 });

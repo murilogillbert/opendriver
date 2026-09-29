@@ -3,6 +3,7 @@ import { config } from '../../config.js';
 import { haversineMeters } from '../../domain/geo.js';
 import { ACTIVE_STATUSES, canTransition, type RideStatus } from '../../domain/rideState.js';
 import { AppError } from '../../errors.js';
+import { route } from '../../infra/geo/routing.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
 import { randomToken } from '../../infra/crypto.js';
@@ -198,6 +199,21 @@ async function assertDriverOf(rideId: string, driverId: string) {
   const ride = await loadForUser(rideId, driverId);
   if (ride.driverId !== driverId) throw new AppError('Corrida não encontrada.', 404, 'not_found');
   return ride;
+}
+
+/**
+ * Trajeto do motorista até o embarque (da última posição conhecida dele ao
+ * ponto de embarque). Só existe enquanto ele está indo buscar o passageiro;
+ * depois disso a rota da corrida é a `polyline` (embarque → destino).
+ */
+export async function pickupRoute(rideId: string, driverId: string) {
+  const ride = await assertDriverOf(rideId, driverId);
+  if (ride.status !== 'DriverAssigned' && ride.status !== 'DriverArrived')
+    throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+  const loc = await prisma.driverLocation.findUnique({ where: { driverId } });
+  if (!loc) throw new AppError('Não sabemos onde você está. Ative a localização e tente de novo.', 409, 'location_unavailable');
+  const r = await route({ lat: loc.lat, lng: loc.lng }, { lat: ride.originLat, lng: ride.originLng });
+  return { polyline: r.polyline, distanceM: r.distanceM, durationS: r.durationS, routeSource: r.source };
 }
 
 export async function markArrived(rideId: string, driverId: string) {

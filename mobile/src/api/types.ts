@@ -105,6 +105,14 @@ export interface Quote {
   prices: QuotePrice[];
 }
 
+/** Trajeto do motorista até o embarque (só enquanto ele vai buscar o passageiro). */
+export interface PickupRoute {
+  polyline: string;
+  distanceM: number;
+  durationS: number;
+  routeSource: 'osrm' | 'estimate';
+}
+
 export interface Ride {
   id: string;
   /** Papel de quem está vendo. */

@@ -21,6 +21,7 @@ import type {
   Quote,
   RecordingSetting,
   RecordingTerms,
+  PickupRoute,
   Ride,
   SavedPlace,
   TrustedContact,
@@ -86,6 +87,7 @@ export function createApi(http: HttpClient) {
       uploadRecording: (id: string, file: UploadFile) =>
         http.request<{ id: string; expiresAt: string }>(`/rides/${enc(id)}/recordings`, { method: 'POST', body: form(file), timeoutMs: 120_000 }),
       // Motorista
+      pickupRoute: (id: string) => http.get<PickupRoute>(`/rides/${enc(id)}/pickup-route`),
       arrived: (id: string) => http.post<Ride>(`/rides/${enc(id)}/arrived`),
       start: (id: string) => http.post<Ride>(`/rides/${enc(id)}/start`),
       finish: (id: string) => http.post<Ride>(`/rides/${enc(id)}/finish`),

@@ -78,10 +78,24 @@ export default function Drive() {
     api.driver.decline(o.offerId).catch(() => undefined); // expira sozinha se falhar
   };
 
+  const toPickup = !!ride && (ride.status === 'DriverAssigned' || ride.status === 'DriverArrived');
+
+  // Caminho até o embarque: enquanto vai buscar o passageiro, a rota é dele até o embarque
+  // (depois de iniciar, volta a ser a da corrida). Atualiza sozinho; sem rota, o mapa
+  // segue com os marcadores — nunca bloqueia a corrida.
+  const pickupRoute = useQuery({
+    queryKey: qk.pickupRoute(ride?.id ?? ''),
+    queryFn: () => api.rides.pickupRoute(ride!.id),
+    enabled: toPickup,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    retry: false,
+    placeholderData: (prev) => prev,
+  });
+
   if (active.isPending && !active.data) return <LoadingState />;
 
   const position = myLoc ?? here;
-  const toPickup = ride && (ride.status === 'DriverAssigned' || ride.status === 'DriverArrived');
 
   return (
     <View style={styles.container}>
@@ -90,7 +104,7 @@ export default function Drive() {
         bottomInset={panelHeight}
         origin={ride && ride.status !== 'InProgress' ? ride.origin : null}
         destination={ride && !toPickup ? ride.destination : null}
-        polyline={ride && !toPickup ? ride.polyline : null}
+        polyline={!ride ? null : toPickup ? (pickupRoute.data?.polyline ?? null) : ride.polyline}
         driver={ride && position ? position : null}
         showUser={!ride}
       />
