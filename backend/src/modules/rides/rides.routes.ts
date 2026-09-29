@@ -39,6 +39,10 @@ ridesRouter.get('/rides/:id', requireAuth, async (req, res) => {
   res.json(envelope(await rides.getRide(id(req.params.id), userId(req))));
 });
 
+ridesRouter.get('/rides/:id/live-route', requireAuth, geoRateLimiter, async (req, res) => {
+  res.json(envelope(await rides.liveRoute(id(req.params.id), userId(req))));
+});
+
 ridesRouter.post('/rides/:id/cancel', requireAuth, validateBody(rides.cancelSchema), async (req, res) => {
   res.json(envelope(await rides.cancelRide(id(req.params.id), userId(req), req.body.reason)));
 });

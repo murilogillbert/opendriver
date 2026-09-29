@@ -1,0 +1,46 @@
+# Mapas próprios (extrato Centro-Oeste): Nominatim (endereços), OSRM (rotas) e
+# tiles vetoriais (fundo do mapa). Somam-se ao docker-compose.yml da API (mesma
+# rede). Só o Caddy é público: a API usa Nominatim/OSRM por dentro da rede.
+#   .env da API:  NOMINATIM_URL=http://nominatim:8080   OSRM_URL=http://osrm:5000
+#   app (EAS):    EXPO_PUBLIC_MAP_STYLE_URL=https://<tiles_domain>/style.json
+services:
+  nominatim:
+    image: mediagis/nominatim:4.5
+    restart: unless-stopped
+    shm_size: 1gb
+    env_file: geo.env # NOMINATIM_PASSWORD (gerado por geo-prepare.sh)
+    environment:
+      PBF_URL: https://download.geofabrik.de/south-america/brazil/centro-oeste-latest.osm.pbf
+      IMPORT_STYLE: address # endereços com número; "street" ocupa menos disco
+      THREADS: "2"
+      FREEZE: "true" # sem atualizações contínuas: menos disco/CPU (reimporte para atualizar)
+    volumes:
+      - nominatim_data:/var/lib/postgresql/16/main
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/centro-oeste-latest.osrm
+    volumes:
+      - ./osrm:/data:ro
+
+  # Serve o PMTiles como tiles /{z}/{x}/{y}.mvt + TileJSON (o MapLibre nativo do app
+  # não lê PMTiles direto). Dados em ./tiles (geo-prepare.sh); __TILES_DOMAIN__ é
+  # trocado por geo-prepare.sh — não suba este compose sem rodar geo-setup.
+  tiles:
+    image: ghcr.io/protomaps/go-pmtiles:v1.31.2
+    restart: unless-stopped
+    command: serve /data --port 8080 --public-url https://__TILES_DOMAIN__
+    volumes:
+      - ./tiles:/data:ro
+
+  # Substitui o Caddyfile da API por um que também publica o domínio de tiles.
+  caddy:
+    depends_on:
+      - tiles
+    volumes:
+      - ./Caddyfile.geo:/etc/caddy/Caddyfile:ro
+      - ./tiles:/srv/tiles:ro
+
+volumes:
+  nominatim_data:

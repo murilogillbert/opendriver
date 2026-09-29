@@ -76,6 +76,18 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     // Previsão de chegada do motorista (a partir do ETA calculado na oferta)
     expect(new Date(upd.pickupEta).getTime()).toBeGreaterThan(Date.now() - 5000);
 
+    // Trajeto do carro até o embarque: motorista e passageiro veem o mesmo; estranhos não
+    for (const token of [drv.token, pax.token]) {
+      const toPickup = await call(srv.url, 'GET', `/rides/${r0.id}/live-route`, undefined, token);
+      expect(toPickup.status).toBe(200);
+      expect(toPickup.data).toMatchObject({ phase: 'pickup', routeSource: 'estimate' });
+      expect(toPickup.data.polyline.length).toBeGreaterThan(0);
+      expect(toPickup.data.durationS).toBeGreaterThanOrEqual(0);
+    }
+    const stranger = await passenger(srv.url);
+    expect((await call(srv.url, 'GET', `/rides/${r0.id}/live-route`, undefined, stranger.token)).status).toBe(404);
+    stranger.close();
+
     // Localização em tempo real (RF06)
     await moveDriver(drv, near(REGION.happy, 0.001, 0.001));
     const loc = await pax.waitFor('driver:location');
@@ -86,6 +98,11 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect((await call(srv.url, 'POST', `/rides/${r0.id}/finish`, {}, drv.token)).code).toBe('invalid_state'); // ação fora de ordem
     const started = await call(srv.url, 'POST', `/rides/${r0.id}/start`, {}, drv.token);
     expect(started.data.actions).toEqual(['finish', 'safety']);
+    // Em viagem: o trajeto restante passa a ser até o destino, para os dois
+    for (const token of [drv.token, pax.token]) {
+      const toDest = await call(srv.url, 'GET', `/rides/${r0.id}/live-route`, undefined, token);
+      expect(toDest.data).toMatchObject({ phase: 'dropoff' });
+    }
     expect((await call(srv.url, 'POST', `/rides/${r0.id}/cancel`, {}, pax.token)).code).toBe('invalid_state');
 
     const shared = await call(srv.url, 'POST', `/rides/${r0.id}/share`, {}, pax.token);
@@ -93,6 +110,7 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
 
     const finished = await call(srv.url, 'POST', `/rides/${r0.id}/finish`, {}, drv.token);
     expect(finished.data.status).toBe('Completed');
+    expect((await call(srv.url, 'GET', `/rides/${r0.id}/live-route`, undefined, pax.token)).code).toBe('invalid_state'); // sem trajeto depois de concluir
 
     // Pagamento automático (0 interações): cashback do hub abatido + cartão cobrado
     const paid = await waitRide(srv.url, pax.token, r0.id, (r) => r.payment.status === 'Paid');

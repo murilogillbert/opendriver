@@ -147,6 +147,11 @@ motorista é transmitida ao passageiro **só** nos estados `DriverAssigned`,
   apontar para instâncias próprias (ou provedor gerenciado compatível).
 - Mapa no app: **MapLibre** com estilo configurável (`EXPO_PUBLIC_MAP_STYLE_URL`,
   tiles próprios ou provedor compatível com OSM).
+- Trajeto do carro: `GET /api/v1/rides/:id/live-route` (passageiro e motorista da corrida)
+  devolve a rota restante da última posição do motorista até o embarque (`phase: pickup`,
+  estados DriverAssigned/DriverArrived) ou até o destino (`phase: dropoff`, InProgress);
+  fora disso responde `invalid_state`. Cache de 10 s no servidor; os apps atualizam a cada 30 s
+  e, sem trajeto (offline/sem posição), caem na rota da corrida (`polyline`) ou só nos marcadores.
 - Sem OSRM disponível, a API usa estimativa por distância em linha reta ×
   fator de sinuosidade (apenas fallback; sinalizado na cotação).
 

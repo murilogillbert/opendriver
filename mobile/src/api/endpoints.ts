@@ -21,6 +21,7 @@ import type {
   Quote,
   RecordingSetting,
   RecordingTerms,
+  LiveRoute,
   Ride,
   SavedPlace,
   TrustedContact,
@@ -76,6 +77,7 @@ export function createApi(http: HttpClient) {
       request: (input: { quoteId: string; category?: string; paymentMethodId?: string; useCashback?: boolean }) => http.post<Ride>('/rides', input),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),
+      liveRoute: (id: string) => http.get<LiveRoute>(`/rides/${enc(id)}/live-route`),
       history: (role: 'passenger' | 'driver', cursor?: string | null) =>
         http.get<Page<Ride>>(`/rides?role=${role}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
       cancel: (id: string, reason?: string) => http.post<{ cancelled: boolean; cancellationFee?: number }>(`/rides/${enc(id)}/cancel`, { reason }),

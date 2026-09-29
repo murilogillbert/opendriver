@@ -17,6 +17,7 @@ import { DriverRidePanel } from '@/features/driver/DriverRidePanel';
 import { IdlePanel } from '@/features/driver/IdlePanel';
 import { OfferModal } from '@/features/driver/OfferModal';
 import { useHere } from '@/hooks/useHere';
+import { useLiveRoute } from '@/hooks/useLiveRoute';
 import { alertError } from '@/lib/recovery';
 import { useStore } from '@/lib/store';
 import { dismissedRidesStore } from '@/lib/tripDraft';
@@ -78,10 +79,13 @@ export default function Drive() {
     api.driver.decline(o.offerId).catch(() => undefined); // expira sozinha se falhar
   };
 
+  const toPickup = !!ride && (ride.status === 'DriverAssigned' || ride.status === 'DriverArrived');
+  // Trajeto até o embarque e, depois, até o destino (o que resta da rota, não a rota inteira).
+  const live = useLiveRoute(ride);
+
   if (active.isPending && !active.data) return <LoadingState />;
 
   const position = myLoc ?? here;
-  const toPickup = ride && (ride.status === 'DriverAssigned' || ride.status === 'DriverArrived');
 
   return (
     <View style={styles.container}>
@@ -90,7 +94,7 @@ export default function Drive() {
         bottomInset={panelHeight}
         origin={ride && ride.status !== 'InProgress' ? ride.origin : null}
         destination={ride && !toPickup ? ride.destination : null}
-        polyline={ride && !toPickup ? ride.polyline : null}
+        polyline={!ride ? null : (live.polyline ?? (toPickup ? null : ride.polyline))}
         driver={ride && position ? position : null}
         showUser={!ride}
       />

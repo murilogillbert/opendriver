@@ -38,6 +38,8 @@ administração. O app mobile tem um E2E próprio contra esta API
 
 ## Deploy (Coolify, junto do hub)
 
+> Alternativa em AWS (EC2 + ECR + Caddy, via Terraform): veja [`infra/README.md`](../infra/README.md).
+
 1. **Banco** — o mesmo Postgres do hub. Uma única vez, antes da primeira
    migration (o Prisma exige a tabela de histórico no schema próprio):
    ```bash
@@ -86,7 +88,7 @@ precisaria de adapter Redis).
 | Área | Rotas |
 | --- | --- |
 | Auth (mesma conta do hub) | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/forgot-password`; `GET /me`; `PUT /me/profile`, `/me/password`; `POST /me/delete` |
-| Passageiro | `POST /rides/quote`, `POST /rides`, `GET /rides/active`, `GET /rides`, `GET /rides/:id`, `POST /rides/:id/{cancel,pay,rating,share}` |
+| Passageiro | `POST /rides/quote`, `POST /rides`, `GET /rides/active`, `GET /rides`, `GET /rides/:id`, `GET /rides/:id/live-route` (trajeto do carro até o embarque/destino), `POST /rides/:id/{cancel,pay,rating,share}` |
 | Motorista | `POST /driver/become`, `GET/PUT /driver/profile`, `POST /driver/documents/:kind`, `POST /driver/vehicles`, `PUT /driver/pix`, `POST /driver/{online,offline,location}`, `GET /driver/offers/current`, `POST /driver/offers/:id/{accept,decline}`, `POST /rides/:id/{arrived,start,finish}`, ganhos e saques |
 | Pagamento | `GET /payment-methods`, `POST /payment-methods/card`, `PUT /payment-methods/:id/default`, `PUT /payment-methods/preferences` |
 | Segurança | contatos de confiança, `POST /rides/:id/emergency`, `POST /safety/incidents`, gravação (`/me/recording`, `POST /rides/:id/recordings`), acompanhamento público `GET /t/:token` |

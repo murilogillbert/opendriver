@@ -105,6 +105,15 @@ export interface Quote {
   prices: QuotePrice[];
 }
 
+/** Trajeto restante do carro: até o embarque (`pickup`) ou até o destino (`dropoff`). */
+export interface LiveRoute {
+  phase: 'pickup' | 'dropoff';
+  polyline: string;
+  distanceM: number;
+  durationS: number;
+  routeSource: 'osrm' | 'estimate';
+}
+
 export interface Ride {
   id: string;
   /** Papel de quem está vendo. */

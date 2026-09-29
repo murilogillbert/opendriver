@@ -3,6 +3,7 @@ import { config } from '../../config.js';
 import { haversineMeters } from '../../domain/geo.js';
 import { ACTIVE_STATUSES, canTransition, type RideStatus } from '../../domain/rideState.js';
 import { AppError } from '../../errors.js';
+import { route } from '../../infra/geo/routing.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
 import { randomToken } from '../../infra/crypto.js';
@@ -198,6 +199,41 @@ async function assertDriverOf(rideId: string, driverId: string) {
   const ride = await loadForUser(rideId, driverId);
   if (ride.driverId !== driverId) throw new AppError('Corrida não encontrada.', 404, 'not_found');
   return ride;
+}
+
+// Cache curto: passageiro e motorista consultam a mesma rota; posição arredondada (~11 m).
+const liveRouteCache = new Map<string, { at: number; value: LiveRoute }>();
+const LIVE_ROUTE_TTL_MS = 10_000;
+
+export interface LiveRoute {
+  /** pickup = motorista → embarque; dropoff = motorista → destino (viagem em andamento). */
+  phase: 'pickup' | 'dropoff';
+  polyline: string;
+  distanceM: number;
+  durationS: number;
+  routeSource: 'osrm' | 'estimate';
+}
+
+/**
+ * Trajeto restante do carro: da última posição do motorista até o embarque
+ * (motorista a caminho) ou até o destino (viagem em andamento). Passageiro e
+ * motorista da corrida podem consultar; fora desses estados não há trajeto.
+ */
+export async function liveRoute(rideId: string, userId: string): Promise<LiveRoute> {
+  const ride = await loadForUser(rideId, userId);
+  const phase = ride.status === 'InProgress' ? 'dropoff' : ride.status === 'DriverAssigned' || ride.status === 'DriverArrived' ? 'pickup' : null;
+  if (!phase || !ride.driverId) throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+  const loc = await prisma.driverLocation.findUnique({ where: { driverId: ride.driverId } });
+  if (!loc) throw new AppError('Ainda não recebemos a localização do motorista.', 409, 'location_unavailable');
+  const key = `${rideId}:${phase}:${loc.lat.toFixed(4)},${loc.lng.toFixed(4)}`;
+  const hit = liveRouteCache.get(key);
+  if (hit && Date.now() - hit.at < LIVE_ROUTE_TTL_MS) return hit.value;
+  const target = phase === 'pickup' ? { lat: ride.originLat, lng: ride.originLng } : { lat: ride.destLat, lng: ride.destLng };
+  const r = await route({ lat: loc.lat, lng: loc.lng }, target);
+  const value: LiveRoute = { phase, polyline: r.polyline, distanceM: r.distanceM, durationS: r.durationS, routeSource: r.source };
+  if (liveRouteCache.size > 200) liveRouteCache.delete(liveRouteCache.keys().next().value!);
+  liveRouteCache.set(key, { at: Date.now(), value });
+  return value;
 }
 
 export async function markArrived(rideId: string, driverId: string) {

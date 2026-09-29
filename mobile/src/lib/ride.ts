@@ -11,6 +11,13 @@ export const isActive = (r: Pick<Ride, 'status'> | null | undefined) => !!r && A
 
 export const can = (r: Pick<Ride, 'actions'> | null | undefined, action: RideAction) => !!r?.actions.includes(action);
 
+/** Que trajeto do carro faz sentido mostrar: até o embarque, até o destino ou nenhum. */
+export function liveRoutePhase(r: Pick<Ride, 'status'> | null | undefined): 'pickup' | 'dropoff' | null {
+  if (!r) return null;
+  if (r.status === 'DriverAssigned' || r.status === 'DriverArrived') return 'pickup';
+  return r.status === 'InProgress' ? 'dropoff' : null;
+}
+
 /** Título do estado para o passageiro — "o que está acontecendo agora". */
 export function passengerHeadline(r: Ride): string {
   switch (r.status) {
