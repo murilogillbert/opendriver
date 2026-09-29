@@ -4,6 +4,9 @@ aws_region = "us-east-1"   # sa-east-1 (São Paulo): menor latência, ~35% mais 
 domain     = "api-app.opendriver.com.br"
 acme_email = "voce@exemplo.com.br"
 
+# tiles_domain          = "tiles.opendriver.com.br"
+# create_storage_bucket = true   # S3 privado; false = usar o MinIO do hub
+
 # Alertas de custo (AWS Budgets): e-mail quando o gasto passar de 50% de US$ 100.
 alert_emails = ["voce@exemplo.com.br"]
 # budget_limit_usd     = 100

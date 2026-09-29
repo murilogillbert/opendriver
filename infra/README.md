@@ -1,14 +1,16 @@
 # Infra AWS (Terraform)
 
-Sobe **uma instância EC2** (Ubuntu 24.04) com a API, **Nominatim e OSRM (extrato Centro-Oeste)**, tudo na mesma máquina, com Docker + Caddy (HTTPS automático,
+Sobe **uma instância EC2** (Ubuntu 24.04) com a API, **Nominatim, OSRM e tiles do mapa (extrato Centro-Oeste)**, tudo na mesma máquina, com Docker + Caddy (HTTPS automático,
 WebSocket do Socket.IO incluso), IP fixo (Elastic IP), repositório **ECR** para a
 imagem da API e uma role IAM só-leitura do ECR. A imagem é construída no seu PC
 e enviada ao ECR: nenhuma credencial do GitHub nem segredo vai para o servidor
 ou para o Terraform/git.
 
 ```
-PC ── docker push ──▶ ECR ◀── docker pull ── EC2 (caddy :443 ─▶ api :5100 ─▶ nominatim :8080 / osrm :5000)
-                                                              └──▶ Postgres do hub (DATABASE_URL)
+PC ── docker push ──▶ ECR ◀── docker pull ── EC2 (caddy :443 ─▶ api :5100 ─▶ nominatim :8080 / osrm :5000
+                                             └─▶ tiles.<domínio>: estilo, fontes, tiles)
+                                    ├──▶ Postgres do hub (DATABASE_URL)  ← fora deste Terraform
+                                    └──▶ S3 privado (documentos/gravações cifrados)
 ```
 
 ## Pré-requisitos (no seu PC)
@@ -33,9 +35,12 @@ terraform apply
   perde o controle dos recursos.
 
 ## 2. DNS
-Crie o registro `A` do domínio (padrão `api-app.opendriver.com.br`) apontando
-para o output `public_ip`. Na Cloudflare, deixe **sem proxy** (nuvem cinza) até
-o certificado ser emitido; depois pode ativar o proxy em modo *Full (strict)*.
+Crie **dois** registros `A` apontando para o output `public_ip`: o da API
+(`domain`, padrão `api-app.opendriver.com.br`) e o dos tiles (`tiles_domain`,
+padrão `tiles.opendriver.com.br`). Na Cloudflare, deixe **sem proxy** (nuvem
+cinza) até os certificados serem emitidos; depois pode ativar o proxy em modo
+*Full (strict)*. Confirme também os e-mails de inscrição que a AWS envia
+(alertas de infra via SNS e de custo via Budgets).
 
 ## 3. Segredos da API
 ```bash
@@ -47,29 +52,47 @@ Obrigatórias em produção: `NODE_ENV=production`, `DATABASE_URL` (com
 (`openssl rand -base64 32`, guarde fora do servidor), `PUBLIC_BASE_URL` https e
 `PAYMENT_PROVIDER=asaas`.
 
+**Storage privado (S3):** o Terraform cria o bucket e um usuário IAM restrito a
+ele, mas **não a chave de acesso** (para não entrar no estado nem no git). Crie e
+cole no `.env`:
+```bash
+aws iam create-access-key --user-name $(terraform -chdir=infra/terraform output -raw storage_iam_user)
+# MINIO_ENDPOINT=https://s3.us-east-1.amazonaws.com   (terraform output storage_endpoint)
+# MINIO_PRIVATE_BUCKET=<terraform output storage_bucket>
+# MINIO_ACCESS_KEY=<AccessKeyId>   MINIO_SECRET_KEY=<SecretAccessKey>
+```
+O cliente S3 da API fixa `us-east-1`, por isso o bucket fica lá mesmo se
+`aws_region` for outra. Prefere o MinIO do hub? `create_storage_bucket = false`.
+
 O Postgres precisa ser o **mesmo do hub** (schema `public` = hub, `opendriver` =
 esta API) e estar alcançável a partir da instância; libere o IP público
 (output) no firewall/`pg_hba` desse banco e prefira TLS na conexão.
 
-## 3.1 Mapas próprios (Nominatim + OSRM, Centro-Oeste)
+## 3.1 Mapas próprios (Nominatim + OSRM + tiles, Centro-Oeste)
 No `.env` da API, aponte para os serviços internos (sem porta pública):
 ```
 NOMINATIM_URL=http://nominatim:8080
 OSRM_URL=http://osrm:5000
 ```
-Depois, uma vez:
+Depois, uma vez (com o DNS já apontando):
 ```bash
-./infra/deploy.sh geo-setup   # swap de 4 GB, baixa o extrato e prepara o OSRM (minutos)
+./infra/deploy.sh geo-setup   # swap de 4 GB, OSRM, tiles (PMTiles + fontes + estilo) e Caddy
 ./infra/deploy.sh up          # o Nominatim importa no primeiro start: ~1–3 h
 ssh ubuntu@<ip> 'cd /opt/opendriver && docker compose -f docker-compose.yml -f docker-compose.geo.yml logs -f nominatim'
 ```
-Até a importação terminar, a busca de endereços responde "indisponível" e o
-preço usa a estimativa em linha reta; faça isso antes de abrir para usuários.
-Os dados ficam congelados (`FREEZE=true`); para atualizar o mapa, reimporte.
-Para outra região, troque a URL do extrato em `infra/geo/` (Geofabrik).
-> Os scripts de `infra/geo/` não foram testados contra a importação real
-> (o ambiente onde foram escritos não tinha AWS nem rede para os extratos).
-> Rode primeiro com o servidor sem tráfego e confira `free -m` / `df -h`.
+- **Fundo do mapa:** `https://<tiles_domain>/style.json` (MapLibre, tiles vetoriais
+  do Protomaps recortados para MT/MS/GO/DF, zoom até 14). No app, defina
+  `EXPO_PUBLIC_MAP_STYLE_URL` com essa URL no build (EAS).
+- Até a importação do Nominatim terminar, a busca de endereços responde
+  "indisponível" e o preço usa a estimativa em linha reta; faça isso antes de
+  abrir para usuários. Nominatim e tiles ficam congelados (dados de hoje); para
+  atualizar o mapa, reimporte.
+- Outra região: ajuste `PBF_URL` (compose) e `TILES_BBOX` (bbox `lon,lat,lon,lat`).
+- Estilo: `infra/geo/gen-style.mjs` regenera `tiles-style.template.json`.
+> Os scripts de `infra/geo/` não foram executados de ponta a ponta (o ambiente
+> onde foram escritos não tinha AWS nem Docker). Valide primeiro com o servidor
+> sem tráfego e confira `free -m` / `df -h`. Tamanho do PMTiles e tempos são
+> estimativas.
 
 ## 4. Deploy
 Da raiz do repositório:
@@ -83,6 +106,12 @@ Da raiz do repositório:
 ```
 Nunca rode `prisma migrate dev` nem `db push` contra o banco compartilhado.
 As atualizações seguintes: `push` → (`migrate`, se houver migration nova) → `up`.
+
+## Monitoramento
+`monitoring.tf`: alarmes CloudWatch com e-mail (SNS) para falha de hardware
+(com **recuperação automática** da instância), instância sem resposta e CPU
+acima de 80% por 30 min. **Não** monitora disco/memória (exigiria o agente do
+CloudWatch): confira `df -h` e `free -m` no primeiro mês.
 
 ## Alerta de custo
 `budgets.tf` cria um AWS Budget de **US$ 100** (`budget_limit_usd`) na conta toda,

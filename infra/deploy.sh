@@ -5,7 +5,7 @@
 #   ./infra/deploy.sh push      build da imagem + envio ao ECR
 #   ./infra/deploy.sh migrate   bootstrap + prisma migrate deploy (schema "opendriver")
 #   ./infra/deploy.sh up        puxa a imagem nova e reinicia a API
-#   ./infra/deploy.sh geo-setup prepara OSRM + copia Nominatim/OSRM (Centro-Oeste) para a instância
+#   ./infra/deploy.sh geo-setup prepara OSRM, tiles e Caddy (Centro-Oeste) na instância
 #   ./infra/deploy.sh status    containers e /health
 #
 # Migrations NÃO rodam sozinhas no "up": faça antes o backup do banco e o
@@ -45,8 +45,8 @@ case "${1:-}" in
       \$DC pull && \$DC up -d && docker image prune -f"
     ;;
   geo-setup)
-    scp -o StrictHostKeyChecking=accept-new infra/geo/docker-compose.geo.yml infra/geo/geo-prepare.sh "ubuntu@$IP:$APP_DIR/"
-    "${SSH[@]}" "cd $APP_DIR && bash geo-prepare.sh"
+    scp -o StrictHostKeyChecking=accept-new infra/geo/docker-compose.geo.yml infra/geo/geo-prepare.sh infra/geo/tiles-style.template.json "ubuntu@$IP:$APP_DIR/"
+    "${SSH[@]}" "cd $APP_DIR && API_DOMAIN=$DOMAIN TILES_DOMAIN=$(tfout tiles_domain) ACME_EMAIL=$(tfout acme_email) bash geo-prepare.sh"
     ;;
   status)
     "${SSH[@]}" "cd $APP_DIR && $DC \$DC ps"

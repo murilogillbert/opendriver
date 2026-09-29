@@ -98,3 +98,21 @@ variable "budget_time_unit" {
     error_message = "Use MONTHLY, QUARTERLY ou ANNUALLY."
   }
 }
+
+variable "tiles_domain" {
+  description = "Domínio público dos tiles do mapa (estilo, fontes e tiles vetoriais). Registro A para o mesmo public_ip."
+  type        = string
+  default     = "tiles.opendriver.com.br"
+}
+
+variable "create_storage_bucket" {
+  description = "Cria o bucket S3 privado (documentos de motoristas e gravações, sempre cifrados pela API). Use false para usar o MinIO do hub."
+  type        = bool
+  default     = true
+}
+
+variable "storage_bucket_name" {
+  description = "Nome do bucket (único no mundo). Vazio = opendriver-api-private-<id da conta>."
+  type        = string
+  default     = ""
+}
