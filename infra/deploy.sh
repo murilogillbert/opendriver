@@ -5,6 +5,7 @@
 #   ./infra/deploy.sh push      build da imagem + envio ao ECR
 #   ./infra/deploy.sh migrate   bootstrap + prisma migrate deploy (schema "opendriver")
 #   ./infra/deploy.sh up        puxa a imagem nova e reinicia a API
+#   ./infra/deploy.sh geo-setup prepara OSRM + copia Nominatim/OSRM (Centro-Oeste) para a instância
 #   ./infra/deploy.sh status    containers e /health
 #
 # Migrations NÃO rodam sozinhas no "up": faça antes o backup do banco e o
@@ -22,6 +23,8 @@ DOMAIN=$(tfout domain)
 TAG=${TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo latest)}
 SSH=(ssh -o StrictHostKeyChecking=accept-new "ubuntu@$IP")
 APP_DIR=/opt/opendriver
+# Inclui o compose de Nominatim/OSRM quando ele existe na instância (geo-setup).
+DC='DC="docker compose -f docker-compose.yml"; [ -f docker-compose.geo.yml ] && DC="$DC -f docker-compose.geo.yml";'
 
 case "${1:-}" in
   push)
@@ -34,15 +37,19 @@ case "${1:-}" in
   migrate)
     read -r -p "Backup do banco e snapshot do schema public já feitos? [digite sim] " ok
     [ "$ok" = "sim" ] || { echo "Abortado."; exit 1; }
-    "${SSH[@]}" "cd $APP_DIR && docker compose pull api && docker compose run --rm --no-deps api sh -c \
+    "${SSH[@]}" "cd $APP_DIR && $DC \$DC pull api && \$DC run --rm --no-deps api sh -c \
       'npx prisma db execute --schema prisma/schema.prisma --file prisma/bootstrap/001_migrations_table.sql && npx prisma migrate deploy'"
     ;;
   up)
     "${SSH[@]}" "cd $APP_DIR && test -s .env || { echo 'Preencha $APP_DIR/.env antes (modelo: backend/.env.example).'; exit 1; }; \
-      docker compose pull && docker compose up -d && docker image prune -f"
+      \$DC pull && \$DC up -d && docker image prune -f"
+    ;;
+  geo-setup)
+    scp -o StrictHostKeyChecking=accept-new infra/geo/docker-compose.geo.yml infra/geo/geo-prepare.sh "ubuntu@$IP:$APP_DIR/"
+    "${SSH[@]}" "cd $APP_DIR && bash geo-prepare.sh"
     ;;
   status)
-    "${SSH[@]}" "cd $APP_DIR && docker compose ps"
+    "${SSH[@]}" "cd $APP_DIR && $DC \$DC ps"
     curl -fsS "https://$DOMAIN/health" && echo
     ;;
   *)

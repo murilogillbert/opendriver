@@ -11,15 +11,15 @@ variable "name" {
 }
 
 variable "instance_type" {
-  description = "Tipo da instância. t3.small atende uma réplica da API (os jobs internos exigem uma só)."
+  description = "Tipo da instância. API + Nominatim + OSRM (Centro-Oeste) na mesma máquina pedem 8 GB de RAM (t3.large). Depois da importação, dá para testar t3.medium (4 GB) se `free -m` mostrar folga."
   type        = string
-  default     = "t3.small"
+  default     = "t3.large"
 }
 
 variable "root_volume_gb" {
-  description = "Tamanho do disco (gp3, criptografado)."
+  description = "Tamanho do disco (gp3, criptografado). Sistema + imagens + banco do Nominatim + dados do OSRM (Centro-Oeste): ~50 GB, com folga para a importação."
   type        = number
-  default     = 30
+  default     = 80
 }
 
 variable "domain" {

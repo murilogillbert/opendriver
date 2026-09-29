@@ -1,0 +1,28 @@
+# Nominatim (endereços) + OSRM (rotas) com o extrato do Centro-Oeste do Geofabrik.
+# Somam-se ao docker-compose.yml da API (mesma rede): sem portas públicas, só a
+# API os alcança. No .env da API use:
+#   NOMINATIM_URL=http://nominatim:8080
+#   OSRM_URL=http://osrm:5000
+services:
+  nominatim:
+    image: mediagis/nominatim:4.5
+    restart: unless-stopped
+    shm_size: 1gb
+    env_file: geo.env # NOMINATIM_PASSWORD (gerado por geo-prepare.sh)
+    environment:
+      PBF_URL: https://download.geofabrik.de/south-america/brazil/centro-oeste-latest.osm.pbf
+      IMPORT_STYLE: address # endereços com número; "street" ocupa menos disco
+      THREADS: "2"
+      FREEZE: "true" # sem atualizações contínuas: menos disco/CPU (reimporte para atualizar)
+    volumes:
+      - nominatim_data:/var/lib/postgresql/16/main
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/centro-oeste-latest.osrm
+    volumes:
+      - ./osrm:/data:ro
+
+volumes:
+  nominatim_data:
