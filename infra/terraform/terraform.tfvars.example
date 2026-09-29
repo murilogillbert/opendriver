@@ -1,5 +1,5 @@
 # Copie para terraform.tfvars (ignorado pelo git) e ajuste.
-aws_region = "sa-east-1"   # us-east-1 é ~35% mais barata, com mais latência
+aws_region = "us-east-1"   # sa-east-1 (São Paulo): menor latência, ~35% mais cara
 # instance_type  = "t3.large"   # 8 GB: API + Nominatim + OSRM (Centro-Oeste)
 domain     = "api-app.opendriver.com.br"
 acme_email = "voce@exemplo.com.br"

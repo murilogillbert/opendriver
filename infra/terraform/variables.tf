@@ -1,7 +1,7 @@
 variable "aws_region" {
-  description = "Região AWS. sa-east-1 (São Paulo) dá a menor latência para o Brasil."
+  description = "Região AWS. us-east-1 (Virgínia) é bem mais barata que sa-east-1; a latência para o Brasil é maior (~120–150 ms por chamada)."
   type        = string
-  default     = "sa-east-1"
+  default     = "us-east-1"
 }
 
 variable "name" {

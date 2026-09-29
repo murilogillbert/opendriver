@@ -98,7 +98,7 @@ de 80%, e quando a **previsão** da AWS indicar estouro de 100%.
 - Permissão IAM necessária para quem roda o `apply`: `budgets:*`.
 
 ## Custos e limites
-`t3.large` + 80 GB gp3 + Elastic IP + ECR: **estimativa de ~US$ 100/mês em `sa-east-1`** e ~US$ 65–70 em `us-east-1` (confirme na calculadora da AWS). Com um orçamento total de US$ 100, o alerta de 50% pode disparar em poucas semanas. Para reduzir: `aws_region = "us-east-1"` (mais latência para o Brasil) ou, depois da importação, testar `instance_type = "t3.medium"` (~metade do preço).
+`t3.large` + 80 GB gp3 + Elastic IP + ECR em `us-east-1` (padrão): **estimativa de ~US$ 65–70/mês** (confirme na calculadora da AWS); em `sa-east-1` (`aws_region`) sai a ~US$ 100, com menos latência para o Brasil. Com um orçamento total de US$ 100, o alerta de 50% pode disparar em poucas semanas. Para reduzir mais: depois da importação, testar `instance_type = "t3.medium"` (~metade do preço).
 Rode **uma** réplica (os jobs internos e o Socket.IO não escalam horizontalmente
 sem Redis/worker — ver `backend/README.md`).
 
