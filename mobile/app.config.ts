@@ -96,6 +96,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-router',
     'expo-status-bar',
     ['expo-secure-store', { faceIDPermission: false, configureAndroidBackup: true }],
+    'expo-asset',
     'expo-image',
     'expo-web-browser',
     'expo-font',
