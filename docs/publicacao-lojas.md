@@ -5,34 +5,39 @@ contas, conteúdo ou decisões do negócio.
 
 ## Infraestrutura
 
-- ⬜ API do OpenDriver no ar em `https://api-app.opendriver.com.br` (ver
-  [`backend/README.md`](../backend/README.md)), com o mesmo `JWT_SECRET` do hub,
-  `DATA_ENCRYPTION_KEY` guardada fora do servidor e migrations aplicadas.
-- ⬜ Instâncias próprias de **OSRM** (rotas) e **Nominatim** (endereços) com o
-  mapa do Brasil, e um servidor de **tiles** com estilo MapLibre
-  (`EXPO_PUBLIC_MAP_STYLE_URL`). Os servidores públicos do OpenStreetMap não
-  permitem uso comercial. Sem OSRM a API usa rota estimada (o preço continua
-  válido).
-- ⬜ Bucket privado `opendriver-private` no MinIO.
-- ⬜ Segundo webhook do Asaas apontando para a API do OpenDriver.
-- ⬜ `VITE_OPENDRIVER_API_URL` no build do painel do hub (telas Admin → OpenDriver)
-  e o domínio do painel em `CORS_ORIGINS` da API.
+- ✅ API do OpenDriver no ar, com o mesmo `JWT_SECRET` do hub,
+  `DATA_ENCRYPTION_KEY` própria e migrations aplicadas. Hoje rodando em servidor
+  de teste (Coolify, domínio `sslip.io`) em paralelo ao servidor de produção
+  atual — `api-app.opendriver.com.br` ainda aponta pro servidor antigo (sem
+  mapa) até o corte final ser feito.
+- ✅ **OSRM**, **Nominatim** (extrato Centro-Oeste: MT/MS/GO/DF) e servidor de
+  **tiles** (MapLibre) no ar e testados de ponta a ponta no servidor novo —
+  rota real, busca de endereço real, tiles reais (`tiles.opendriver.com.br`).
+  Cobertura nacional completa (fora Centro-Oeste) ainda não está no escopo.
+- ✅ Bucket privado `opendriver-private` no MinIO (servidor novo).
+- ⬜ Segundo webhook do Asaas apontando para a API do OpenDriver — pagamento
+  hoje é `mock` (simulado) em ambos os servidores, de propósito, até termos as
+  credenciais Asaas reais.
+- ✅ `VITE_OPENDRIVER_API_URL` no build do painel do hub e `CORS_ORIGINS` da API.
 
 ## Contas e identidade
 
-- ⬜ Conta Apple Developer (organização) e Google Play Console.
-- ⬜ Projeto EAS (`eas init`) → `EAS_PROJECT_ID`; `ascAppId` em `eas.json`;
-  chave de serviço do Google Play em `mobile/secrets/`.
-- ⬜ Logo em alta resolução: a atual tem 191×185 px. Substitua
-  `mobile/assets/brand/logo-source.png` por uma versão ≥ 1024 px e rode
-  `python3 mobile/scripts/generate-icons.py`.
+- ⬜ Conta Apple Developer (organização) e Google Play Console — ainda não
+  confirmadas/criadas.
+- ✅ Projeto EAS criado (`EAS_PROJECT_ID` configurado). ⬜ `ascAppId` em
+  `eas.json` e chave de serviço do Google Play em `mobile/secrets/` — ambos
+  ainda placeholder, dependem da conta Apple/Google acima.
+- ✅ Ícones do app (1024×1024, todas as variantes) já corretos pras lojas.
+  ⬜ `mobile/assets/brand/logo-source.png` (191×185) continua baixa resolução —
+  só importa se for regenerar os ícones a partir dele de novo.
 - ✅ Bundle id / package `br.com.opendriver.app` (variantes `.dev`/`.preview`).
 
 ## Conteúdo das lojas
 
-- ✅ Política de privacidade e termos públicos: `https://api-app.opendriver.com.br/legal/privacidade`
-  e `/legal/termos`. ⬜ **Revisar o texto com o jurídico** e definir
-  `LEGAL_COMPANY` (razão social) e `LEGAL_CONTACT_EMAIL` (encarregado/DPO) na API.
+- ✅ Política de privacidade e termos públicos. ⬜ Hoje com texto de exemplo
+  (`LEGAL_COMPANY`/`LEGAL_CONTACT_EMAIL` fictícios, por decisão consciente
+  enquanto testamos) — **precisa da razão social e e-mail reais antes de
+  publicar de verdade**.
 - ⬜ Screenshots (iPhone 6,7" e 6,5"; Android telefone), descrição, palavras-chave,
   categoria **Viagens / Mapas e navegação**, classificação etária.
 - ⬜ Conta de demonstração para a revisão (passageiro e motorista **aprovado**)
