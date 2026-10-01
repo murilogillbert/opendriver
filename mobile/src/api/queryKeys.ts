@@ -4,6 +4,8 @@ export const qk = {
   activeRide: ['ride', 'active'] as const,
   ride: (id: string) => ['ride', id] as const,
   liveRoute: (id: string, phase: string) => ['ride', id, 'live-route', phase] as const,
+  messages: (id: string) => ['ride', id, 'messages'] as const,
+  quickMessages: (id: string) => ['ride', id, 'quick-messages'] as const,
   history: (role: 'passenger' | 'driver') => ['rides', 'history', role] as const,
   cancelReasons: (role: 'passenger' | 'driver') => ['rides', 'cancel-reasons', role] as const,
   places: ['me', 'places'] as const,

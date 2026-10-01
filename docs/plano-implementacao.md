@@ -375,13 +375,18 @@ Mantidas do plano anterior (as que você aprovou), além das já incorporadas ac
 apenas mulheres §7, PIN §8, pin no mapa §9):
 
 1. **Chat/contato mascarado** motorista↔passageiro (mensagens rápidas + ligação com número mascarado).
-2. **ETA sempre visível** (já há `etaMany`/`liveRoute`): "chega em ~5 min" no card e no acompanhamento compartilhado.
-3. **Parada extra/mudança de destino** no meio da viagem, recotando o preço.
-4. **Antifraude de localização** (detectar mock GPS no app do motorista; `driverTracking` já coleta `accuracy`).
-5. **Gorjeta pós-corrida** opcional, cai no livro-caixa do motorista.
-6. **Métricas de qualidade por motorista** (aceite, cancelamento, nota) para matching e admin (RF17).
-7. **Modo acessibilidade** (categoria PCD, preferências salvas).
-8. **Recibo/nota por e-mail** ao concluir (reaproveita `infra/email.ts`).
+   **Status:** mensagens rápidas feitas (`domain/quickMessages.ts`, `RideMessage`, `POST/GET /rides/:id/messages`,
+   `QuickChatSheet`). A **ligação com número mascarado** não foi implementada — exige um provedor de
+   telefonia/SMS (ex.: Twilio) com número(s) próprio(s) e credenciais que o projeto não tem contratadas
+   hoje; é uma decisão de produto/custo recorrente (não só código), então ficou pendente até essa escolha
+   ser feita.
+2. **ETA sempre visível** (já há `etaMany`/`liveRoute`): "chega em ~5 min" no card e no acompanhamento compartilhado. **Status:** feito.
+3. **Parada extra/mudança de destino** no meio da viagem, recotando o preço. **Status:** feito (`PUT /rides/:id/destination`).
+4. **Antifraude de localização** (detectar mock GPS no app do motorista; `driverTracking` já coleta `accuracy`). **Status:** feito (`domain/mockLocation.ts`, detecção por "teleporte"; nunca bloqueia, só registra pro admin).
+5. **Gorjeta pós-corrida** opcional, cai no livro-caixa do motorista. **Status:** feito (`POST /rides/:id/tip`, só no cartão salvo).
+6. **Métricas de qualidade por motorista** (aceite, cancelamento, nota) para matching e admin (RF17). **Status:** feito (`domain/driverQuality.ts`).
+7. **Modo acessibilidade** (categoria PCD, preferências salvas). **Status:** feito como requisito de veículo adaptado (preferência do passageiro + veículo do motorista), não como categoria/tarifa nova.
+8. **Recibo/nota por e-mail** ao concluir (reaproveita `infra/email.ts`). **Status:** feito.
 
 ---
 

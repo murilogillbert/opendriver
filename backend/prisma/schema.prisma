@@ -92,6 +92,7 @@ model User {
   blockedUsers             BlockedUser[]     @relation("BlockedByUser")
   blockedByUsers           BlockedUser[]     @relation("UserBlocked")
   ridesAsScheduledFavorite Ride[]            @relation("RideScheduledFavorite")
+  rideMessages             RideMessage[]
 
   @@map("users")
   @@schema("public")
@@ -585,6 +586,7 @@ model Ride {
   earnings   DriverEarning[]
   incidents  SafetyIncident[]
   recordings RideRecording[]
+  messages   RideMessage[]
 
   @@index([passengerId, requestedAt])
   @@index([driverId, requestedAt])
@@ -773,6 +775,22 @@ model IncidentAttachment {
 }
 
 /// Áudio da viagem (RF16): arquivo cifrado no storage, apagado após a retenção.
+/// Chat mascarado (plano §11.1) — só mensagens rápidas predefinidas (domain/quickMessages.ts),
+/// sem texto livre. "code" é o que fica salvo; o rótulo em pt-BR vem do domínio, nunca hard-codado no app.
+model RideMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rideId    String   @map("ride_id") @db.Uuid
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  senderId  String   @map("sender_id") @db.Uuid
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  code      String   @db.VarChar(30)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([rideId, createdAt])
+  @@map("ride_messages")
+  @@schema("opendriver")
+}
+
 model RideRecording {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   rideId         String    @map("ride_id") @db.Uuid

@@ -1,11 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
+import { Pressable } from 'react-native';
 import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Ride } from '@/api/types';
 import { BottomPanel } from '@/components/ride/BottomPanel';
 import { CancelReasonSheet } from '@/components/ride/CancelReasonSheet';
 import { PersonCard } from '@/components/ride/PersonCard';
+import { QuickChatSheet } from '@/components/ride/QuickChatSheet';
 import { RatingInput } from '@/components/ride/RatingInput';
 import { SafetySheet } from '@/components/ride/SafetySheet';
 import { recordingActiveStore } from '@/components/SafetyRecorder';
@@ -13,6 +15,7 @@ import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { AppText, Badge, Card, Icon, KeyValue, Row, Stack } from '@/components/ui/primitives';
+import { lastMessageStore } from '@/context/RealtimeContext';
 import { useLiveRoute } from '@/hooks/useLiveRoute';
 import { useNow } from '@/hooks/useNow';
 import { formatCurrency } from '@/lib/format';
@@ -33,9 +36,12 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
   const recording = useStore(recordingActiveStore);
   const [busy, setBusy] = useState<string | null>(null);
   const [safety, setSafety] = useState(false);
+  const [chat, setChat] = useState(false);
   const [cancelSheet, setCancelSheet] = useState(false);
   const [stars, setStars] = useState(0);
   const [pin, setPin] = useState('');
+  const lastMessage = useStore(lastMessageStore);
+  const unreadMessage = lastMessage?.rideId === ride.id && lastMessage.senderRole !== ride.role ? lastMessage : null;
 
   const put = (next: Ride) => {
     queryClient.setQueryData(qk.ride(next.id), next);
@@ -116,8 +122,19 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
         </Row>
         {etaText ? <AppText variant="small">{etaText}</AppText> : null}
         {ride.status === 'InProgress' && recording ? <Badge label="Gravando áudio da viagem" tone="danger" icon="mic" /> : null}
+        {unreadMessage ? (
+          <Pressable onPress={() => setChat(true)} accessibilityRole="button">
+            <Row gap={6}>
+              <Icon name="chatbubble-ellipses" size={16} color={colors.blue} />
+              <AppText variant="small" color={colors.blue}>
+                {ride.passenger?.name ?? 'Passageiro'}: {unreadMessage.label}
+              </AppText>
+            </Row>
+          </Pressable>
+        ) : null}
         <Row gap={spacing.sm}>
           <Button title="Navegar" icon="navigate" variant="secondary" size="sm" style={{ flex: 1 }} onPress={() => void openNavigation(target, target.address)} />
+          <Button title="Chat" icon="chatbubble-ellipses-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setChat(true)} />
           {can(ride, 'safety') ? <Button title="Segurança" icon="shield-checkmark-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setSafety(true)} /> : null}
         </Row>
         {can(ride, 'start') ? (
@@ -198,6 +215,14 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
         {body}
       </BottomPanel>
       {can(ride, 'safety') ? <SafetySheet ride={ride} visible={safety} onClose={() => setSafety(false)} /> : null}
+      <QuickChatSheet
+        ride={ride}
+        visible={chat}
+        onClose={() => {
+          setChat(false);
+          if (lastMessageStore.get()?.rideId === ride.id) lastMessageStore.set(null);
+        }}
+      />
       {can(ride, 'cancel') ? (
         <CancelReasonSheet
           ride={ride}

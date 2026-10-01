@@ -24,10 +24,12 @@ import type {
   Place,
   PlacesResponse,
   Quote,
+  QuickMessage,
   RecordingSetting,
   RecordingTerms,
   LiveRoute,
   Ride,
+  RideMessage,
   SavedPlace,
   TrustedContact,
   UploadFile,
@@ -116,6 +118,9 @@ export function createApi(http: HttpClient) {
       tip: (id: string, amount: number) => http.post<{ amount: number }>(`/rides/${enc(id)}/tip`, { amount }),
       changeDestination: (id: string, input: { lat: number; lng: number; address?: string }) =>
         http.request<Ride>(`/rides/${enc(id)}/destination`, { method: 'PUT', body: input }),
+      quickMessages: (id: string) => http.get<QuickMessage[]>(`/rides/${enc(id)}/messages/quick`),
+      messages: (id: string) => http.get<RideMessage[]>(`/rides/${enc(id)}/messages`),
+      sendMessage: (id: string, code: string) => http.post<RideMessage>(`/rides/${enc(id)}/messages`, { code }),
       emergency: (id: string, at?: LatLng | null) => http.post<EmergencyResult>(`/rides/${enc(id)}/emergency`, at ?? {}),
       uploadRecording: (id: string, file: UploadFile) =>
         http.request<{ id: string; expiresAt: string }>(`/rides/${enc(id)}/recordings`, { method: 'POST', body: form(file), timeoutMs: 120_000 }),

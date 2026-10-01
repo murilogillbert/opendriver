@@ -4,7 +4,7 @@ import { AppState } from 'react-native';
 import { io, type Socket } from 'socket.io-client';
 import { api, tokenStorage } from '@/api/client';
 import { qk } from '@/api/queryKeys';
-import type { DriverLocationEvent, Offer, Ride } from '@/api/types';
+import type { DriverLocationEvent, Offer, Ride, RideMessage } from '@/api/types';
 import { env } from '@/config/env';
 import { isActive } from '@/lib/ride';
 import { createStore, useStore } from '@/lib/store';
@@ -12,6 +12,8 @@ import { useAuth } from './AuthContext';
 
 /** Última posição do motorista recebida (passageiro acompanha no mapa — RF06). */
 export const driverLocationStore = createStore<DriverLocationEvent | null>(null);
+/** Última mensagem rápida recebida (chat mascarado — plano §11.1), pra mostrar um aviso no painel da corrida. */
+export const lastMessageStore = createStore<(RideMessage & { rideId: string }) | null>(null);
 /** Conexão em tempo real ativa? Sem ela as telas passam a consultar a API periodicamente. */
 export const connectionStore = createStore(false);
 
@@ -96,6 +98,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       const current = queryClient.getQueryData<Offer | null>(qk.offer);
       if (current?.offerId === e.offerId) queryClient.setQueryData(qk.offer, null);
     });
+    // Chat mascarado (plano §11.1): só anexa se a lista já estiver em cache (chat aberto nesta sessão).
+    socket.on('ride:message', (msg: RideMessage & { rideId: string }) => {
+      lastMessageStore.set(msg);
+      queryClient.setQueryData(qk.messages(msg.rideId), (prev: RideMessage[] | undefined) => (prev ? [...prev, msg] : prev));
+    });
 
     // Volta do segundo plano: reconecta já e ressincroniza.
     const sub = AppState.addEventListener('change', (s) => {
@@ -113,6 +120,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       socketRef.current = null;
       connectionStore.set(false);
       driverLocationStore.set(null);
+      lastMessageStore.set(null);
     };
   }, [status, queryClient]);
 

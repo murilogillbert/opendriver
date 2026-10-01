@@ -6,6 +6,7 @@ import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
 import { COMPLAINT_CATEGORIES, COMPLAINT_CATEGORY_CODES } from '../../src/domain/complaintCategories.js';
 import { acceptanceRate, cancellationRate } from '../../src/domain/driverQuality.js';
 import { isImplausibleJump } from '../../src/domain/mockLocation.js';
+import { DRIVER_QUICK_MESSAGE_CODES, PASSENGER_QUICK_MESSAGE_CODES, quickMessagesFor } from '../../src/domain/quickMessages.js';
 
 describe('geo', () => {
   it('haversine ~ distância conhecida', () => {
@@ -108,6 +109,15 @@ describe('antifraude de localização (plano §11.4)', () => {
   });
   it('deslocamento pequeno (jitter de GPS) nunca é flagrado, mesmo instantâneo', () => {
     expect(isImplausibleJump(a.lat, a.lng, new Date('2026-01-01T12:00:00Z'), a.lat + 0.0001, a.lng, new Date('2026-01-01T12:00:00Z'))).toBe(false);
+  });
+});
+
+describe('chat mascarado: mensagens rápidas (plano §11.1)', () => {
+  it('listas por papel não se misturam e não têm códigos duplicados', () => {
+    expect(quickMessagesFor('passenger').map((m) => m.code)).toEqual(PASSENGER_QUICK_MESSAGE_CODES);
+    expect(quickMessagesFor('driver').map((m) => m.code)).toEqual(DRIVER_QUICK_MESSAGE_CODES);
+    const all = [...PASSENGER_QUICK_MESSAGE_CODES, ...DRIVER_QUICK_MESSAGE_CODES];
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 

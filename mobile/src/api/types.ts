@@ -92,6 +92,20 @@ export interface Address extends LatLng {
   address: string;
 }
 
+/** Chat mascarado: só mensagens rápidas predefinidas (plano §11.1) — a lista certa por papel vem da API. */
+export interface QuickMessage {
+  code: string;
+  label: string;
+}
+
+export interface RideMessage {
+  id: string;
+  senderRole: 'passenger' | 'driver';
+  code: string;
+  label: string;
+  createdAt: string;
+}
+
 export interface QuotePrice {
   category: Category;
   label: string;

@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Share, StyleSheet, Vibration } from 'react-native';
+import { ActivityIndicator, Pressable, Share, StyleSheet, Vibration } from 'react-native';
 import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Ride } from '@/api/types';
@@ -10,6 +10,7 @@ import { BottomPanel } from '@/components/ride/BottomPanel';
 import { CancelReasonSheet } from '@/components/ride/CancelReasonSheet';
 import { PaymentDue } from '@/components/ride/PaymentDue';
 import { PersonCard } from '@/components/ride/PersonCard';
+import { QuickChatSheet } from '@/components/ride/QuickChatSheet';
 import { RatingInput, ratingLabel } from '@/components/ride/RatingInput';
 import { SafetySheet } from '@/components/ride/SafetySheet';
 import { recordingActiveStore } from '@/components/SafetyRecorder';
@@ -17,7 +18,7 @@ import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { AppText, Badge, Card, Divider, Icon, KeyValue, Row, Stack } from '@/components/ui/primitives';
-import { driverLocationStore } from '@/context/RealtimeContext';
+import { driverLocationStore, lastMessageStore } from '@/context/RealtimeContext';
 import { formatCurrency, formatDistance, formatTime } from '@/lib/format';
 import { haversineMeters } from '@/lib/geo';
 import { alertError } from '@/lib/recovery';
@@ -51,6 +52,7 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const queryClient = useQueryClient();
   const toast = useToast();
   const [safety, setSafety] = useState(false);
+  const [chat, setChat] = useState(false);
   const [cancelSheet, setCancelSheet] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [stars, setStars] = useState(0);
@@ -58,6 +60,8 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const [tipAmount, setTipAmount] = useState<number | null>(null);
   const driverLoc = useStore(driverLocationStore);
   const live = driverLoc?.rideId === ride.id ? driverLoc : null;
+  const lastMessage = useStore(lastMessageStore);
+  const unreadMessage = lastMessage?.rideId === ride.id && lastMessage.senderRole !== ride.role ? lastMessage : null;
   const liveRoute = useLiveRoute(ride);
   const now = useNow(15_000, ride.status === 'Searching' || ride.status === 'DriverAssigned' || ride.status === 'InProgress');
 
@@ -137,12 +141,25 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   };
 
   const sideActions = (
-    <Row gap={spacing.sm}>
-      {can(ride, 'safety') ? <Button title="Segurança" icon="shield-checkmark-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setSafety(true)} /> : null}
-      {can(ride, 'share') ? (
-        <Button title="Compartilhar" icon="share-social-outline" variant="outline" size="sm" style={{ flex: 1 }} loading={busy === 'share'} onPress={share} />
+    <>
+      {unreadMessage ? (
+        <Pressable onPress={() => setChat(true)} accessibilityRole="button">
+          <Row gap={6}>
+            <Icon name="chatbubble-ellipses" size={16} color={colors.blue} />
+            <AppText variant="small" color={colors.blue}>
+              {ride.driver?.name ?? 'Motorista'}: {unreadMessage.label}
+            </AppText>
+          </Row>
+        </Pressable>
       ) : null}
-    </Row>
+      <Row gap={spacing.sm}>
+        <Button title="Chat" icon="chatbubble-ellipses-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setChat(true)} />
+        {can(ride, 'safety') ? <Button title="Segurança" icon="shield-checkmark-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setSafety(true)} /> : null}
+        {can(ride, 'share') ? (
+          <Button title="Compartilhar" icon="share-social-outline" variant="outline" size="sm" style={{ flex: 1 }} loading={busy === 'share'} onPress={share} />
+        ) : null}
+      </Row>
+    </>
   );
 
   let body: ReactNode = null;
@@ -328,6 +345,14 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
         {body}
       </BottomPanel>
       {can(ride, 'safety') ? <SafetySheet ride={ride} visible={safety} onClose={() => setSafety(false)} /> : null}
+      <QuickChatSheet
+        ride={ride}
+        visible={chat}
+        onClose={() => {
+          setChat(false);
+          if (lastMessageStore.get()?.rideId === ride.id) lastMessageStore.set(null);
+        }}
+      />
       {can(ride, 'cancel') ? (
         <CancelReasonSheet
           ride={ride}

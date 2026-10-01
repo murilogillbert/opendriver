@@ -47,4 +47,6 @@ export const limits = {
   share: userRateLimiter('share', 60 * 60_000, 30),
   payout: userRateLimiter('payout', 60 * 60_000, 5),
   upload: userRateLimiter('upload', 60 * 60_000, 40),
+  /// Chat mascarado (plano §11.1) — mensagens rápidas, mas sem permitir espamar a outra parte.
+  message: userRateLimiter('message', 60_000, 20),
 };

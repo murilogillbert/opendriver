@@ -5,6 +5,7 @@ import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
 import { geoRateLimiter, limits } from '../../middleware/rateLimit.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { acceptOffer, currentOffer, declineOffer } from './dispatch.js';
+import { listMessages, myQuickMessages, sendMessage, sendMessageSchema } from './message.service.js';
 import { createQuote, quoteSchema } from './quote.service.js';
 import * as rides from './rides.service.js';
 import { tipRide, tipSchema } from './tip.service.js';
@@ -73,6 +74,19 @@ ridesRouter.post('/rides/:id/share', requireAuth, limits.share, async (req, res)
 
 ridesRouter.put('/rides/:id/destination', requireAuth, geoRateLimiter, validateBody(rides.changeDestinationSchema), async (req, res) => {
   res.json(envelope(await rides.changeDestination(id(req.params.id), userId(req), req.body)));
+});
+
+// Chat mascarado — só mensagens rápidas predefinidas (plano §11.1).
+ridesRouter.get('/rides/:id/messages/quick', requireAuth, async (req, res) => {
+  res.json(envelope(await myQuickMessages(id(req.params.id), userId(req))));
+});
+
+ridesRouter.get('/rides/:id/messages', requireAuth, async (req, res) => {
+  res.json(envelope(await listMessages(id(req.params.id), userId(req))));
+});
+
+ridesRouter.post('/rides/:id/messages', requireAuth, limits.message, validateBody(sendMessageSchema), async (req, res) => {
+  res.status(201).json(envelope(await sendMessage(id(req.params.id), userId(req), req.body.code)));
 });
 
 ridesRouter.post('/rides/:id/tip', requireAuth, validateBody(tipSchema), async (req, res) => {
