@@ -255,6 +255,8 @@ enum EarningType {
   CancellationPenalty
   Payout
   Adjustment
+  /// Gorjeta pós-corrida (plano §11.5) — cobrada no cartão do passageiro, creditada só se a cobrança for aprovada.
+  Tip
 
   @@schema("opendriver")
 }

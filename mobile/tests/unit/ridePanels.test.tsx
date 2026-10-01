@@ -50,6 +50,8 @@ const base: Ride = {
   completedAt: null,
   cancelledAt: null,
   cancelledBy: null,
+  tipAmount: null,
+  canTip: false,
 };
 
 const noop = () => undefined;

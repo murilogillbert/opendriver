@@ -33,6 +33,22 @@ export default function RideDetail() {
   const [stars, setStars] = useState(0);
   const [sending, setSending] = useState(false);
   const [cancelSheet, setCancelSheet] = useState(false);
+  const [tipAmount, setTipAmount] = useState<number | null>(null);
+  const [tipping, setTipping] = useState(false);
+
+  const sendTip = async () => {
+    if (!tipAmount) return;
+    setTipping(true);
+    try {
+      await api.rides.tip(id, tipAmount);
+      await q.refetch();
+      toast.success('Gorjeta enviada. Obrigado!');
+    } catch (err) {
+      alertError(err, 'Não foi possível dar a gorjeta');
+    } finally {
+      setTipping(false);
+    }
+  };
 
   const onCancelled = async (res: { cancelled: boolean; cancellationFee?: number }) => {
     setCancelSheet(false);
@@ -164,6 +180,27 @@ export default function RideDetail() {
           </Card>
 
           {ride.role === 'passenger' ? <PaymentDue ride={ride} /> : null}
+
+          {ride.canTip ? (
+            <Card style={{ gap: spacing.sm }}>
+              <AppText variant="bodyStrong">Quer dar uma gorjeta pro motorista?</AppText>
+              <Row gap={spacing.sm}>
+                {[2, 5, 10].map((v) => (
+                  <Button
+                    key={v}
+                    title={formatCurrency(v)}
+                    variant={tipAmount === v ? 'secondary' : 'outline'}
+                    size="sm"
+                    style={{ flex: 1 }}
+                    onPress={() => setTipAmount(v)}
+                  />
+                ))}
+              </Row>
+              <Button title={tipAmount ? `Dar gorjeta de ${formatCurrency(tipAmount)}` : 'Escolha um valor'} disabled={!tipAmount} loading={tipping} onPress={sendTip} />
+            </Card>
+          ) : ride.tipAmount ? (
+            <AppText variant="small">Você deu {formatCurrency(ride.tipAmount)} de gorjeta. Obrigado!</AppText>
+          ) : null}
 
           {can(ride, 'rate') ? (
             <Stack>

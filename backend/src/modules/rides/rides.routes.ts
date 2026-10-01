@@ -7,6 +7,7 @@ import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { acceptOffer, currentOffer, declineOffer } from './dispatch.js';
 import { createQuote, quoteSchema } from './quote.service.js';
 import * as rides from './rides.service.js';
+import { tipRide, tipSchema } from './tip.service.js';
 
 export const ridesRouter = Router();
 const asDriver = [requireAuth, requireRole('Driver')] as const;
@@ -68,6 +69,10 @@ ridesRouter.post('/rides/:id/rating', requireAuth, validateBody(rides.ratingSche
 
 ridesRouter.post('/rides/:id/share', requireAuth, limits.share, async (req, res) => {
   res.json(envelope(await rides.shareRide(id(req.params.id), userId(req))));
+});
+
+ridesRouter.post('/rides/:id/tip', requireAuth, validateBody(tipSchema), async (req, res) => {
+  res.json(envelope(await tipRide(id(req.params.id), userId(req), req.body.amount)));
 });
 
 // ---------- Motorista ----------

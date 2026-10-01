@@ -175,6 +175,9 @@ export interface Ride {
   /** Plano §5 — só preenchido em corridas agendadas. */
   scheduledAt?: string | null;
   scheduledFavoriteDriverName?: string | null;
+  /** Plano §11.5 — gorjeta opcional, só cobrável no cartão salvo (nunca Pix). */
+  tipAmount: number | null;
+  canTip: boolean;
 }
 
 export interface Page<T> {

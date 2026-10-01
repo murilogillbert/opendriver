@@ -13,6 +13,8 @@ export const rideInclude = {
   payments: { orderBy: { createdAt: 'desc' as const }, take: 1 },
   // Oferta aceita: estimativa de chegada do motorista ao embarque (no aceite).
   offers: { where: { status: 'Accepted' as const }, select: { pickupEtaS: true, respondedAt: true }, orderBy: { respondedAt: 'desc' as const }, take: 1 },
+  // Gorjeta já dada nesta corrida (plano §11.5) — no máximo uma (tip.service.ts garante isso).
+  earnings: { where: { type: 'Tip' as const }, select: { amount: true }, take: 1 },
 } satisfies Prisma.RideInclude;
 
 export type RideRow = Prisma.RideGetPayload<{ include: typeof rideInclude }>;
@@ -96,6 +98,9 @@ export function toRideDto(r: RideRow, viewerId: string) {
     /// Plano §5 — só preenchido em corridas agendadas.
     scheduledAt: r.scheduledAt,
     scheduledFavoriteDriverName: r.scheduledFavoriteDriver?.name ?? null,
+    /// Plano §11.5 — gorjeta opcional, só cobrável no cartão salvo (nunca Pix).
+    tipAmount: r.earnings[0] ? round2(r.earnings[0].amount) : null,
+    canTip: role === 'passenger' && r.status === 'Completed' && !r.earnings[0] && r.paymentMethodType === 'Card',
     /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
     pickupEta:
       r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]

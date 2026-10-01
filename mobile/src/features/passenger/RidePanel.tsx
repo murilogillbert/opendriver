@@ -54,6 +54,7 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const [busy, setBusy] = useState<string | null>(null);
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState('');
+  const [tipAmount, setTipAmount] = useState<number | null>(null);
   const driverLoc = useStore(driverLocationStore);
   const live = driverLoc?.rideId === ride.id ? driverLoc : null;
   const liveRoute = useLiveRoute(ride);
@@ -110,6 +111,20 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
       else finish();
     } catch (err) {
       alertError(err, 'Não foi possível enviar a avaliação');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sendTip = async () => {
+    if (!tipAmount) return;
+    setBusy('tip');
+    try {
+      await api.rides.tip(ride.id, tipAmount);
+      update({ ...ride, tipAmount, canTip: false });
+      toast.success('Gorjeta enviada. Obrigado!');
+    } catch (err) {
+      alertError(err, 'Não foi possível dar a gorjeta');
     } finally {
       setBusy(null);
     }
@@ -218,6 +233,26 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
             ) : null}
           </Card>
           <PaymentDue ride={ride} />
+          {ride.canTip ? (
+            <Card style={{ gap: spacing.sm }}>
+              <AppText variant="bodyStrong">Quer dar uma gorjeta pro motorista?</AppText>
+              <Row gap={spacing.sm}>
+                {[2, 5, 10].map((v) => (
+                  <Button
+                    key={v}
+                    title={formatCurrency(v)}
+                    variant={tipAmount === v ? 'secondary' : 'outline'}
+                    size="sm"
+                    style={{ flex: 1 }}
+                    onPress={() => setTipAmount(v)}
+                  />
+                ))}
+              </Row>
+              <Button title={tipAmount ? `Dar gorjeta de ${formatCurrency(tipAmount)}` : 'Escolha um valor'} disabled={!tipAmount} loading={busy === 'tip'} onPress={sendTip} />
+            </Card>
+          ) : ride.tipAmount ? (
+            <AppText variant="small">Você deu {formatCurrency(ride.tipAmount)} de gorjeta. Obrigado!</AppText>
+          ) : null}
           {can(ride, 'rate') ? (
             <Stack>
               <Divider />
