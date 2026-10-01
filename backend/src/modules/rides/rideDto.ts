@@ -101,6 +101,8 @@ export function toRideDto(r: RideRow, viewerId: string) {
     /// Plano §11.5 — gorjeta opcional, só cobrável no cartão salvo (nunca Pix).
     tipAmount: r.earnings[0] ? round2(r.earnings[0].amount) : null,
     canTip: role === 'passenger' && r.status === 'Completed' && !r.earnings[0] && r.paymentMethodType === 'Card',
+    /// Plano §11.7 — travado no pedido; motorista recebeu a oferta porque o veículo é adaptado.
+    accessibilityRequired: r.accessibilityRequired,
     /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
     pickupEta:
       r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]

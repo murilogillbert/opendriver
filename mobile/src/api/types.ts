@@ -27,6 +27,8 @@ export interface Me extends User {
     useHubCashback: boolean;
     rating: number | null;
     recordingEnabled: boolean;
+    /** Modo acessibilidade (plano §11.7) — preferência salva, usada como padrão ao pedir corrida. */
+    wheelchairAccessible: boolean;
   } | null;
   driver: {
     status: DriverStatus;
@@ -178,6 +180,8 @@ export interface Ride {
   /** Plano §11.5 — gorjeta opcional, só cobrável no cartão salvo (nunca Pix). */
   tipAmount: number | null;
   canTip: boolean;
+  /** Plano §11.7 — travado no pedido; motorista recebeu a oferta porque o veículo é adaptado. */
+  accessibilityRequired: boolean;
 }
 
 export interface Page<T> {
@@ -251,6 +255,8 @@ export interface Vehicle {
   rejectionReason: string | null;
   hasCrlv: boolean;
   validationStatus: VehicleValidationStatus;
+  /** Veículo adaptado para cadeira de rodas (plano §11.7). */
+  wheelchairAccessible: boolean;
 }
 
 export interface DriverProfile {
@@ -288,6 +294,7 @@ export interface VehicleInput {
   renavam?: string;
   uf?: string;
   chassi?: string;
+  wheelchairAccessible?: boolean;
 }
 
 export interface EarningsSummary {

@@ -84,6 +84,7 @@ export default function Vehicles() {
                   </Row>
                   {v.rejectionReason ? <AppText variant="small">{v.rejectionReason}</AppText> : null}
                   {validationHint[v.validationStatus] ? <AppText variant="small">{validationHint[v.validationStatus]}</AppText> : null}
+                  {v.wheelchairAccessible ? <Badge label="Adaptado p/ cadeira de rodas" tone="info" icon="accessibility-outline" /> : null}
                   <DocumentPhotoField label="CRLV" hint="Documento do veículo, legível." done={v.hasCrlv} aspect={[3, 4]} onUpload={uploadCrlv(v)} />
                   <Row gap={spacing.sm}>
                     {current ? (

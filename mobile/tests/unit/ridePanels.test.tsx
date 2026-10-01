@@ -52,6 +52,7 @@ const base: Ride = {
   cancelledBy: null,
   tipAmount: null,
   canTip: false,
+  accessibilityRequired: false,
 };
 
 const noop = () => undefined;

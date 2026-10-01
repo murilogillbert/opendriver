@@ -28,12 +28,25 @@ const driverStatusText: Record<string, string> = {
 
 /** Aba Conta (passageiro e motorista): menus agrupados, só o que se aplica ao modo. */
 export function AccountScreen() {
-  const { me, mode, isDriver, setMode, signOut } = useAuth();
+  const { me, mode, isDriver, setMode, signOut, refreshMe } = useAuth();
   const toast = useToast();
   const { data: ride } = useActiveRide();
   const [sending, setSending] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [savingAccessibility, setSavingAccessibility] = useState(false);
   const inRide = isActive(ride);
+
+  const setAccessibility = async (v: boolean) => {
+    setSavingAccessibility(true);
+    try {
+      await api.me.setAccessibility(v);
+      await refreshMe();
+    } catch (err) {
+      alertError(err, 'Não foi possível salvar');
+    } finally {
+      setSavingAccessibility(false);
+    }
+  };
 
   const resend = async () => {
     if (!me) return;
@@ -126,6 +139,17 @@ export function AccountScreen() {
               />
               <ListRow icon="bookmark-outline" title="Locais salvos" onPress={() => router.push('/places')} />
               <ListRow icon="star-outline" title="Motoristas favoritos" onPress={() => router.push('/favorites')} />
+            </Card>
+
+            <SectionTitle title="Acessibilidade" />
+            <Card style={{ padding: spacing.xs }}>
+              <SwitchRow
+                title="Preciso de veículo acessível"
+                subtitle="Suas corridas só são oferecidas a motoristas com carro adaptado para cadeira de rodas"
+                value={!!me?.passenger?.wheelchairAccessible}
+                disabled={savingAccessibility}
+                onValueChange={(v) => void setAccessibility(v)}
+              />
             </Card>
           </>
         )}

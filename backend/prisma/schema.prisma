@@ -331,6 +331,8 @@ model PassengerProfile {
   recordingEnabled       Boolean   @default(false) @map("recording_enabled")
   recordingConsentAt     DateTime? @map("recording_consent_at")
   recordingConsentVer    String?   @map("recording_consent_version") @db.VarChar(40)
+  /// Modo acessibilidade (plano §11.7): preferência salva, usada como padrão ao pedir corrida.
+  wheelchairAccessible   Boolean   @default(false) @map("wheelchair_accessible")
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -339,21 +341,23 @@ model PassengerProfile {
 }
 
 model Vehicle {
-  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  driverId        String          @map("driver_id") @db.Uuid
-  driver          User            @relation(fields: [driverId], references: [id], onDelete: Restrict)
-  plate           String          @db.VarChar(10)
-  brand           String          @db.VarChar(60)
-  model           String          @db.VarChar(60)
-  color           String          @db.VarChar(40)
-  year            Int
-  category        VehicleCategory @default(Economy)
-  crlvKey         String?         @map("crlv_key")
-  status          VehicleStatus   @default(InReview)
-  rejectionReason String?         @map("rejection_reason") @db.VarChar(400)
-  active          Boolean         @default(true)
-  createdAt       DateTime        @default(now()) @map("created_at")
-  rides           Ride[]
+  id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId             String          @map("driver_id") @db.Uuid
+  driver               User            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  plate                String          @db.VarChar(10)
+  brand                String          @db.VarChar(60)
+  model                String          @db.VarChar(60)
+  color                String          @db.VarChar(40)
+  year                 Int
+  category             VehicleCategory @default(Economy)
+  crlvKey              String?         @map("crlv_key")
+  status               VehicleStatus   @default(InReview)
+  rejectionReason      String?         @map("rejection_reason") @db.VarChar(400)
+  active               Boolean         @default(true)
+  /// Veículo adaptado para cadeira de rodas (plano §11.7) — autodeclarado pelo motorista.
+  wheelchairAccessible Boolean         @default(false) @map("wheelchair_accessible")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  rides                Ride[]
 
   /// Dados exigidos para consulta na Infosimples (Detran Unificada) — §4.
   renavam          String?                 @db.VarChar(11)
@@ -567,6 +571,8 @@ model Ride {
   scheduledFavoriteDriverId String?           @map("scheduled_favorite_driver_id") @db.Uuid
   scheduledFavoriteDriver   User?             @relation("RideScheduledFavorite", fields: [scheduledFavoriteDriverId], references: [id], onDelete: Restrict)
   isScheduled               Boolean           @default(false) @map("is_scheduled")
+  /// Modo acessibilidade (plano §11.7) — travado no pedido; dispatch.ts só oferece a motoristas com veículo adaptado.
+  accessibilityRequired     Boolean           @default(false) @map("accessibility_required")
   updatedAt                 DateTime          @default(now()) @updatedAt @map("updated_at")
 
   offers     RideOffer[]

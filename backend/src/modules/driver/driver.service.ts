@@ -47,6 +47,8 @@ export const vehicleSchema = z.object({
     .refine((v) => /^[A-Z]{2}$/.test(v), 'UF inválida.')
     .optional(),
   chassi: z.string().trim().min(5).max(30).optional(),
+  /// Autodeclarado pelo motorista (plano §11.7) — dispatch.ts só oferece corridas com esse requisito a quem marcou isto.
+  wheelchairAccessible: z.boolean().optional().default(false),
 });
 
 export const pixSchema = z.object({
@@ -90,6 +92,7 @@ function toVehicleDto(v: Vehicle) {
     rejectionReason: v.rejectionReason,
     hasCrlv: !!v.crlvKey,
     validationStatus: v.validationStatus,
+    wheelchairAccessible: v.wheelchairAccessible,
   };
 }
 

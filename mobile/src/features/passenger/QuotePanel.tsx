@@ -51,6 +51,7 @@ export function QuotePanel({
   const [category, setCategory] = useState<Category | null>(null);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [useCashback, setUseCashback] = useState<boolean | null>(null);
+  const [accessibilityOverride, setAccessibilityOverride] = useState<boolean | null>(null);
   const [details, setDetails] = useState(false);
   const [picker, setPicker] = useState(false);
   const [guestName, setGuestName] = useState('');
@@ -84,6 +85,7 @@ export function QuotePanel({
   const toPay = selected ? Math.max(0, selected.fare - cashbackUsed) : 0;
   const needsCpf = !me?.cpf;
   const guestNameMissing = needsGuestName && !guestName.trim();
+  const accessibilityRequired = accessibilityOverride ?? !!me?.passenger?.wheelchairAccessible;
 
   const request = useMutation({
     mutationFn: () =>
@@ -95,6 +97,7 @@ export function QuotePanel({
         guestPassengerName: needsGuestName ? guestName.trim() : undefined,
         scheduledAt: scheduledAt ?? undefined,
         favoriteDriverId: scheduledAt ? (draft.favoriteDriverId ?? undefined) : undefined,
+        accessibilityRequired,
       }),
     onSuccess: (ride) => {
       AsyncStorage.setItem(LAST_CATEGORY, ride.category).catch(() => undefined);
@@ -230,6 +233,13 @@ export function QuotePanel({
           onValueChange={setUseCashback}
         />
       ) : null}
+
+      <SwitchRow
+        title="Preciso de veículo acessível"
+        subtitle="Só motoristas com carro adaptado para cadeira de rodas recebem esta corrida"
+        value={accessibilityRequired}
+        onValueChange={setAccessibilityOverride}
+      />
 
       {needsGuestName ? (
         <Card style={{ gap: spacing.sm }}>

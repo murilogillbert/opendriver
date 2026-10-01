@@ -82,6 +82,7 @@ export function createApi(http: HttpClient) {
       unblock: (userId: string) => http.del<void>(`/me/blocked/${enc(userId)}`),
       recordingTerms: () => http.get<RecordingTerms>('/me/recording'),
       setRecording: (enabled: boolean, consentVersion?: string) => http.put<RecordingSetting>('/me/recording', { enabled, consentVersion }),
+      setAccessibility: (wheelchairAccessible: boolean) => http.put<{ wheelchairAccessible: boolean }>('/me/accessibility', { wheelchairAccessible }),
     },
     geo: {
       search: (q: string, near?: LatLng | null, signal?: AbortSignal) =>
@@ -99,6 +100,7 @@ export function createApi(http: HttpClient) {
         guestPassengerName?: string;
         scheduledAt?: Date;
         favoriteDriverId?: string;
+        accessibilityRequired?: boolean;
       }) => http.post<Ride>('/rides', { ...input, scheduledAt: input.scheduledAt?.toISOString() }),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),

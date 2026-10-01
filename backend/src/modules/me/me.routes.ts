@@ -68,6 +68,17 @@ meRouter.delete('/me/places/:id', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+/** Modo acessibilidade (plano §11.7) — preferência salva, usada como padrão ao pedir corrida. */
+meRouter.put('/me/accessibility', requireAuth, validateBody(z.object({ wheelchairAccessible: z.boolean() })), async (req, res) => {
+  const uid = userId(req);
+  const p = await prisma.passengerProfile.upsert({
+    where: { userId: uid },
+    create: { userId: uid, wheelchairAccessible: req.body.wheelchairAccessible },
+    update: { wheelchairAccessible: req.body.wheelchairAccessible },
+  });
+  res.json(envelope({ wheelchairAccessible: p.wheelchairAccessible }));
+});
+
 /** Motoristas favoritos (plano §6) — leve prioridade no despacho (dispatch.ts) e opção preferencial no agendamento. */
 meRouter.get('/me/favorites', requireAuth, async (req, res) => {
   const rows = await prisma.favoriteDriver.findMany({

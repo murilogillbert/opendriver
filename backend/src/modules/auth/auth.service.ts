@@ -175,6 +175,7 @@ export async function me(id: string) {
           useHubCashback: user.passengerProfile.useHubCashback,
           rating: ratingAverage(user.passengerProfile.ratingSum, user.passengerProfile.ratingCount),
           recordingEnabled: user.passengerProfile.recordingEnabled,
+          wheelchairAccessible: user.passengerProfile.wheelchairAccessible,
         }
       : null,
     driver: dp

@@ -29,6 +29,8 @@ export const requestSchema = z.object({
   scheduledAt: z.coerce.date().optional(),
   /** Motorista favorito escolhido pra oferta exclusiva antes da busca geral (plano §5/§6). */
   favoriteDriverId: z.string().uuid().optional(),
+  /** Plano §11.7 — sem informar, usa a preferência salva do passageiro. */
+  accessibilityRequired: z.boolean().optional(),
 });
 
 const MAX_PENDING_SCHEDULED_RIDES = 3;
@@ -165,6 +167,7 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
           useCashback: input.useCashback ?? profile.useHubCashback,
           pickupCode: randomPickupCode(),
           guestPassengerName: input.guestPassengerName,
+          accessibilityRequired: input.accessibilityRequired ?? profile.wheelchairAccessible,
           status: input.scheduledAt ? 'Scheduled' : undefined,
           isScheduled: !!input.scheduledAt,
           scheduledAt: input.scheduledAt,

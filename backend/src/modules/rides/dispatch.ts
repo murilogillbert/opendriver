@@ -51,7 +51,14 @@ interface Candidate {
 }
 
 /** Motoristas elegíveis perto do embarque, ainda não consultados nesta corrida. */
-async function candidates(ride: { id: string; passengerId: string; originLat: number; originLng: number; category: 'Economy' | 'Comfort' }): Promise<Candidate[]> {
+async function candidates(ride: {
+  id: string;
+  passengerId: string;
+  originLat: number;
+  originLng: number;
+  category: 'Economy' | 'Comfort';
+  accessibilityRequired: boolean;
+}): Promise<Candidate[]> {
   const origin = { lat: ride.originLat, lng: ride.originLng };
   const box = boundingBox(origin, config.dispatch.searchRadiusKm);
   const fresh = new Date(Date.now() - config.dispatch.locationStaleSeconds * 1000);
@@ -80,7 +87,14 @@ async function candidates(ride: { id: string; passengerId: string; originLat: nu
     }),
   ]);
   const vehicles = await prisma.vehicle.findMany({
-    where: { id: { in: profiles.map((p) => p.currentVehicleId!) }, active: true, status: 'Approved', category: { in: categories as ('Economy' | 'Comfort')[] } },
+    where: {
+      id: { in: profiles.map((p) => p.currentVehicleId!) },
+      active: true,
+      status: 'Approved',
+      category: { in: categories as ('Economy' | 'Comfort')[] },
+      // Modo acessibilidade (plano §11.7): só veículos adaptados quando a corrida exige.
+      ...(ride.accessibilityRequired ? { wheelchairAccessible: true } : {}),
+    },
     select: { id: true },
   });
   const okVehicle = new Set(vehicles.map((v) => v.id));

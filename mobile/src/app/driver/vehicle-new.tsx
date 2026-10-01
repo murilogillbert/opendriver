@@ -5,7 +5,7 @@ import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Category } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Segmented } from '@/components/ui/Controls';
+import { Checkbox, Segmented } from '@/components/ui/Controls';
 import { Screen } from '@/components/ui/Screen';
 import { TextField } from '@/components/ui/TextField';
 import { AppText } from '@/components/ui/primitives';
@@ -27,6 +27,7 @@ export default function NewVehicle() {
   const [category, setCategory] = useState<Category>('Economy');
   const [renavam, setRenavam] = useState('');
   const [uf, setUf] = useState('');
+  const [wheelchairAccessible, setWheelchairAccessible] = useState(false);
   const [saving, setSaving] = useState(false);
   const thisYear = new Date().getFullYear();
   const y = Number(year);
@@ -54,6 +55,7 @@ export default function NewVehicle() {
         category,
         renavam: renavam || undefined,
         uf: uf || undefined,
+        wheelchairAccessible,
       });
       await queryClient.invalidateQueries({ queryKey: qk.driverProfile });
       await refreshMe();
@@ -101,6 +103,11 @@ export default function NewVehicle() {
           placeholder="MT"
         />
       ) : null}
+      <Checkbox
+        label="Meu carro é adaptado para cadeira de rodas"
+        checked={wheelchairAccessible}
+        onChange={setWheelchairAccessible}
+      />
       <AppText variant="small" style={{ marginTop: spacing.sm }}>
         Depois de salvar, envie a foto do CRLV na lista de veículos.
       </AppText>
