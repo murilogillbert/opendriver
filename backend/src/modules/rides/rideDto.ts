@@ -71,6 +71,8 @@ export function toRideDto(r: RideRow, viewerId: string) {
     driver:
       r.driver && role === 'passenger'
         ? {
+            /// Plano §6: precisa do id pra favoritar/bloquear o motorista depois da corrida.
+            id: r.driver.id,
             name: firstName(r.driver.name),
             avatarUrl: r.driver.avatarUrl,
             rating: rating(r.driver.driverProfile?.ratingSum, r.driver.driverProfile?.ratingCount),
@@ -80,6 +82,8 @@ export function toRideDto(r: RideRow, viewerId: string) {
     passenger:
       role === 'driver'
         ? {
+            /// Plano §6: precisa do id pra bloquear o passageiro depois da corrida.
+            id: r.passenger.id,
             // Corrida pedida pra outra pessoa (embarque ≠ localização de quem pediu): o motorista
             // vê o nome de quem vai embarcar, não de quem pagou.
             name: firstName(r.guestPassengerName || r.passenger.name),

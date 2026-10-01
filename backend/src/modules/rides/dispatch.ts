@@ -68,18 +68,29 @@ async function candidates(ride: { id: string; passengerId: string; originLat: nu
   const ids = locations.map((l) => l.driverId);
   // Conforto aceita também chamadas Econômico (mais oferta); Econômico não atende Conforto.
   const categories = ride.category === 'Economy' ? ['Economy', 'Comfort'] : ['Comfort'];
-  const [profiles, busy, pendingOffers, alreadyOffered] = await Promise.all([
+  const [profiles, busy, pendingOffers, alreadyOffered, blocked] = await Promise.all([
     prisma.driverProfile.findMany({ where: { userId: { in: ids }, isOnline: true, status: 'Approved', currentVehicleId: { not: null } } }),
     prisma.ride.findMany({ where: { driverId: { in: ids }, status: { in: ['DriverAssigned', 'DriverArrived', 'InProgress'] } }, select: { driverId: true } }),
     prisma.rideOffer.findMany({ where: { driverId: { in: ids }, status: 'Pending', expiresAt: { gt: new Date() } }, select: { driverId: true } }),
     prisma.rideOffer.findMany({ where: { rideId: ride.id }, select: { driverId: true } }),
+    // Bloqueio é mútuo (plano §6, complemento): não importa quem bloqueou quem.
+    prisma.blockedUser.findMany({
+      where: { OR: [{ userId: ride.passengerId, blockedId: { in: ids } }, { blockedId: ride.passengerId, userId: { in: ids } }] },
+      select: { userId: true, blockedId: true },
+    }),
   ]);
   const vehicles = await prisma.vehicle.findMany({
     where: { id: { in: profiles.map((p) => p.currentVehicleId!) }, active: true, status: 'Approved', category: { in: categories as ('Economy' | 'Comfort')[] } },
     select: { id: true },
   });
   const okVehicle = new Set(vehicles.map((v) => v.id));
-  const excluded = new Set([...busy.map((b) => b.driverId!), ...pendingOffers.map((o) => o.driverId), ...alreadyOffered.map((o) => o.driverId)]);
+  const blockedSet = new Set(blocked.map((b) => (b.userId === ride.passengerId ? b.blockedId : b.userId)));
+  const excluded = new Set([
+    ...busy.map((b) => b.driverId!),
+    ...pendingOffers.map((o) => o.driverId),
+    ...alreadyOffered.map((o) => o.driverId),
+    ...blockedSet,
+  ]);
   const eligible = new Set(profiles.filter((p) => okVehicle.has(p.currentVehicleId!) && !excluded.has(p.userId)).map((p) => p.userId));
   const radiusM = config.dispatch.searchRadiusKm * 1000;
   return locations
@@ -129,7 +140,18 @@ export async function dispatch(rideId: string): Promise<void> {
   const etas = await etaMany(top, { lat: ride.originLat, lng: ride.originLng });
   const ranked = top.map((c, i) => ({ ...c, ...etas[i]! })).sort((a, b) => a.durationS - b.durationS);
 
-  for (const c of ranked) {
+  // Leve prioridade a favoritos (plano §6): dentro de quem já está elegível e por perto,
+  // favoritos vêm primeiro — sem pular a fila de quem está muito mais longe.
+  const favorites = await prisma.favoriteDriver.findMany({
+    where: { passengerId: ride.passengerId, driverId: { in: ranked.map((c) => c.driverId) } },
+    select: { driverId: true },
+  });
+  const favoriteIds = new Set(favorites.map((f) => f.driverId));
+  const prioritized = favoriteIds.size
+    ? [...ranked.filter((c) => favoriteIds.has(c.driverId)), ...ranked.filter((c) => !favoriteIds.has(c.driverId))]
+    : ranked;
+
+  for (const c of prioritized) {
     const offer = await prisma.$transaction(async (tx) => {
       await lockRide(tx, rideId);
       await lockDriver(tx, c.driverId);

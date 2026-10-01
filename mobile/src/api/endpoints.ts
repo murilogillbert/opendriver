@@ -1,6 +1,7 @@
 import type { HttpClient } from './http';
 import type {
   AuthResponse,
+  BlockedUserInfo,
   CancelReason,
   CardInput,
   Complaint,
@@ -10,6 +11,7 @@ import type {
   Earning,
   EarningsSummary,
   EmergencyResult,
+  FavoriteDriver,
   LatLng,
   Me,
   Message,
@@ -72,6 +74,12 @@ export function createApi(http: HttpClient) {
       contacts: () => http.get<TrustedContact[]>('/me/trusted-contacts'),
       addContact: (name: string, phone: string) => http.post<TrustedContact[]>('/me/trusted-contacts', { name, phone }),
       removeContact: (id: string) => http.del<TrustedContact[]>(`/me/trusted-contacts/${enc(id)}`),
+      favorites: () => http.get<FavoriteDriver[]>('/me/favorites'),
+      addFavorite: (driverId: string) => http.post<void>('/me/favorites', { driverId }),
+      removeFavorite: (driverId: string) => http.del<void>(`/me/favorites/${enc(driverId)}`),
+      blocked: () => http.get<BlockedUserInfo[]>('/me/blocked'),
+      block: (userId: string) => http.post<void>('/me/blocked', { userId }),
+      unblock: (userId: string) => http.del<void>(`/me/blocked/${enc(userId)}`),
       recordingTerms: () => http.get<RecordingTerms>('/me/recording'),
       setRecording: (enabled: boolean, consentVersion?: string) => http.put<RecordingSetting>('/me/recording', { enabled, consentVersion }),
     },

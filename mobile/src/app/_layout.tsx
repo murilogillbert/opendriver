@@ -74,6 +74,7 @@ function RootNavigator() {
         <Stack.Screen name="payments/index" options={{ title: 'Pagamento' }} />
         <Stack.Screen name="payments/add-card" options={{ title: 'Adicionar cartão' }} />
         <Stack.Screen name="places" options={{ title: 'Locais salvos' }} />
+        <Stack.Screen name="favorites" options={{ title: 'Motoristas favoritos' }} />
       </Stack.Protected>
 
       <Stack.Protected guard={driving}>

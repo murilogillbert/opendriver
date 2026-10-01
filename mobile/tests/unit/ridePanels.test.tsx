@@ -40,7 +40,7 @@ const base: Ride = {
   cancellationFee: 0,
   amountDue: 15.9,
   payment: { status: 'NotDue', methodType: 'Pix', label: 'Pix', pix: null, failureReason: null },
-  driver: { name: 'Diego', avatarUrl: null, rating: 4.9, vehicle: { plate: 'ABC1D23', brand: 'Chevrolet', model: 'Onix', color: 'Prata' } },
+  driver: { id: 'driver-1', name: 'Diego', avatarUrl: null, rating: 4.9, vehicle: { plate: 'ABC1D23', brand: 'Chevrolet', model: 'Onix', color: 'Prata' } },
   passenger: null,
   actions: ['cancel'],
   requestedAt: new Date().toISOString(),
@@ -129,7 +129,7 @@ describe('corrida do motorista: uma ação dominante por estado (UX06)', () => {
     status,
     actions,
     driver: null,
-    passenger: { name: 'Paula', avatarUrl: null, rating: 4.8 },
+    passenger: { id: 'passenger-1', name: 'Paula', avatarUrl: null, rating: 4.8 },
     driverEarning: 12.72,
   });
 

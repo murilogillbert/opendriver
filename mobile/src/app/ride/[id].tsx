@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
+import type { FavoriteDriver } from '@/api/types';
 import { RideMap } from '@/components/map/RideMap';
 import { PaymentDue } from '@/components/ride/PaymentDue';
 import { PersonCard } from '@/components/ride/PersonCard';
@@ -14,7 +15,7 @@ import { Screen } from '@/components/ui/Screen';
 import { QueryView } from '@/components/ui/States';
 import { AppText, Badge, Card, Divider, Icon, KeyValue, Row, Stack } from '@/components/ui/primitives';
 import { formatCurrency, formatDateTime, formatDistance, formatDuration } from '@/lib/format';
-import { alertError } from '@/lib/recovery';
+import { alertError, confirm } from '@/lib/recovery';
 import { can, isActive, paymentLabel, statusLabel, statusTone } from '@/lib/ride';
 import { colors, radius, spacing } from '@/theme/tokens';
 
@@ -24,8 +25,37 @@ export default function RideDetail() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const q = useQuery({ queryKey: qk.ride(id), queryFn: () => api.rides.get(id), enabled: !!id });
+  const ride = q.data;
+  const canFavorite = ride?.role === 'passenger' && ride.status === 'Completed' && !!ride.driver;
+  const favorites = useQuery({ queryKey: qk.favorites, queryFn: () => api.me.favorites(), enabled: canFavorite });
+  const isFavorite = !!ride?.driver && (favorites.data ?? []).some((f: FavoriteDriver) => f.driverId === ride.driver!.id);
   const [stars, setStars] = useState(0);
   const [sending, setSending] = useState(false);
+
+  const toggleFavorite = async () => {
+    if (!ride?.driver) return;
+    try {
+      if (isFavorite) await api.me.removeFavorite(ride.driver.id);
+      else await api.me.addFavorite(ride.driver.id);
+      await queryClient.invalidateQueries({ queryKey: qk.favorites });
+      toast.success(isFavorite ? 'Removido dos favoritos.' : 'Motorista favoritado! Ele terá leve prioridade nas suas próximas corridas.');
+    } catch (err) {
+      alertError(err, 'Não foi possível salvar');
+    }
+  };
+
+  const otherParty = ride?.role === 'driver' ? ride.passenger : ride?.driver;
+  const canBlock = !!otherParty && ride && ['Completed', 'Cancelled'].includes(ride.status);
+  const block = async () => {
+    if (!otherParty) return;
+    if (!(await confirm(`Bloquear ${otherParty.name}?`, 'Vocês não serão mais pareados em novas corridas.', 'Bloquear'))) return;
+    try {
+      await api.me.block(otherParty.id);
+      toast.success(`${otherParty.name} foi bloqueado.`);
+    } catch (err) {
+      alertError(err, 'Não foi possível bloquear');
+    }
+  };
 
   const rate = async () => {
     setSending(true);
@@ -73,8 +103,18 @@ export default function RideDetail() {
           </Card>
 
           {ride.driver ? (
-            <Card>
+            <Card style={{ gap: spacing.sm }}>
               <PersonCard name={ride.driver.name} avatarUrl={ride.driver.avatarUrl} rating={ride.driver.rating} vehicle={ride.driver.vehicle} />
+              {canFavorite ? (
+                <Button
+                  title={isFavorite ? 'Remover dos favoritos' : 'Favoritar motorista'}
+                  variant={isFavorite ? 'outline' : 'secondary'}
+                  icon={isFavorite ? 'star' : 'star-outline'}
+                  size="sm"
+                  onPress={() => void toggleFavorite()}
+                  style={{ alignSelf: 'flex-start' }}
+                />
+              ) : null}
             </Card>
           ) : null}
           {ride.passenger ? (
@@ -132,6 +172,7 @@ export default function RideDetail() {
             icon="chatbox-ellipses-outline"
             onPress={() => router.push({ pathname: '/safety/complaint', params: { rideId: ride.id } })}
           />
+          {canBlock ? <Button title={`Bloquear ${otherParty!.name}`} variant="ghost" icon="ban-outline" onPress={() => void block()} /> : null}
         </Screen>
       )}
     </QueryView>

@@ -125,6 +125,7 @@ export function AccountScreen() {
                 onPress={() => router.push('/payments')}
               />
               <ListRow icon="bookmark-outline" title="Locais salvos" onPress={() => router.push('/places')} />
+              <ListRow icon="star-outline" title="Motoristas favoritos" onPress={() => router.push('/favorites')} />
             </Card>
           </>
         )}

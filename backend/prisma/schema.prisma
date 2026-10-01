@@ -87,6 +87,10 @@ model User {
   pushTokens       PushToken[]
   savedPlaces      SavedPlace[]
   quotes           RideQuote[]
+  favoriteDrivers  FavoriteDriver[]  @relation("FavoriteByPassenger")
+  favoritedBy      FavoriteDriver[]  @relation("FavoriteDriver")
+  blockedUsers     BlockedUser[]     @relation("BlockedByUser")
+  blockedByUsers   BlockedUser[]     @relation("UserBlocked")
 
   @@map("users")
   @@schema("public")
@@ -760,6 +764,36 @@ model RideRecording {
   @@index([expiresAt, deletedAt])
   @@index([rideId])
   @@map("ride_recordings")
+  @@schema("opendriver")
+}
+
+/// Motoristas favoritos do passageiro (plano §6) — leve prioridade no despacho (dispatch.ts) e opção preferencial no agendamento (§5).
+model FavoriteDriver {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  passengerId String   @map("passenger_id") @db.Uuid
+  passenger   User     @relation("FavoriteByPassenger", fields: [passengerId], references: [id], onDelete: Restrict)
+  driverId    String   @map("driver_id") @db.Uuid
+  driver      User     @relation("FavoriteDriver", fields: [driverId], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([passengerId, driverId])
+  @@index([driverId])
+  @@map("favorite_drivers")
+  @@schema("opendriver")
+}
+
+/// Bloqueio mútuo entre usuários que já pegaram uma corrida juntos (plano §6, complemento) — excluído no matching (dispatch.ts).
+model BlockedUser {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation("BlockedByUser", fields: [userId], references: [id], onDelete: Restrict)
+  blockedId String   @map("blocked_id") @db.Uuid
+  blocked   User     @relation("UserBlocked", fields: [blockedId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, blockedId])
+  @@index([blockedId])
+  @@map("blocked_users")
   @@schema("opendriver")
 }
 

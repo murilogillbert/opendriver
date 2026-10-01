@@ -145,12 +145,15 @@ export interface Ride {
     failureReason: string | null;
   };
   driver: {
+    /** Plano §6 — precisa pra favoritar/bloquear o motorista depois da corrida. */
+    id: string;
     name: string;
     avatarUrl: string | null;
     rating: number | null;
     vehicle: { plate: string; brand: string; model: string; color: string } | null;
   } | null;
-  passenger: { name: string; avatarUrl: string | null; rating: number | null } | null;
+  /** Plano §6 — `id` só pra permitir o motorista bloquear o passageiro depois da corrida. */
+  passenger: { id: string; name: string; avatarUrl: string | null; rating: number | null } | null;
   /** Instante previsto de chegada do motorista ao embarque (só enquanto a caminho). */
   pickupEta?: string | null;
   /** Ações válidas AGORA para quem está vendo (a API decide — UX07/UX14). */
@@ -320,6 +323,20 @@ export interface EmergencyResult {
   emergencyNumber: string;
   shareUrl: string | null;
   contacts: TrustedContact[];
+}
+
+// ---------- Favoritos e bloqueio (plano §6) ----------
+export interface FavoriteDriver {
+  driverId: string;
+  name: string;
+  avatarUrl: string | null;
+  rating: number | null;
+}
+
+export interface BlockedUserInfo {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
 }
 
 // ---------- Reclamações (plano §3) ----------

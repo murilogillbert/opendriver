@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { ratingAverage } from '../../domain/rating.js';
 import { AppError } from '../../errors.js';
 import { prisma } from '../../infra/prisma.js';
 import { envelope } from '../../lib/envelope.js';
@@ -64,5 +65,76 @@ meRouter.post('/me/places', requireAuth, validateBody(placeSchema), async (req, 
 
 meRouter.delete('/me/places/:id', requireAuth, async (req, res) => {
   await prisma.savedPlace.deleteMany({ where: { id: z.string().uuid().parse(req.params.id), userId: userId(req) } });
+  res.status(204).send();
+});
+
+/** Motoristas favoritos (plano §6) — leve prioridade no despacho (dispatch.ts) e opção preferencial no agendamento. */
+meRouter.get('/me/favorites', requireAuth, async (req, res) => {
+  const rows = await prisma.favoriteDriver.findMany({
+    where: { passengerId: userId(req) },
+    include: { driver: { select: { id: true, name: true, avatarUrl: true, driverProfile: { select: { ratingSum: true, ratingCount: true } } } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(
+    envelope(
+      rows.map((f) => ({
+        driverId: f.driverId,
+        name: f.driver.name,
+        avatarUrl: f.driver.avatarUrl,
+        rating: ratingAverage(f.driver.driverProfile?.ratingSum, f.driver.driverProfile?.ratingCount),
+      })),
+    ),
+  );
+});
+
+meRouter.post('/me/favorites', requireAuth, validateBody(z.object({ driverId: z.string().uuid() })), async (req, res) => {
+  const uid = userId(req);
+  const { driverId } = req.body as { driverId: string };
+  if (driverId === uid) throw new AppError('Você não pode favoritar você mesmo.', 400, 'invalid_driver');
+  const rode = await prisma.ride.findFirst({ where: { passengerId: uid, driverId, status: 'Completed' } });
+  if (!rode) throw new AppError('Você só pode favoritar motoristas com quem já viajou.', 409, 'no_shared_ride');
+  await prisma.favoriteDriver.upsert({
+    where: { passengerId_driverId: { passengerId: uid, driverId } },
+    create: { passengerId: uid, driverId },
+    update: {},
+  });
+  res.status(204).send();
+});
+
+meRouter.delete('/me/favorites/:driverId', requireAuth, async (req, res) => {
+  await prisma.favoriteDriver.deleteMany({ where: { passengerId: userId(req), driverId: z.string().uuid().parse(req.params.driverId) } });
+  res.status(204).send();
+});
+
+/** Bloqueio mútuo (plano §6, complemento) — só entre quem já pegou uma corrida junto; respeitado no despacho. */
+meRouter.get('/me/blocked', requireAuth, async (req, res) => {
+  const rows = await prisma.blockedUser.findMany({
+    where: { userId: userId(req) },
+    include: { blocked: { select: { name: true, avatarUrl: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(envelope(rows.map((b) => ({ userId: b.blockedId, name: b.blocked.name, avatarUrl: b.blocked.avatarUrl }))));
+});
+
+meRouter.post('/me/blocked', requireAuth, validateBody(z.object({ userId: z.string().uuid() })), async (req, res) => {
+  const uid = userId(req);
+  const blockedId = (req.body as { userId: string }).userId;
+  if (blockedId === uid) throw new AppError('Você não pode bloquear você mesmo.', 400, 'invalid_user');
+  const rode = await prisma.ride.findFirst({ where: { OR: [{ passengerId: uid, driverId: blockedId }, { driverId: uid, passengerId: blockedId }] } });
+  if (!rode) throw new AppError('Você só pode bloquear quem já pegou uma corrida com você.', 409, 'no_shared_ride');
+  await prisma.blockedUser.upsert({
+    where: { userId_blockedId: { userId: uid, blockedId } },
+    create: { userId: uid, blockedId },
+    update: {},
+  });
+  // Bloquear desfaz um favorito mútuo, se existir, nos dois sentidos.
+  await prisma.favoriteDriver.deleteMany({
+    where: { OR: [{ passengerId: uid, driverId: blockedId }, { passengerId: blockedId, driverId: uid }] },
+  });
+  res.status(204).send();
+});
+
+meRouter.delete('/me/blocked/:userId', requireAuth, async (req, res) => {
+  await prisma.blockedUser.deleteMany({ where: { userId: userId(req), blockedId: z.string().uuid().parse(req.params.userId) } });
   res.status(204).send();
 });

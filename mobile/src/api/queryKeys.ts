@@ -9,6 +9,8 @@ export const qk = {
   places: ['me', 'places'] as const,
   payments: ['payments'] as const,
   contacts: ['me', 'contacts'] as const,
+  favorites: ['me', 'favorites'] as const,
+  blocked: ['me', 'blocked'] as const,
   recordingTerms: ['me', 'recording'] as const,
   driverProfile: ['driver', 'profile'] as const,
   offer: ['driver', 'offer'] as const,
