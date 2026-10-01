@@ -85,8 +85,27 @@ export async function uploadJpeg(path: string, token: string) {
   if (!res.ok) throw new Error(`upload ${path}: ${res.status} ${await res.text()}`);
 }
 
+/** Sem cliente `psql` instalado localmente (comum em máquinas Windows), aponte
+ * E2E_PG_CONTAINER para o container Docker do Postgres local e os comandos
+ * passam por `docker exec` em vez de precisar do binário `psql` no PATH. */
+const PG_CONTAINER = process.env.E2E_PG_CONTAINER;
+
+function psql(sql: string) {
+  const args = [DB_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql];
+  try {
+    execFileSync('psql', args, { stdio: 'pipe' });
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'ENOENT' || !PG_CONTAINER) throw err;
+    execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'hub', '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'pipe' });
+  }
+}
+
 /** O que o admin faria no painel do hub (aprovar cadastro e veículo). */
 export function approveDriver(userId: string) {
-  const sql = `UPDATE opendriver.driver_profiles SET status='Approved' WHERE user_id='${userId}'; UPDATE opendriver.vehicles SET status='Approved' WHERE driver_id='${userId}';`;
-  execFileSync('psql', [DB_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'pipe' });
+  psql(`UPDATE opendriver.driver_profiles SET status='Approved' WHERE user_id='${userId}'; UPDATE opendriver.vehicles SET status='Approved' WHERE driver_id='${userId}';`);
+}
+
+/** Simula que o motorista chegou há N minutos (tolerância de "não compareceu" é fixa, 5 min — plano §8.1). */
+export function backdateArrival(rideId: string, minutesAgo: number) {
+  psql(`UPDATE opendriver.rides SET arrived_at = now() - interval '${minutesAgo} minutes' WHERE id='${rideId}';`);
 }

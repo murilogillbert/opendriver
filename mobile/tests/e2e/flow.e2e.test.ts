@@ -1,6 +1,6 @@
 import { ApiError } from '@/api/errors';
 import type { Offer, Ride } from '@/api/types';
-import { API_URL, approveDriver, CNH, CPF, device, PASSWORD, uniqueEmail, uploadJpeg } from './helpers';
+import { API_URL, approveDriver, backdateArrival, CNH, CPF, device, PASSWORD, uniqueEmail, uploadJpeg } from './helpers';
 
 /**
  * Fluxo completo do app contra a API real: o passageiro pede em poucos
@@ -105,7 +105,13 @@ describe('app ↔ API (passageiro e motorista)', () => {
     expect(share.url).toMatch(/\/t\//);
 
     expect((await drv.api.rides.arrived(ride.id)).actions[0]).toBe('start');
-    expect((await drv.api.rides.start(ride.id)).actions[0]).toBe('finish');
+
+    // PIN de embarque (plano §8): só o passageiro vê o código; o motorista precisa digitá-lo certo.
+    const withCode = await pax.api.rides.get(ride.id);
+    expect(withCode.pickupCode).toMatch(/^\d{4}$/);
+    const wrongCode = await drv.api.rides.start(ride.id, '0000').catch((e) => e);
+    expect((wrongCode as ApiError).code).toBe('invalid_pickup_code');
+    expect((await drv.api.rides.start(ride.id, withCode.pickupCode!)).actions[0]).toBe('finish');
     const inProgress = await pax.waitFor<Ride>('ride:update', (r) => r.id === ride.id && r.status === 'InProgress');
     expect(inProgress.actions).not.toContain('cancel');
     const finished = await drv.api.rides.finish(ride.id);
@@ -130,14 +136,51 @@ describe('app ↔ API (passageiro e motorista)', () => {
     // "Já paguei" depois de pago: idempotente, sem nova cobrança.
     expect((await pax.api.rides.pay(ride.id)).payment.status).toBe('Paid');
 
-    const rated = await pax.api.rides.rate(ride.id, 5, 'Ótimo!');
+    // Nota em passos de meia estrela (plano §2) — a API aceita e devolve o valor decimal exibido.
+    const rated = await pax.api.rides.rate(ride.id, 4.5, 'Ótimo!');
     expect(rated.actions).not.toContain('rate');
     await drv.api.rides.rate(ride.id, 5);
+    expect((await drv.api.me.get()).driver?.rating).toBe(4.5);
 
     const hist = await pax.api.rides.history('passenger');
     expect(hist.items[0]?.id).toBe(ride.id);
     const drvHist = await drv.api.rides.history('driver');
     expect(drvHist.items[0]?.driverEarning).toBeGreaterThan(0);
+  });
+
+  it('cancelamento exige um motivo válido por papel (plano §1.2)', async () => {
+    const quote = await pax.api.rides.quote({ ...base, address: 'Rua das Flores, 100' }, dest);
+    const ride = await pax.api.rides.request({ quoteId: quote.id, category: quote.prices[0]!.category });
+
+    const invalid = await pax.api.rides.cancel(ride.id, 'nao_existe').catch((e) => e);
+    expect((invalid as ApiError).code).toBe('invalid_reason_code');
+    // Motivo de motorista não vale pro passageiro (listas não se misturam).
+    const wrongRole = await pax.api.rides.cancel(ride.id, 'vehicle_issue').catch((e) => e);
+    expect((wrongRole as ApiError).code).toBe('invalid_reason_code');
+
+    const ok = await pax.api.rides.cancel(ride.id, 'changed_plans');
+    expect(ok).toEqual({ cancelled: true, cancellationFee: 0 });
+  });
+
+  it('"passageiro não compareceu": motorista cobra a corrida e recebe o repasse (plano §8.1)', async () => {
+    const quote = await pax.api.rides.quote({ ...base, address: 'Rua das Flores, 100' }, dest);
+    const ride = await pax.api.rides.request({ quoteId: quote.id, category: quote.prices[0]!.category });
+    const offer = await drv.waitFor<Offer>('ride:offer', (o) => o?.rideId === ride.id);
+    await drv.api.driver.accept(offer.offerId);
+    await drv.api.rides.arrived(ride.id);
+
+    const tooSoon = await drv.api.rides.noShow(ride.id).catch((e) => e);
+    expect((tooSoon as ApiError).code).toBe('too_early');
+
+    backdateArrival(ride.id, 6);
+    const noShowResult = await drv.api.rides.noShow(ride.id);
+    expect(noShowResult.status).toBe('Cancelled');
+    expect(noShowResult.cancelledBy).toBe('Driver');
+    expect(noShowResult.cancelReasonCode).toBe('passenger_no_show');
+    expect(noShowResult.cancellationFee).toBeGreaterThan(0);
+
+    const paxView = await pax.waitFor<Ride>('ride:update', (r) => r.id === ride.id && r.status === 'Cancelled');
+    expect(paxView.cancelledBy).toBe('Driver');
   });
 
   it('segurança, locais e erros com ação de recuperação', async () => {

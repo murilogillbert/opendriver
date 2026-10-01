@@ -4,16 +4,18 @@ import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Ride } from '@/api/types';
 import { BottomPanel } from '@/components/ride/BottomPanel';
+import { CancelReasonSheet } from '@/components/ride/CancelReasonSheet';
 import { PersonCard } from '@/components/ride/PersonCard';
 import { RatingInput } from '@/components/ride/RatingInput';
 import { SafetySheet } from '@/components/ride/SafetySheet';
 import { recordingActiveStore } from '@/components/SafetyRecorder';
 import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
 import { AppText, Badge, Card, Icon, KeyValue, Row, Stack } from '@/components/ui/primitives';
 import { formatCurrency } from '@/lib/format';
 import { openNavigation } from '@/lib/navigation';
-import { alertError, confirm } from '@/lib/recovery';
+import { alertError } from '@/lib/recovery';
 import { can, driverHeadline } from '@/lib/ride';
 import { useStore } from '@/lib/store';
 import { dismissRide } from '@/lib/tripDraft';
@@ -29,7 +31,9 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
   const recording = useStore(recordingActiveStore);
   const [busy, setBusy] = useState<string | null>(null);
   const [safety, setSafety] = useState(false);
+  const [cancelSheet, setCancelSheet] = useState(false);
   const [stars, setStars] = useState(0);
+  const [pin, setPin] = useState('');
 
   const put = (next: Ride) => {
     queryClient.setQueryData(qk.ride(next.id), next);
@@ -46,25 +50,29 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
   const step = async (action: 'arrived' | 'start' | 'finish') => {
     setBusy(action);
     try {
-      put(await api.rides[action](ride.id));
+      put(action === 'start' ? await api.rides.start(ride.id, pin) : await api.rides[action](ride.id));
     } catch (err) {
-      alertError(err, 'Não foi possível atualizar a corrida');
+      alertError(err, action === 'start' ? 'Código incorreto. Confira com o passageiro.' : 'Não foi possível atualizar a corrida');
       void queryClient.invalidateQueries({ queryKey: qk.activeRide });
     } finally {
       setBusy(null);
     }
   };
 
-  const cancel = async () => {
-    const ok = await confirm('Cancelar esta corrida?', 'O passageiro será avisado e vamos procurar outro motorista para ele.', 'Cancelar corrida');
-    if (!ok) return;
-    setBusy('cancel');
+  const onCancelled = () => {
+    setCancelSheet(false);
+    done();
+    toast.info('Corrida cancelada.');
+  };
+
+  const noShow = async () => {
+    setBusy('no_show');
     try {
-      await api.rides.cancel(ride.id);
+      await api.rides.noShow(ride.id);
       done();
-      toast.info('Corrida cancelada.');
+      toast.info('Marcado como não compareceu. A corrida foi encerrada.');
     } catch (err) {
-      alertError(err, 'Não foi possível cancelar');
+      alertError(err, 'Não foi possível marcar não comparecimento');
     } finally {
       setBusy(null);
     }
@@ -104,6 +112,16 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
           <Button title="Navegar" icon="navigate" variant="secondary" size="sm" style={{ flex: 1 }} onPress={() => void openNavigation(target, target.address)} />
           {can(ride, 'safety') ? <Button title="Segurança" icon="shield-checkmark-outline" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => setSafety(true)} /> : null}
         </Row>
+        {can(ride, 'start') ? (
+          <TextField
+            label="Código do passageiro"
+            value={pin}
+            onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 4))}
+            keyboardType="number-pad"
+            maxLength={4}
+            hint="Peça ao passageiro o código de 4 dígitos na tela dele para iniciar."
+          />
+        ) : null}
       </>
     );
     const main =
@@ -112,10 +130,24 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
         : ride.status === 'DriverArrived'
           ? { key: 'start' as const, title: 'Iniciar' }
           : { key: 'finish' as const, title: 'Finalizar' };
+    const startBlocked = main.key === 'start' && pin.length !== 4;
     footer = (
       <>
-        {can(ride, main.key) ? <Button title={main.title} size="lg" loading={busy === main.key} disabled={!!busy && busy !== main.key} onPress={() => void step(main.key)} /> : null}
-        {can(ride, 'cancel') ? <Button title="Cancelar" variant="ghost" loading={busy === 'cancel'} disabled={!!busy && busy !== 'cancel'} onPress={cancel} /> : null}
+        {can(ride, main.key) ? (
+          <Button
+            title={main.title}
+            size="lg"
+            loading={busy === main.key}
+            disabled={(!!busy && busy !== main.key) || startBlocked}
+            onPress={() => void step(main.key)}
+          />
+        ) : null}
+        {can(ride, 'no_show') ? (
+          <Button title="Passageiro não veio" variant="outline" loading={busy === 'no_show'} disabled={!!busy && busy !== 'no_show'} onPress={noShow} />
+        ) : null}
+        {can(ride, 'cancel') ? (
+          <Button title="Cancelar" variant="ghost" disabled={!!busy} onPress={() => setCancelSheet(true)} />
+        ) : null}
       </>
     );
   } else if (ride.status === 'Completed') {
@@ -158,6 +190,15 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
         {body}
       </BottomPanel>
       {can(ride, 'safety') ? <SafetySheet ride={ride} visible={safety} onClose={() => setSafety(false)} /> : null}
+      {can(ride, 'cancel') ? (
+        <CancelReasonSheet
+          ride={ride}
+          visible={cancelSheet}
+          warning="O passageiro será avisado e vamos procurar outro motorista para ele."
+          onClose={() => setCancelSheet(false)}
+          onCancelled={onCancelled}
+        />
+      ) : null}
     </>
   );
 }

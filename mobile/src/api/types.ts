@@ -77,8 +77,14 @@ export type RideStatus = 'Searching' | 'DriverAssigned' | 'DriverArrived' | 'InP
 export type PaymentStatus = 'NotDue' | 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'NotRequired';
 export type PaymentMethodType = 'Card' | 'Pix';
 export type PassengerAction = 'cancel' | 'pay' | 'rate' | 'share' | 'safety';
-export type DriverAction = 'arrived' | 'start' | 'finish' | 'cancel' | 'rate' | 'safety';
+export type DriverAction = 'arrived' | 'start' | 'finish' | 'cancel' | 'rate' | 'safety' | 'no_show';
 export type RideAction = PassengerAction | DriverAction;
+
+/** Motivo de cancelamento (plano §1.2) — a lista certa por papel vem da API, nunca hard-codada. */
+export interface CancelReason {
+  code: string;
+  label: string;
+}
 
 export interface Address extends LatLng {
   address: string;
@@ -156,6 +162,9 @@ export interface Ride {
   completedAt: string | null;
   cancelledAt: string | null;
   cancelledBy: 'Passenger' | 'Driver' | 'System' | 'Admin' | null;
+  /** Código de 4 dígitos pra iniciar a corrida — só visível ao passageiro (plano §8). */
+  pickupCode?: string | null;
+  cancelReasonCode?: string | null;
 }
 
 export interface Page<T> {

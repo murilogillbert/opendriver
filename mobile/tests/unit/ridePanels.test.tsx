@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import type { Offer, Ride } from '@/api/types';
 import { ToastProvider } from '@/components/Toast';
@@ -70,6 +70,7 @@ describe('corrida do passageiro: só as ações válidas do estado (UX07)', () =
       acceptedAt: new Date().toISOString(),
       pickupEta: new Date(Date.now() + 4 * 60_000 - 1000).toISOString(),
       actions: ['cancel', 'share', 'safety'],
+      pickupCode: '4821',
     };
     await render(wrap(<PassengerRidePanel ride={ride} onHeight={noop} />));
     expect(screen.getByText('Motorista a caminho')).toBeTruthy();
@@ -78,6 +79,8 @@ describe('corrida do passageiro: só as ações válidas do estado (UX07)', () =
     expect(screen.getByText('Segurança')).toBeTruthy();
     expect(screen.getByText('Compartilhar')).toBeTruthy();
     expect(screen.getByText('Cancelar')).toBeTruthy();
+    // PIN de embarque (plano §8): só o passageiro vê, pra passar ao motorista.
+    expect(screen.getByText('4821')).toBeTruthy();
   });
 
   it('em viagem: não oferece Cancelar', async () => {
@@ -139,10 +142,20 @@ describe('corrida do motorista: uma ação dominante por estado (UX06)', () => {
     expect(screen.queryByText('Finalizar')).toBeNull();
   });
 
-  it('no embarque: Iniciar', async () => {
+  it('no embarque: Iniciar exige o código do passageiro (plano §8)', async () => {
     await render(wrap(<DriverRidePanel ride={driverRide('DriverArrived', ['start', 'cancel', 'safety'])} onHeight={noop} />));
     expect(screen.getByText('Iniciar')).toBeTruthy();
     expect(screen.queryByText('Cheguei')).toBeNull();
+    expect(screen.queryByText('Passageiro não veio')).toBeNull();
+    // Sem o código ainda, o botão fica desabilitado.
+    expect(screen.getByRole('button', { name: 'Iniciar' }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByLabelText('Código do passageiro'), '1234');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Iniciar' }).props.accessibilityState.disabled).toBe(false));
+  });
+
+  it('no embarque depois da tolerância: oferece "Passageiro não veio" (plano §8.1)', async () => {
+    await render(wrap(<DriverRidePanel ride={driverRide('DriverArrived', ['start', 'cancel', 'safety', 'no_show'])} onHeight={noop} />));
+    expect(screen.getByText('Passageiro não veio')).toBeTruthy();
   });
 
   it('em viagem: Finalizar, sem Cancelar', async () => {

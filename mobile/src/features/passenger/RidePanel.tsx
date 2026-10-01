@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Share, Vibration } from 'react-native';
+import { ActivityIndicator, Share, StyleSheet, Vibration } from 'react-native';
 import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { Ride } from '@/api/types';
 import { BottomPanel } from '@/components/ride/BottomPanel';
+import { CancelReasonSheet } from '@/components/ride/CancelReasonSheet';
 import { PaymentDue } from '@/components/ride/PaymentDue';
 import { PersonCard } from '@/components/ride/PersonCard';
 import { RatingInput, ratingLabel } from '@/components/ride/RatingInput';
@@ -18,7 +19,7 @@ import { AppText, Badge, Card, Divider, Icon, KeyValue, Row, Stack } from '@/com
 import { driverLocationStore } from '@/context/RealtimeContext';
 import { formatCurrency, formatDistance, formatTime } from '@/lib/format';
 import { haversineMeters } from '@/lib/geo';
-import { alertError, confirm } from '@/lib/recovery';
+import { alertError } from '@/lib/recovery';
 import { useNow } from '@/hooks/useNow';
 import { can, passengerHeadline, pickupEtaText, searchingHint } from '@/lib/ride';
 import { useStore } from '@/lib/store';
@@ -48,6 +49,7 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const queryClient = useQueryClient();
   const toast = useToast();
   const [safety, setSafety] = useState(false);
+  const [cancelSheet, setCancelSheet] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState('');
@@ -76,25 +78,13 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
     void queryClient.invalidateQueries({ queryKey: qk.activeRide });
   };
 
-  const cancel = async () => {
-    const afterFree = ride.status === 'DriverArrived' || (ride.status === 'DriverAssigned' && ride.acceptedAt && Date.now() - new Date(ride.acceptedAt).getTime() > FREE_CANCEL_MIN * 60_000);
-    const ok = await confirm(
-      'Cancelar corrida?',
-      afterFree ? 'O motorista já está a caminho há mais de 2 minutos, então pode haver taxa de cancelamento.' : 'Não há cobrança para cancelar agora.',
-      'Cancelar corrida',
-    );
-    if (!ok) return;
-    setBusy('cancel');
-    try {
-      const res = await api.rides.cancel(ride.id);
-      finish();
-      toast.info(res.cancellationFee ? `Corrida cancelada. Taxa de ${formatCurrency(res.cancellationFee)}.` : 'Corrida cancelada.');
-    } catch (err) {
-      alertError(err, 'Não foi possível cancelar');
-      void queryClient.invalidateQueries({ queryKey: qk.activeRide });
-    } finally {
-      setBusy(null);
-    }
+  const afterFreeCancel =
+    ride.status === 'DriverArrived' || (ride.status === 'DriverAssigned' && !!ride.acceptedAt && now - new Date(ride.acceptedAt).getTime() > FREE_CANCEL_MIN * 60_000);
+
+  const onCancelled = (res: { cancelled: boolean; cancellationFee?: number }) => {
+    setCancelSheet(false);
+    finish();
+    toast.info(res.cancellationFee ? `Corrida cancelada. Taxa de ${formatCurrency(res.cancellationFee)}.` : 'Corrida cancelada.');
   };
 
   const share = async () => {
@@ -164,7 +154,7 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
           <KeyValue label={ride.payment.label} value={formatCurrency(ride.fare)} strong />
         </>
       );
-      footer = can(ride, 'cancel') ? <Button title="Cancelar" variant="outline" loading={busy === 'cancel'} onPress={cancel} /> : null;
+      footer = can(ride, 'cancel') ? <Button title="Cancelar" variant="outline" onPress={() => setCancelSheet(true)} /> : null;
       break;
 
     case 'DriverAssigned':
@@ -179,10 +169,18 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
           ) : null}
           {ride.status === 'DriverArrived' ? <AppText variant="small">Confira a placa antes de entrar.</AppText> : null}
           {ride.driver ? <PersonCard name={ride.driver.name} avatarUrl={ride.driver.avatarUrl} rating={ride.driver.rating} vehicle={ride.driver.vehicle} /> : null}
+          {ride.pickupCode ? (
+            <Card style={styles.pinCard}>
+              <AppText variant="small">Informe esse código ao motorista para iniciar a corrida</AppText>
+              <AppText variant="title" center accessibilityLabel={`Código de embarque: ${ride.pickupCode.split('').join(', ')}`}>
+                {ride.pickupCode}
+              </AppText>
+            </Card>
+          ) : null}
           {sideActions}
         </>
       );
-      footer = can(ride, 'cancel') ? <Button title="Cancelar" variant="ghost" loading={busy === 'cancel'} onPress={cancel} /> : null;
+      footer = can(ride, 'cancel') ? <Button title="Cancelar" variant="ghost" onPress={() => setCancelSheet(true)} /> : null;
       break;
 
     case 'InProgress': {
@@ -282,6 +280,19 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
         {body}
       </BottomPanel>
       {can(ride, 'safety') ? <SafetySheet ride={ride} visible={safety} onClose={() => setSafety(false)} /> : null}
+      {can(ride, 'cancel') ? (
+        <CancelReasonSheet
+          ride={ride}
+          visible={cancelSheet}
+          warning={afterFreeCancel ? 'O motorista já está a caminho há mais de 2 minutos, então pode haver taxa de cancelamento.' : 'Não há cobrança para cancelar agora.'}
+          onClose={() => setCancelSheet(false)}
+          onCancelled={onCancelled}
+        />
+      ) : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  pinCard: { gap: 4, alignItems: 'center' },
+});

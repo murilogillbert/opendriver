@@ -1,6 +1,7 @@
 import type { HttpClient } from './http';
 import type {
   AuthResponse,
+  CancelReason,
   CardInput,
   DriverDataInput,
   DriverProfile,
@@ -80,7 +81,9 @@ export function createApi(http: HttpClient) {
       liveRoute: (id: string) => http.get<LiveRoute>(`/rides/${enc(id)}/live-route`),
       history: (role: 'passenger' | 'driver', cursor?: string | null) =>
         http.get<Page<Ride>>(`/rides?role=${role}${cursor ? `&cursor=${enc(cursor)}` : ''}`),
-      cancel: (id: string, reason?: string) => http.post<{ cancelled: boolean; cancellationFee?: number }>(`/rides/${enc(id)}/cancel`, { reason }),
+      cancelReasons: (role: 'passenger' | 'driver') => http.get<CancelReason[]>(`/rides/cancel-reasons?role=${role}`),
+      cancel: (id: string, reasonCode: string, reason?: string) =>
+        http.post<{ cancelled: boolean; cancellationFee?: number }>(`/rides/${enc(id)}/cancel`, { reasonCode, reason }),
       pay: (id: string, paymentMethodId?: string) => http.post<Ride>(`/rides/${enc(id)}/pay`, { paymentMethodId }),
       rate: (id: string, stars: number, comment?: string) => http.post<Ride>(`/rides/${enc(id)}/rating`, { stars, comment }),
       share: (id: string) => http.post<{ url: string; token: string }>(`/rides/${enc(id)}/share`),
@@ -89,8 +92,9 @@ export function createApi(http: HttpClient) {
         http.request<{ id: string; expiresAt: string }>(`/rides/${enc(id)}/recordings`, { method: 'POST', body: form(file), timeoutMs: 120_000 }),
       // Motorista
       arrived: (id: string) => http.post<Ride>(`/rides/${enc(id)}/arrived`),
-      start: (id: string) => http.post<Ride>(`/rides/${enc(id)}/start`),
+      start: (id: string, code: string) => http.post<Ride>(`/rides/${enc(id)}/start`, { code }),
       finish: (id: string) => http.post<Ride>(`/rides/${enc(id)}/finish`),
+      noShow: (id: string) => http.post<Ride>(`/rides/${enc(id)}/no-show`),
     },
     safety: {
       report: (description: string, rideId?: string) => http.post<{ incidentId: string }>('/safety/incidents', { description, rideId }),
