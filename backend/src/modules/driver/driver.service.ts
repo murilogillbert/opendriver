@@ -2,12 +2,14 @@ import type { DriverProfile, Vehicle } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { isValidLatLng } from '../../domain/geo.js';
-import { ageOn, isValidCnh, normalizePixKey, normalizePlate, type PixKeyType } from '../../domain/validators.js';
+import { ratingAverage } from '../../domain/rating.js';
+import { ageOn, isValidCnh, isValidRenavam, normalizePixKey, normalizePlate, type PixKeyType } from '../../domain/validators.js';
 import { AppError } from '../../errors.js';
 import { issueTokens } from '../../infra/auth/jwt.js';
 import { verifyPassword } from '../../infra/auth/password.js';
 import { prisma } from '../../infra/prisma.js';
 import { putEncrypted } from '../../infra/storage/storage.js';
+import { vehicleValidation } from '../../infra/vehicleValidation/index.js';
 import { d, round2 } from '../../lib/money.js';
 import { toUserDto } from '../auth/auth.service.js';
 
@@ -36,6 +38,15 @@ export const vehicleSchema = z.object({
   color: z.string().trim().min(3, 'Informe a cor.').max(40),
   year: z.coerce.number().int(),
   category: z.enum(['Economy', 'Comfort']).default('Economy'),
+  /// Plano §4 — opcionais: sem eles, o veículo segue no fluxo manual de sempre (upload de CRLV).
+  renavam: z.string().refine(isValidRenavam, 'RENAVAM inválido.').optional(),
+  uf: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine((v) => /^[A-Z]{2}$/.test(v), 'UF inválida.')
+    .optional(),
+  chassi: z.string().trim().min(5).max(30).optional(),
 });
 
 export const pixSchema = z.object({
@@ -78,6 +89,7 @@ function toVehicleDto(v: Vehicle) {
     status: v.status,
     rejectionReason: v.rejectionReason,
     hasCrlv: !!v.crlvKey,
+    validationStatus: v.validationStatus,
   };
 }
 
@@ -117,7 +129,7 @@ export async function getProfile(userId: string) {
     pixKeyType: p.pixKeyType,
     isOnline: p.isOnline,
     currentVehicleId: p.currentVehicleId,
-    rating: p.ratingCount ? round2(p.ratingSum / p.ratingCount) : null,
+    rating: ratingAverage(p.ratingSum, p.ratingCount),
     checklist: checklist(p, vehicles),
     vehicles: vehicles.map(toVehicleDto),
   };
@@ -191,7 +203,36 @@ export async function addVehicle(userId: string, input: z.infer<typeof vehicleSc
   const v = await prisma.vehicle.create({ data: { ...input, driverId: userId } });
   // Primeiro veículo vira o atual automaticamente (opção única — UX09).
   await prisma.driverProfile.updateMany({ where: { userId, currentVehicleId: null }, data: { currentVehicleId: v.id } });
-  return toVehicleDto(v);
+  const validated = input.renavam && input.uf ? await validateVehicle(v) : v;
+  return toVehicleDto(validated);
+}
+
+/** Consulta o CRLV no provedor configurado (mock/Infosimples, plano §4) e decide
+ * aprovação automática × revisão manual. Nunca lança — indisponibilidade cai em
+ * revisão manual (RF17), que é o fluxo que já existe hoje. */
+async function validateVehicle(v: Vehicle): Promise<Vehicle> {
+  if (!v.renavam || !v.uf) return v;
+  let outcome: Awaited<ReturnType<typeof vehicleValidation.validate>>;
+  try {
+    outcome = await vehicleValidation.validate({
+      plate: v.plate,
+      renavam: v.renavam,
+      uf: v.uf,
+      chassi: v.chassi ?? undefined,
+      registered: { brand: v.brand, model: v.model, year: v.year },
+    });
+  } catch (err) {
+    outcome = { result: 'needs_review', matched: false, detail: { error: err instanceof Error ? err.message : String(err) } };
+  }
+  const validationStatus = outcome.result === 'approved' ? 'Auto' : outcome.result === 'rejected' ? 'Rejected' : 'Manual';
+  const vehicleStatus = outcome.result === 'approved' ? 'Approved' : outcome.result === 'rejected' ? 'Rejected' : v.status;
+  const [updated] = await prisma.$transaction([
+    prisma.vehicle.update({ where: { id: v.id }, data: { validationStatus, status: vehicleStatus } }),
+    prisma.vehicleValidation.create({
+      data: { vehicleId: v.id, provider: vehicleValidation.name, result: outcome.result, matched: outcome.matched, detailJson: outcome.detail as never },
+    }),
+  ]);
+  return updated;
 }
 
 async function ownVehicle(userId: string, vehicleId: string) {

@@ -10,6 +10,7 @@ import { escapeHtml, sendEmail } from '../../infra/email.js';
 import { prisma } from '../../infra/prisma.js';
 import { deleteObject } from '../../infra/storage/storage.js';
 import { DELETED_EMAIL_SUFFIX, markUserRevoked } from '../../middleware/auth.js';
+import { ratingAverage } from '../../domain/rating.js';
 import { round2 } from '../../lib/money.js';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -172,7 +173,7 @@ export async function me(id: string) {
       ? {
           defaultPaymentMethodId: user.passengerProfile.defaultPaymentMethodId,
           useHubCashback: user.passengerProfile.useHubCashback,
-          rating: user.passengerProfile.ratingCount ? round2(user.passengerProfile.ratingSum / user.passengerProfile.ratingCount) : null,
+          rating: ratingAverage(user.passengerProfile.ratingSum, user.passengerProfile.ratingCount),
           recordingEnabled: user.passengerProfile.recordingEnabled,
         }
       : null,
@@ -182,7 +183,7 @@ export async function me(id: string) {
           isOnline: dp.isOnline,
           currentVehicleId: dp.currentVehicleId,
           hasPixKey: !!dp.pixKey,
-          rating: dp.ratingCount ? round2(dp.ratingSum / dp.ratingCount) : null,
+          rating: ratingAverage(dp.ratingSum, dp.ratingCount),
           rejectionReason: dp.rejectionReason,
         }
       : null,

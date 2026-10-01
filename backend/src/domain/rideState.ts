@@ -8,7 +8,10 @@ export type PaymentStatus = 'NotDue' | 'Pending' | 'Paid' | 'Failed' | 'Refunded
 export type Role = 'passenger' | 'driver';
 
 export type PassengerAction = 'cancel' | 'pay' | 'rate' | 'share' | 'safety';
-export type DriverAction = 'arrived' | 'start' | 'finish' | 'cancel' | 'rate' | 'safety';
+export type DriverAction = 'arrived' | 'start' | 'finish' | 'cancel' | 'rate' | 'safety' | 'no_show';
+
+/** Janela após "cheguei" antes do motorista poder marcar "passageiro não compareceu" (§8). */
+export const NO_SHOW_GRACE_SECONDS = 300;
 
 export const ACTIVE_STATUSES: RideStatus[] = ['Searching', 'DriverAssigned', 'DriverArrived', 'InProgress'];
 /** Estados em que a posição do motorista é transmitida ao passageiro (RF06). */
@@ -40,6 +43,8 @@ export interface ActionContext {
   rated: boolean;
   /** Corrida concluída há menos de 7 dias (janela de avaliação). */
   withinRatingWindow: boolean;
+  /** Motorista marcou "cheguei" há mais que NO_SHOW_GRACE_SECONDS (§8). */
+  arrivalGraceElapsed?: boolean;
 }
 
 export function passengerActions(c: ActionContext): PassengerAction[] {
@@ -57,7 +62,7 @@ export function driverActions(c: ActionContext): DriverAction[] {
     case 'DriverAssigned':
       return ['arrived', 'cancel', 'safety'];
     case 'DriverArrived':
-      return ['start', 'cancel', 'safety'];
+      return c.arrivalGraceElapsed ? ['start', 'cancel', 'safety', 'no_show'] : ['start', 'cancel', 'safety'];
     case 'InProgress':
       return ['finish', 'safety'];
     case 'Completed':

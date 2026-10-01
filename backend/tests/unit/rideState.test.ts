@@ -38,4 +38,9 @@ describe('máquina de estados da corrida (UX07, UX14)', () => {
     expect(driverActions(ctx('Completed', { withinRatingWindow: false }))).toEqual([]);
     expect(driverActions(ctx('Searching'))).toEqual([]);
   });
+
+  it('"não compareceu" só aparece 5 min depois de "cheguei" (plano §8)', () => {
+    expect(driverActions(ctx('DriverArrived'))).toEqual(['start', 'cancel', 'safety']);
+    expect(driverActions(ctx('DriverArrived', { arrivalGraceElapsed: true }))).toEqual(['start', 'cancel', 'safety', 'no_show']);
+  });
 });

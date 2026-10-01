@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { ratingAverage } from '../../domain/rating.js';
 import { AppError } from '../../errors.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
@@ -23,6 +24,10 @@ export const pricingSchema = z.object({
   minimumFare: z.number().min(0).max(1000),
   platformFeePercent: z.number().min(0).max(60),
   cancellationFee: z.number().min(0).max(200),
+  /// Taxa fixa que a plataforma retém no cancelamento tardio (plano §1) — separada de platformFeePercent.
+  cancellationPlatformFee: z.number().min(0).max(200),
+  /// Debuff monetário ao motorista por cancelamento tardio (plano §1). 0 = desligado.
+  driverCancelPenalty: z.number().min(0).max(200),
   active: z.boolean(),
 });
 
@@ -104,7 +109,7 @@ export async function listDrivers(q: { status?: string; q?: string } & z.infer<t
       phone: d.user.phone,
       status: d.status,
       isOnline: d.isOnline,
-      rating: d.ratingCount ? round2(d.ratingSum / d.ratingCount) : null,
+      rating: ratingAverage(d.ratingSum, d.ratingCount),
       updatedAt: d.updatedAt,
     })),
     total,
@@ -139,7 +144,7 @@ export async function driverDetail(userId: string) {
     isOnline: d.isOnline,
     completedRides: rides,
     balance: round2(balance._sum.amount ?? 0),
-    rating: d.ratingCount ? round2(d.ratingSum / d.ratingCount) : null,
+    rating: ratingAverage(d.ratingSum, d.ratingCount),
     vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, brand: v.brand, model: v.model, color: v.color, year: v.year, category: v.category, status: v.status, active: v.active, hasCrlv: !!v.crlvKey, rejectionReason: v.rejectionReason })),
   };
 }
@@ -330,6 +335,8 @@ export async function listPricing() {
     minimumFare: round2(r.minimumFare),
     platformFeePercent: round2(r.platformFeePercent),
     cancellationFee: round2(r.cancellationFee),
+    cancellationPlatformFee: round2(r.cancellationPlatformFee),
+    driverCancelPenalty: round2(r.driverCancelPenalty),
     active: r.active,
     updatedAt: r.updatedAt,
   }));
@@ -388,7 +395,7 @@ export async function listUsers(q: string | undefined, p: z.infer<typeof pageSch
       role: u.role,
       createdAt: u.createdAt,
       ridesAsPassenger: byUser.get(u.id) ?? 0,
-      rating: u.passengerProfile?.ratingCount ? round2(u.passengerProfile.ratingSum / u.passengerProfile.ratingCount) : null,
+      rating: ratingAverage(u.passengerProfile?.ratingSum, u.passengerProfile?.ratingCount),
     })),
     total,
     p,

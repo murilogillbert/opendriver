@@ -72,6 +72,24 @@ export function normalizePixKey(key: string, type: PixKeyType): string | null {
   }
 }
 
+/** RENAVAM: 11 dígitos, dígito verificador mod-11 (algoritmo padrão Detran).
+ * Só checa formato localmente antes da consulta real (Infosimples, plano §4). */
+export function isValidRenavam(value: string): boolean {
+  const digits = onlyDigits(value).padStart(11, '0');
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  const base = digits.slice(0, 10);
+  const checkDigit = Number(digits[10]);
+  let weight = 2;
+  let sum = 0;
+  for (let i = base.length - 1; i >= 0; i--) {
+    sum += Number(base[i]) * weight;
+    weight = weight === 9 ? 2 : weight + 1;
+  }
+  const remainder = (sum * 10) % 11;
+  const expected = remainder === 10 ? 0 : remainder;
+  return expected === checkDigit;
+}
+
 /** Idade completa em anos numa data de referência. */
 export function ageOn(birth: Date, ref = new Date()): number {
   let age = ref.getUTCFullYear() - birth.getUTCFullYear();

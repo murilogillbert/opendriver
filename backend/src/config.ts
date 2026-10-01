@@ -62,6 +62,14 @@ export const config = {
     fallbackDetourFactor: float(process.env.GEO_FALLBACK_DETOUR_FACTOR, 1.35),
     fallbackAvgSpeedKmh: float(process.env.GEO_FALLBACK_AVG_SPEED_KMH, 28),
     timeoutMs: int(process.env.GEO_TIMEOUT_MS, 4000),
+    /** 'google' liga o fallback quando o Nominatim não acha nada (plano §10). Vazio = só Nominatim. */
+    fallbackProvider: (process.env.GEOCODER_FALLBACK ?? '').toLowerCase(),
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+  },
+  vehicleValidation: {
+    /** mock (determinístico, dev/testes) | infosimples (plano §4). Token real vem de integration_settings. */
+    provider: (process.env.VEHICLE_VALIDATION_PROVIDER ?? 'mock').toLowerCase() as 'mock' | 'infosimples',
+    infosimplesToken: process.env.INFOSIMPLES_TOKEN ?? '',
   },
   dispatch: {
     offerTimeoutSeconds: int(process.env.DISPATCH_OFFER_TIMEOUT_SECONDS, 15),
@@ -71,8 +79,10 @@ export const config = {
     searchTimeoutSeconds: int(process.env.DISPATCH_SEARCH_TIMEOUT_SECONDS, 180),
     locationStaleSeconds: int(process.env.DISPATCH_LOCATION_STALE_SECONDS, 60),
     quoteTtlSeconds: int(process.env.QUOTE_TTL_SECONDS, 300),
-    /** Cancelamento do passageiro após este tempo do aceite gera taxa. */
-    freeCancelSeconds: int(process.env.FREE_CANCEL_SECONDS, 120),
+  },
+  cancel: {
+    /** Janela após o aceite em que cancelar não gera cobrança/debuff (plano §1). */
+    graceSeconds: int(process.env.CANCEL_GRACE_SECONDS, 180),
   },
   storage: {
     endpoint: process.env.MINIO_ENDPOINT ?? '',

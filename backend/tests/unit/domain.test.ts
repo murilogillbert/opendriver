@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { boundingBox, decodePolyline, encodePolyline, haversineMeters } from '../../src/domain/geo.js';
 import { computeFare } from '../../src/domain/pricing.js';
-import { ageOn, isValidCnh, isValidCpf, normalizePixKey, normalizePlate } from '../../src/domain/validators.js';
+import { ageOn, isValidCnh, isValidCpf, isValidRenavam, normalizePixKey, normalizePlate } from '../../src/domain/validators.js';
+import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
 
 describe('geo', () => {
   it('haversine ~ distância conhecida', () => {
@@ -63,5 +64,24 @@ describe('validadores', () => {
     expect(normalizePixKey('abc', 'Random')).toBeNull();
     expect(ageOn(new Date('2000-09-29'), new Date('2026-09-28'))).toBe(25);
     expect(ageOn(new Date('2000-09-28'), new Date('2026-09-28'))).toBe(26);
+  });
+
+  it('RENAVAM: dígito verificador mod-11 (plano §4)', () => {
+    expect(isValidRenavam('12345678900')).toBe(true);
+    expect(isValidRenavam('12345678901')).toBe(false); // dígito errado
+    expect(isValidRenavam('11111111111')).toBe(false); // todos iguais
+    expect(isValidRenavam('123')).toBe(false); // tamanho errado
+    expect(isValidRenavam('123.456.789-00')).toBe(true); // ignora pontuação
+  });
+});
+
+describe('motivos de cancelamento (plano §1.2)', () => {
+  it('listas por papel não se misturam e sempre incluem "other"', () => {
+    const passenger = cancelReasonsFor('passenger');
+    const driver = cancelReasonsFor('driver');
+    expect(passenger.some((r) => r.code === 'driver_too_far')).toBe(true);
+    expect(driver.some((r) => r.code === 'driver_too_far')).toBe(false);
+    expect(passenger.some((r) => r.code === 'other')).toBe(true);
+    expect(driver.some((r) => r.code === 'other')).toBe(true);
   });
 });

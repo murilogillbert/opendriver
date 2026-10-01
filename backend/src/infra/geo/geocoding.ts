@@ -1,6 +1,7 @@
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { LatLng } from '../../domain/geo.js';
+import { googleSearch } from './google.js';
 
 export interface Place {
   /** Linha principal curta: "Av. Getúlio Vargas, 1200". */
@@ -81,20 +82,38 @@ async function nominatim(path: string, params: Record<string, string>): Promise<
   return res.json();
 }
 
-/** Busca por texto, priorizando resultados perto do usuário (viewbox ~30 km). */
+/** Busca por texto, priorizando resultados perto do usuário (viewbox ~30 km).
+ * Fallback opcional (plano §10): se o Nominatim não achar nada (ou estiver
+ * indisponível) e GEOCODER_FALLBACK=google estiver ligado, tenta o Google
+ * Geocoding — só na cauda de endereços difíceis, pra manter o custo baixo. */
 export async function search(query: string, near?: LatLng): Promise<Place[]> {
   const q = query.trim();
   if (q.length < 3) return [];
   const key = `s:${q.toLowerCase()}:${near ? `${near.lat.toFixed(2)},${near.lng.toFixed(2)}` : ''}`;
   const hit = cached(key);
   if (hit) return hit;
-  const params: Record<string, string> = { q, limit: '8', countrycodes: config.geo.countryCodes };
-  if (near) {
-    const d = 0.3;
-    params.viewbox = `${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}`;
+
+  let places: Place[] = [];
+  let nominatimFailed = false;
+  try {
+    const params: Record<string, string> = { q, limit: '8', countrycodes: config.geo.countryCodes };
+    if (near) {
+      const d = 0.3;
+      params.viewbox = `${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}`;
+    }
+    const data = (await nominatim('search', params)) as NominatimItem[];
+    places = (Array.isArray(data) ? data : []).map(toPlace).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  } catch (err) {
+    nominatimFailed = true;
+    if (!(err instanceof AppError)) throw err;
   }
-  const data = (await nominatim('search', params)) as NominatimItem[];
-  const places = (Array.isArray(data) ? data : []).map(toPlace).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
+  if (places.length === 0 && config.geo.fallbackProvider === 'google') {
+    places = await googleSearch(q, near);
+  } else if (places.length === 0 && nominatimFailed) {
+    // Sem Nominatim e sem fallback ligado: mantém o erro original (serviço genuinamente indisponível).
+    throw new AppError('Busca de endereços indisponível no momento.', 503, 'geo_unavailable');
+  }
   return cached(key, places)!;
 }
 

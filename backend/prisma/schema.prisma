@@ -244,6 +244,8 @@ enum OfferStatus {
 enum EarningType {
   RideEarning
   CancellationFee
+  /// Debuff monetário ao motorista por cancelamento tardio (§1) — valor negativo.
+  CancellationPenalty
   Payout
   Adjustment
 
@@ -337,8 +339,43 @@ model Vehicle {
   createdAt   DateTime        @default(now()) @map("created_at")
   rides       Ride[]
 
+  /// Dados exigidos para consulta na Infosimples (Detran Unificada) — §4.
+  renavam           String?             @db.VarChar(11)
+  chassi            String?             @db.VarChar(30)
+  uf                String?             @db.VarChar(2)
+  validationStatus  VehicleValidationStatus @default(Pending) @map("validation_status")
+  validations       VehicleValidation[]
+
   @@index([driverId])
   @@map("vehicles")
+  @@schema("opendriver")
+}
+
+enum VehicleValidationStatus {
+  Pending
+  Auto
+  Manual
+  Rejected
+
+  @@schema("opendriver")
+}
+
+/// Auditoria de cada tentativa de validação de CRLV (§4) — nunca sobrescreve, só acumula.
+model VehicleValidation {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId  String   @map("vehicle_id") @db.Uuid
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  /// 'infosimples' | 'mock' | 'manual'
+  provider   String   @db.VarChar(20)
+  /// 'approved' | 'needs_review' | 'rejected'
+  result     String   @db.VarChar(20)
+  matched    Boolean
+  /// Resposta resumida / motivo — nunca guardar PII sensível em claro além do necessário.
+  detailJson Json?    @map("detail_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([vehicleId, createdAt])
+  @@map("vehicle_validations")
   @@schema("opendriver")
 }
 
@@ -416,6 +453,10 @@ model Pricing {
   minimumFare        Decimal         @map("minimum_fare") @db.Decimal(10, 2)
   platformFeePercent Decimal         @map("platform_fee_percent") @db.Decimal(5, 2)
   cancellationFee    Decimal         @map("cancellation_fee") @db.Decimal(10, 2)
+  /// Taxa fixa que a plataforma retém no cancelamento tardio do passageiro (§1) — separada de platformFeePercent.
+  cancellationPlatformFee Decimal    @default(2.00) @map("cancellation_platform_fee") @db.Decimal(10, 2)
+  /// Debuff monetário ao motorista por cancelamento tardio (§1). 0 = desligado.
+  driverCancelPenalty     Decimal    @default(0) @map("driver_cancel_penalty") @db.Decimal(10, 2)
   active             Boolean         @default(true)
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
   updatedBy          String?         @map("updated_by") @db.Uuid
@@ -491,6 +532,12 @@ model Ride {
   cancelledAt       DateTime?         @map("cancelled_at")
   cancelledBy       RideActor?        @map("cancelled_by")
   cancelReason      String?           @map("cancel_reason") @db.VarChar(200)
+  /// Motivo padronizado do cancelamento (domain/cancelReasons.ts); cancelReason acima guarda o texto livre.
+  cancelReasonCode  String?           @map("cancel_reason_code") @db.VarChar(40)
+  /// Código de 4 dígitos que o passageiro mostra e o motorista digita para iniciar (§8). Nunca exposto ao motorista.
+  pickupCode        String?           @map("pickup_code") @db.VarChar(4)
+  /// Quando o motorista marcou "passageiro não compareceu" (§8).
+  noShowAt          DateTime?         @map("no_show_at")
   updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at")
 
   offers     RideOffer[]
@@ -575,6 +622,7 @@ model RideRating {
   rater     User     @relation("RatingRater", fields: [raterId], references: [id], onDelete: Restrict)
   rateeId   String   @map("ratee_id") @db.Uuid
   ratee     User     @relation("RatingRatee", fields: [rateeId], references: [id], onDelete: Restrict)
+  /// Meios-passos inteiros: 1..10 = 0,5..5,0 estrelas (§2). Dividir por 2 para exibir.
   stars     Int
   comment   String   @default("") @db.VarChar(500)
   createdAt DateTime @default(now()) @map("created_at")
@@ -598,7 +646,10 @@ model DriverEarning {
   description String      @db.VarChar(200)
   createdAt   DateTime    @default(now()) @map("created_at")
 
-  @@unique([rideId, type])
+  /// driverId entra na chave (não só rideId+type) porque motoristas diferentes podem
+  /// cada um incorrer numa CancellationPenalty na mesma corrida (motorista A desiste
+  /// tardiamente, a corrida volta a Searching, motorista B também desiste tardiamente).
+  @@unique([rideId, type, driverId])
   @@index([driverId, createdAt])
   @@map("driver_earnings")
   @@schema("opendriver")

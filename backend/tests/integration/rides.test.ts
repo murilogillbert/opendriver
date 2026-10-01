@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { call, startServer, type TestServer } from '../helpers.js';
 import { approveMockPix } from '../../src/infra/payments/mock.js';
 import { offlineStaleDrivers } from '../../src/jobs/staleDrivers.js';
+import { round2 } from '../../src/lib/money.js';
 import { db, driver, moveDriver, offline, passenger, waitRide } from '../rideKit.js';
 
 let srv: TestServer;
@@ -96,14 +97,20 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     const arrived = await call(srv.url, 'POST', `/rides/${r0.id}/arrived`, {}, drv.token);
     expect(arrived.data.status).toBe('DriverArrived');
     expect((await call(srv.url, 'POST', `/rides/${r0.id}/finish`, {}, drv.token)).code).toBe('invalid_state'); // ação fora de ordem
-    const started = await call(srv.url, 'POST', `/rides/${r0.id}/start`, {}, drv.token);
+
+    // PIN de embarque (plano §8): só o passageiro vê o código; motorista precisa acertar pra iniciar.
+    const withCode = await call(srv.url, 'GET', `/rides/${r0.id}`, undefined, pax.token);
+    expect(withCode.data.pickupCode).toMatch(/^\d{4}$/);
+    expect((await call(srv.url, 'GET', `/rides/${r0.id}`, undefined, drv.token)).data.pickupCode).toBeUndefined();
+    expect((await call(srv.url, 'POST', `/rides/${r0.id}/start`, { code: '0000' }, drv.token)).code).toBe('invalid_pickup_code');
+    const started = await call(srv.url, 'POST', `/rides/${r0.id}/start`, { code: withCode.data.pickupCode }, drv.token);
     expect(started.data.actions).toEqual(['finish', 'safety']);
     // Em viagem: o trajeto restante passa a ser até o destino, para os dois
     for (const token of [drv.token, pax.token]) {
       const toDest = await call(srv.url, 'GET', `/rides/${r0.id}/live-route`, undefined, token);
       expect(toDest.data).toMatchObject({ phase: 'dropoff' });
     }
-    expect((await call(srv.url, 'POST', `/rides/${r0.id}/cancel`, {}, pax.token)).code).toBe('invalid_state');
+    expect((await call(srv.url, 'POST', `/rides/${r0.id}/cancel`, { reasonCode: 'changed_plans' }, pax.token)).code).toBe('invalid_state');
 
     const shared = await call(srv.url, 'POST', `/rides/${r0.id}/share`, {}, pax.token);
     expect(shared.data.url).toMatch(/\/t\/[\w-]{20,}$/);
@@ -169,7 +176,7 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
 
     const still = await call(srv.url, 'GET', `/rides/${ride.data.id}`, undefined, pax.token);
     expect(still.data.status).toBe('Searching');
-    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reason: 'Demorou' }, pax.token);
+    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reasonCode: 'wait_too_long', reason: 'Demorou' }, pax.token);
     expect(c.data).toEqual({ cancelled: true, cancellationFee: 0 });
     const final = await call(srv.url, 'GET', `/rides/${ride.data.id}`, undefined, pax.token);
     expect(final.data).toMatchObject({ status: 'Cancelled', cancelledBy: 'Passenger', actions: [] });
@@ -186,7 +193,8 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     const offer = await drv.waitFor('ride:offer');
     await call(srv.url, 'POST', `/driver/offers/${offer.offerId}/accept`, {}, drv.token);
     await call(srv.url, 'POST', `/rides/${ride.data.id}/arrived`, {}, drv.token);
-    await call(srv.url, 'POST', `/rides/${ride.data.id}/start`, {}, drv.token);
+    const code1 = (await call(srv.url, 'GET', `/rides/${ride.data.id}`, undefined, pax.token)).data.pickupCode;
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/start`, { code: code1 }, drv.token);
     await call(srv.url, 'POST', `/rides/${ride.data.id}/finish`, {}, drv.token);
 
     const failed = await waitRide(srv.url, pax.token, ride.data.id, (r) => r.payment.status === 'Failed');
@@ -222,7 +230,8 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     const offer = await drv.waitFor('ride:offer');
     await call(srv.url, 'POST', `/driver/offers/${offer.offerId}/accept`, {}, drv.token);
     await call(srv.url, 'POST', `/rides/${ride.data.id}/arrived`, {}, drv.token);
-    await call(srv.url, 'POST', `/rides/${ride.data.id}/start`, {}, drv.token);
+    const code2 = (await call(srv.url, 'GET', `/rides/${ride.data.id}`, undefined, pax.token)).data.pickupCode;
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/start`, { code: code2 }, drv.token);
     await call(srv.url, 'POST', `/rides/${ride.data.id}/finish`, {}, drv.token);
     const pending = await waitRide(srv.url, pax.token, ride.data.id, (r) => r.payment.status === 'Pending' && !!r.payment.pix);
     expect(pending.actions).toContain('pay');
@@ -250,7 +259,7 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
     const r = await db.ride.findUnique({ where: { id: ride.data.id } });
     expect(r!.status).toBe('DriverAssigned');
-    await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, {}, pax.token);
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reasonCode: 'changed_plans' }, pax.token);
     pax.close();
     await offline(srv.url, drv);
   });
@@ -262,7 +271,7 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     const { ride } = await quoteAndRequest(srv.url, pax.token, REGION.driverCancel);
     const o1 = await a.waitFor('ride:offer');
     await call(srv.url, 'POST', `/driver/offers/${o1.offerId}/accept`, {}, a.token);
-    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, {}, a.token);
+    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reasonCode: 'vehicle_issue' }, a.token);
     expect(c.data.cancelled).toBe(true);
     const searching = await pax.waitFor('ride:update', (p) => p.status === 'Searching');
     expect(searching.driver).toBeNull();
@@ -270,24 +279,27 @@ describe('corrida ponta a ponta (RF03–RF10)', () => {
     expect(o2.rideId).toBe(ride.data.id); // outro motorista, nunca o mesmo
     await call(srv.url, 'POST', `/driver/offers/${o2.offerId}/accept`, {}, b.token);
     expect((await call(srv.url, 'GET', `/rides/${ride.data.id}`, undefined, pax.token)).data.status).toBe('DriverAssigned');
-    await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, {}, pax.token);
+    await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reasonCode: 'changed_plans' }, pax.token);
     pax.close();
     await offline(srv.url, a, b);
   });
 
-  it('cancelar depois da tolerância cobra taxa e credita o motorista', async () => {
+  it('cancelar depois da tolerância cobra a corrida cheia e repassa ao motorista (plano §1.1)', async () => {
     const pax = await passenger(srv.url, { card: '5555 5555 5555 4444' });
     const drv = await driver(srv.url, near(REGION.fee));
     const { ride } = await quoteAndRequest(srv.url, pax.token, REGION.fee, { useCashback: false });
+    const fare = ride.data.fare;
     const offer = await drv.waitFor('ride:offer');
     await call(srv.url, 'POST', `/driver/offers/${offer.offerId}/accept`, {}, drv.token);
     await new Promise((r) => setTimeout(r, 1300)); // tolerância de teste: 1 s
-    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, {}, pax.token);
-    expect(c.data.cancellationFee).toBe(5);
+    const c = await call(srv.url, 'POST', `/rides/${ride.data.id}/cancel`, { reasonCode: 'wait_too_long' }, pax.token);
+    expect(c.data.cancellationFee).toBe(fare); // cobra a corrida cheia, não mais uma taxa fixa
     const r = await waitRide(srv.url, pax.token, ride.data.id, (x) => x.payment.status === 'Paid');
-    expect(r.amountDue).toBe(5);
+    expect(r.amountDue).toBe(fare);
+    const pricing = await db.pricing.findUniqueOrThrow({ where: { category: ride.data.category } });
+    const expectedRepasse = round2(fare - Number(pricing.cancellationPlatformFee));
     const earn = await db.driverEarning.findFirst({ where: { rideId: ride.data.id, type: 'CancellationFee' } });
-    expect(Number(earn!.amount)).toBe(5);
+    expect(Number(earn!.amount)).toBe(expectedRepasse); // repasse = tarifa − taxa fixa da plataforma
     pax.close();
     await offline(srv.url, drv);
   });

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
-import { driverActions, passengerActions, type Role } from '../../domain/rideState.js';
+import { ratingAverage } from '../../domain/rating.js';
+import { NO_SHOW_GRACE_SECONDS, driverActions, passengerActions, type Role } from '../../domain/rideState.js';
 import { round2 } from '../../lib/money.js';
 
 export const rideInclude = {
@@ -16,7 +17,7 @@ export const rideInclude = {
 export type RideRow = Prisma.RideGetPayload<{ include: typeof rideInclude }>;
 
 const firstName = (n: string) => n.trim().split(/\s+/)[0] ?? n;
-const rating = (sum?: number, count?: number) => (count ? round2(sum! / count) : null);
+const rating = ratingAverage;
 const RATING_WINDOW_MS = 7 * 24 * 3600_000;
 
 /**
@@ -28,7 +29,8 @@ export function toRideDto(r: RideRow, viewerId: string) {
   const role: Role = r.driverId === viewerId && r.passengerId !== viewerId ? 'driver' : 'passenger';
   const rated = r.ratings.some((x) => x.raterId === viewerId);
   const withinRatingWindow = !!r.completedAt && Date.now() - r.completedAt.getTime() < RATING_WINDOW_MS;
-  const ctx = { status: r.status, paymentStatus: r.paymentStatus, rated, withinRatingWindow };
+  const arrivalGraceElapsed = !!r.arrivedAt && Date.now() - r.arrivedAt.getTime() > NO_SHOW_GRACE_SECONDS * 1000;
+  const ctx = { status: r.status, paymentStatus: r.paymentStatus, rated, withinRatingWindow, arrivalGraceElapsed };
   const lastPayment = r.payments[0];
   const amountDue = r.status === 'Completed' ? round2(r.fare) : round2(r.cancellationFee);
   return {
@@ -47,7 +49,10 @@ export function toRideDto(r: RideRow, viewerId: string) {
     platformFee: role === 'driver' ? round2(r.platformFee) : undefined,
     cashbackUsed: round2(r.cashbackUsed),
     cancellationFee: round2(r.cancellationFee),
+    cancelReasonCode: r.cancelReasonCode,
     amountDue,
+    /// Código de 4 dígitos que o passageiro mostra pro motorista digitar (§8). NUNCA exposto ao motorista.
+    pickupCode: role === 'passenger' && ['DriverAssigned', 'DriverArrived'].includes(r.status) ? r.pickupCode : undefined,
     payment: {
       status: r.paymentStatus,
       methodType: r.paymentMethodType,

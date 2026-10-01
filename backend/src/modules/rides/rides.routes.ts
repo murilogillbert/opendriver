@@ -35,6 +35,17 @@ ridesRouter.get(
   },
 );
 
+// Precisa vir ANTES de "/rides/:id" — senão "cancel-reasons" seria tratado como :id (uuid) e falharia.
+ridesRouter.get(
+  '/rides/cancel-reasons',
+  requireAuth,
+  validateQuery(z.object({ role: z.enum(['passenger', 'driver']).default('passenger') })),
+  async (req, res) => {
+    const q = res.locals.query as { role: 'passenger' | 'driver' };
+    res.json(envelope(rides.cancelReasons(q.role)));
+  },
+);
+
 ridesRouter.get('/rides/:id', requireAuth, async (req, res) => {
   res.json(envelope(await rides.getRide(id(req.params.id), userId(req))));
 });
@@ -44,7 +55,7 @@ ridesRouter.get('/rides/:id/live-route', requireAuth, geoRateLimiter, async (req
 });
 
 ridesRouter.post('/rides/:id/cancel', requireAuth, validateBody(rides.cancelSchema), async (req, res) => {
-  res.json(envelope(await rides.cancelRide(id(req.params.id), userId(req), req.body.reason)));
+  res.json(envelope(await rides.cancelRide(id(req.params.id), userId(req), req.body.reasonCode, req.body.reason)));
 });
 
 ridesRouter.post('/rides/:id/pay', requireAuth, validateBody(rides.paySchema), async (req, res) => {
@@ -78,10 +89,14 @@ ridesRouter.post('/rides/:id/arrived', ...asDriver, async (req, res) => {
   res.json(envelope(await rides.markArrived(id(req.params.id), userId(req))));
 });
 
-ridesRouter.post('/rides/:id/start', ...asDriver, async (req, res) => {
-  res.json(envelope(await rides.startRide(id(req.params.id), userId(req))));
+ridesRouter.post('/rides/:id/start', ...asDriver, validateBody(rides.startRideSchema), async (req, res) => {
+  res.json(envelope(await rides.startRide(id(req.params.id), userId(req), req.body.code)));
 });
 
 ridesRouter.post('/rides/:id/finish', ...asDriver, async (req, res) => {
   res.json(envelope(await rides.finishRide(id(req.params.id), userId(req))));
+});
+
+ridesRouter.post('/rides/:id/no-show', ...asDriver, async (req, res) => {
+  res.json(envelope(await rides.markNoShow(id(req.params.id), userId(req))));
 });

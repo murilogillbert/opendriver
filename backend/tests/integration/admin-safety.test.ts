@@ -97,7 +97,8 @@ describe('segurança e gravação (RF15, RF16)', () => {
 
     // Antes de iniciar a viagem não aceita áudio
     expect((await upload(srv.url, `/rides/${ride.id}/recordings`, pax.token, FAKE_M4A, 'a.m4a', 'audio/mp4')).code).toBe('recording_window_closed');
-    await call(srv.url, 'POST', `/rides/${ride.id}/start`, {}, drv.token);
+    const pickupCode = (await call(srv.url, 'GET', `/rides/${ride.id}`, undefined, pax.token)).data.pickupCode;
+    await call(srv.url, 'POST', `/rides/${ride.id}/start`, { code: pickupCode }, drv.token);
     expect((await upload(srv.url, `/rides/${ride.id}/recordings`, pax.token, TINY_JPEG, 'a.jpg', 'image/jpeg')).code).toBe('unsupported_file');
     const rec = await upload(srv.url, `/rides/${ride.id}/recordings`, pax.token, FAKE_M4A, 'a.m4a', 'audio/mp4');
     expect(rec.status).toBe(201);

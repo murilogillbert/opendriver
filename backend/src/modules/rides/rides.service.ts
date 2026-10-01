@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { config } from '../../config.js';
+import { DRIVER_CANCEL_REASON_CODES, PASSENGER_CANCEL_REASON_CODES, cancelReasonsFor } from '../../domain/cancelReasons.js';
 import { haversineMeters } from '../../domain/geo.js';
-import { ACTIVE_STATUSES, canTransition, type RideStatus } from '../../domain/rideState.js';
+import { ACTIVE_STATUSES, NO_SHOW_GRACE_SECONDS, canTransition, type RideStatus } from '../../domain/rideState.js';
 import { AppError } from '../../errors.js';
 import { route } from '../../infra/geo/routing.js';
 import { prisma } from '../../infra/prisma.js';
@@ -23,12 +24,27 @@ export const requestSchema = z.object({
   useCashback: z.boolean().optional(),
 });
 
-export const cancelSchema = z.object({ reason: z.string().trim().max(200).optional() });
+export const cancelSchema = z.object({
+  // Validado contra a lista certa (passageiro × motorista) dentro do serviço,
+  // pois o papel de quem chama só é conhecido depois de carregar a corrida.
+  reasonCode: z.string().trim().min(1, 'Escolha um motivo.').max(40),
+  reason: z.string().trim().max(200).optional(),
+});
+/** Meios-passos inteiros na API pública: 0.5, 1, 1.5 ... 5.0 (armazenado como 1..10 — §2). */
 export const ratingSchema = z.object({
-  stars: z.number().int().min(1, 'Escolha de 1 a 5 estrelas.').max(5),
+  stars: z
+    .number()
+    .min(0.5, 'Escolha de meia a 5 estrelas.')
+    .max(5)
+    .refine((v) => Number.isInteger(v * 2), 'A nota deve ser em passos de meia estrela.'),
   comment: z.string().trim().max(500).optional(),
 });
 export const paySchema = z.object({ paymentMethodId: z.string().uuid().optional() });
+export const startRideSchema = z.object({ code: z.string().trim().length(4, 'Código de 4 dígitos.') });
+
+function randomPickupCode(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
 
 /** Distância máxima do embarque para marcar "cheguei". */
 const ARRIVAL_RADIUS_M = 1000;
@@ -41,6 +57,11 @@ async function loadForUser(rideId: string, userId: string) {
 
 export async function getRide(rideId: string, userId: string) {
   return toRideDto(await loadForUser(rideId, userId), userId);
+}
+
+/** Motivos de cancelamento por papel (plano §1.2/1.5) — o app nunca hard-coda (UX12). */
+export function cancelReasons(role: 'passenger' | 'driver') {
+  return cancelReasonsFor(role);
 }
 
 /** Corrida em andamento do usuário (passageiro ou motorista) — o app retoma daqui. */
@@ -117,6 +138,7 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
           paymentMethodType: method!.type,
           paymentMethodId: method!.id,
           useCashback: input.useCashback ?? profile.useHubCashback,
+          pickupCode: randomPickupCode(),
         },
       });
       await tx.rideEvent.create({ data: { rideId: created.id, type: 'requested', actor: 'Passenger', actorId: passengerId } });
@@ -135,23 +157,48 @@ async function transition(rideId: string, from: RideStatus[], to: RideStatus, da
   return true;
 }
 
-export async function cancelRide(rideId: string, userId: string, reason?: string) {
+/** true se o motorista já aceitou há mais que a janela de tolerância (plano §1: 3 min, config.cancel.graceSeconds). */
+function isLateCancel(acceptedAt: Date | null): boolean {
+  return !!acceptedAt && Date.now() - acceptedAt.getTime() > config.cancel.graceSeconds * 1000;
+}
+
+export async function cancelRide(rideId: string, userId: string, reasonCode: string, reason?: string) {
   return withLock(`ride:${rideId}`, async () => {
     const ride = await loadForUser(rideId, userId);
     const isDriver = ride.driverId === userId && ride.passengerId !== userId;
+    const validCodes = isDriver ? DRIVER_CANCEL_REASON_CODES : PASSENGER_CANCEL_REASON_CODES;
+    if (!(validCodes as readonly string[]).includes(reasonCode)) throw new AppError('Motivo de cancelamento inválido.', 400, 'invalid_reason_code');
+    const reasonText = reason?.slice(0, 200) ?? null;
 
     if (isDriver) {
       // Motorista desistiu antes do embarque: a corrida volta a procurar outro (passageiro não perde nada).
       if (!['DriverAssigned', 'DriverArrived'].includes(ride.status))
         throw new AppError('Não é possível cancelar a corrida agora.', 409, 'invalid_state');
+      const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt);
       const ok = await transition(
         rideId,
         ['DriverAssigned', 'DriverArrived'],
         'Searching',
-        { driverId: null, vehicleId: null, acceptedAt: null, arrivedAt: null },
+        { driverId: null, vehicleId: null, acceptedAt: null, arrivedAt: null, cancelReasonCode: reasonCode, cancelReason: reasonText },
         { type: 'driver_cancelled', actor: 'Driver', actorId: userId },
       );
       if (!ok) throw new AppError('Não é possível cancelar a corrida agora.', 409, 'invalid_state');
+      // Debuff é só monetário — nunca mexe em ratingSum/ratingCount de ninguém (plano §1).
+      if (tardio) {
+        const pricing = await prisma.pricing.findUnique({ where: { category: ride.category } });
+        const penalty = round2(pricing?.driverCancelPenalty ?? 0);
+        if (penalty > 0) {
+          try {
+            await prisma.driverEarning.create({
+              data: { driverId: userId, rideId, type: 'CancellationPenalty', amount: -penalty, description: 'Desconto por cancelamento tardio' },
+            });
+            await prisma.rideEvent.create({ data: { rideId, type: 'driver_cancel_penalty', actor: 'Driver', actorId: userId } });
+          } catch (err) {
+            // Único (rideId, type, driverId): mesmo motorista já penalizado nesta corrida (rematch depois de já ter desistido). Não é erro fatal.
+            if ((err as { code?: string }).code !== 'P2002') throw err;
+          }
+        }
+      }
       await publishRide(rideId);
       void sendPush(ride.passengerId, { title: 'Buscando outro motorista', body: 'O motorista não pôde seguir. Já estamos procurando outro.', data: { rideId } });
       await dispatch(rideId);
@@ -161,12 +208,10 @@ export async function cancelRide(rideId: string, userId: string, reason?: string
     if (!['Searching', 'DriverAssigned', 'DriverArrived'].includes(ride.status))
       throw new AppError('A corrida já começou e não pode ser cancelada. Em caso de problema, use o botão de segurança.', 409, 'invalid_state');
 
-    // Taxa só se o motorista já estava a caminho há mais que a tolerância, ou já chegou.
-    let fee = 0;
-    if (ride.status === 'DriverArrived' || (ride.status === 'DriverAssigned' && ride.acceptedAt && Date.now() - ride.acceptedAt.getTime() > config.dispatch.freeCancelSeconds * 1000)) {
-      const rule = await prisma.pricing.findUnique({ where: { category: ride.category } });
-      fee = round2(rule?.cancellationFee ?? 0);
-    }
+    // Cobrança só se o motorista já estava a caminho há mais que a tolerância, ou já chegou (plano §1.1).
+    const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt);
+    const hasDriver = tardio && !!ride.driverId;
+    const fare = hasDriver ? round2(ride.fare) : 0;
     const ok = await transition(
       rideId,
       ['Searching', 'DriverAssigned', 'DriverArrived'],
@@ -174,24 +219,57 @@ export async function cancelRide(rideId: string, userId: string, reason?: string
       {
         cancelledAt: new Date(),
         cancelledBy: 'Passenger',
-        cancelReason: reason?.slice(0, 200) ?? null,
-        cancellationFee: fee,
-        paymentStatus: fee > 0 ? 'NotDue' : 'NotRequired',
+        cancelReason: reasonText,
+        cancelReasonCode: reasonCode,
+        cancellationFee: fare,
+        paymentStatus: hasDriver ? 'NotDue' : 'NotRequired',
       },
       { type: 'passenger_cancelled', actor: 'Passenger', actorId: userId },
     );
     if (!ok) throw new AppError('Não é possível cancelar a corrida agora.', 409, 'invalid_state');
     await withdrawPendingOffers(rideId);
-    if (fee > 0 && ride.driverId) {
-      // Taxa de cancelamento compensa integralmente o deslocamento do motorista.
+    if (hasDriver) {
+      const pricing = await prisma.pricing.findUnique({ where: { category: ride.category } });
+      const platformFee = round2(pricing?.cancellationPlatformFee ?? 2);
+      // Repasse ao motorista: valor total menos a taxa fixa da plataforma (nunca negativo).
+      const repasse = round2(Math.max(0, fare - platformFee));
       await prisma.driverEarning.create({
-        data: { driverId: ride.driverId, rideId, type: 'CancellationFee', amount: fee, description: 'Taxa de cancelamento do passageiro' },
+        data: { driverId: ride.driverId!, rideId, type: 'CancellationFee', amount: repasse, description: 'Repasse por cancelamento tardio do passageiro' },
       });
       await settleRide(rideId);
     }
     if (ride.driverId) void sendPush(ride.driverId, { title: 'Corrida cancelada', body: 'O passageiro cancelou a corrida.', data: { rideId } });
     await publishRide(rideId);
-    return { cancelled: true, cancellationFee: fee };
+    return { cancelled: true, cancellationFee: fare };
+  });
+}
+
+/** Motorista marca "passageiro não compareceu" — só após NO_SHOW_GRACE_SECONDS de `arrivedAt` (plano §8.1).
+ * Cobra o passageiro com o mesmo cálculo do cancelamento tardio (repasse = fare − taxa da plataforma). */
+export async function markNoShow(rideId: string, driverId: string) {
+  return withLock(`ride:${rideId}`, async () => {
+    const ride = await assertDriverOf(rideId, driverId);
+    if (ride.status !== 'DriverArrived') throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+    if (!ride.arrivedAt || Date.now() - ride.arrivedAt.getTime() < NO_SHOW_GRACE_SECONDS * 1000)
+      throw new AppError('Aguarde 5 minutos após chegar para marcar como não compareceu.', 409, 'too_early');
+    const fare = round2(ride.fare);
+    const ok = await transition(
+      rideId,
+      ['DriverArrived'],
+      'Cancelled',
+      { cancelledAt: new Date(), cancelledBy: 'Driver', cancelReasonCode: 'passenger_no_show', noShowAt: new Date(), cancellationFee: fare, paymentStatus: 'NotDue' },
+      { type: 'no_show', actor: 'Driver', actorId: driverId },
+    );
+    if (!ok) throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+    const pricing = await prisma.pricing.findUnique({ where: { category: ride.category } });
+    const platformFee = round2(pricing?.cancellationPlatformFee ?? 2);
+    const repasse = round2(Math.max(0, fare - platformFee));
+    await prisma.driverEarning.create({
+      data: { driverId, rideId, type: 'CancellationFee', amount: repasse, description: 'Repasse por não comparecimento do passageiro' },
+    });
+    await settleRide(rideId);
+    await publishRide(rideId);
+    return getRide(rideId, driverId);
   });
 }
 
@@ -253,10 +331,13 @@ export async function markArrived(rideId: string, driverId: string) {
   });
 }
 
-export async function startRide(rideId: string, driverId: string) {
+export async function startRide(rideId: string, driverId: string, code: string) {
   return withLock(`ride:${rideId}`, async () => {
     const ride = await assertDriverOf(rideId, driverId);
     if (ride.status !== 'DriverArrived') throw new AppError('Ação indisponível neste momento da corrida.', 409, 'invalid_state');
+    // Confirma que o passageiro certo entrou no carro certo (plano §8). Inserir o código
+    // corretamente a qualquer momento — mesmo depois dos 5 min — inicia a corrida normalmente.
+    if (code !== ride.pickupCode) throw new AppError('Código incorreto. Confira com o passageiro.', 400, 'invalid_pickup_code');
     await transition(rideId, ['DriverArrived'], 'InProgress', { startedAt: new Date() }, { type: 'started', actor: 'Driver', actorId: driverId });
     await publishRide(rideId);
     return getRide(rideId, driverId);
@@ -330,16 +411,18 @@ export async function rateRide(rideId: string, raterId: string, input: z.infer<t
     throw new AppError('O prazo para avaliar esta corrida terminou.', 409, 'rating_window_closed');
   const raterIsPassenger = ride.passengerId === raterId;
   const rateeId = raterIsPassenger ? ride.driverId : ride.passengerId;
+  // Armazenado em meios-passos inteiros: 1..10 = 0,5..5,0 (§2). A API recebe 0.5..5.0.
+  const starsStored = Math.round(input.stars * 2);
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.rideRating.create({ data: { rideId, raterId, rateeId, stars: input.stars, comment: input.comment ?? '' } });
+      await tx.rideRating.create({ data: { rideId, raterId, rateeId, stars: starsStored, comment: input.comment ?? '' } });
       if (raterIsPassenger)
-        await tx.driverProfile.update({ where: { userId: rateeId }, data: { ratingSum: { increment: input.stars }, ratingCount: { increment: 1 } } });
+        await tx.driverProfile.update({ where: { userId: rateeId }, data: { ratingSum: { increment: starsStored }, ratingCount: { increment: 1 } } });
       else
         await tx.passengerProfile.upsert({
           where: { userId: rateeId },
-          create: { userId: rateeId, ratingSum: input.stars, ratingCount: 1 },
-          update: { ratingSum: { increment: input.stars }, ratingCount: { increment: 1 } },
+          create: { userId: rateeId, ratingSum: starsStored, ratingCount: 1 },
+          update: { ratingSum: { increment: starsStored }, ratingCount: { increment: 1 } },
         });
     });
   } catch (err) {
