@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { acceptanceRate, cancellationRate } from '../../domain/driverQuality.js';
 import { ratingAverage } from '../../domain/rating.js';
 import { AppError } from '../../errors.js';
 import { prisma } from '../../infra/prisma.js';
@@ -110,6 +111,8 @@ export async function listDrivers(q: { status?: string; q?: string } & z.infer<t
       status: d.status,
       isOnline: d.isOnline,
       rating: ratingAverage(d.ratingSum, d.ratingCount),
+      acceptanceRate: acceptanceRate(d.offersSent, d.offersAccepted),
+      cancellationRate: cancellationRate(d.offersAccepted, d.ridesCancelled),
       updatedAt: d.updatedAt,
     })),
     total,
@@ -145,6 +148,12 @@ export async function driverDetail(userId: string) {
     completedRides: rides,
     balance: round2(balance._sum.amount ?? 0),
     rating: ratingAverage(d.ratingSum, d.ratingCount),
+    /// Métricas de qualidade (plano §11.6) — percentual, null sem dados suficientes.
+    offersSent: d.offersSent,
+    offersAccepted: d.offersAccepted,
+    ridesCancelled: d.ridesCancelled,
+    acceptanceRate: acceptanceRate(d.offersSent, d.offersAccepted),
+    cancellationRate: cancellationRate(d.offersAccepted, d.ridesCancelled),
     vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, brand: v.brand, model: v.model, color: v.color, year: v.year, category: v.category, status: v.status, active: v.active, hasCrlv: !!v.crlvKey, rejectionReason: v.rejectionReason })),
   };
 }

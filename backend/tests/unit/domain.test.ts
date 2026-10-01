@@ -4,6 +4,7 @@ import { computeFare } from '../../src/domain/pricing.js';
 import { ageOn, isValidCnh, isValidCpf, isValidRenavam, normalizePixKey, normalizePlate } from '../../src/domain/validators.js';
 import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
 import { COMPLAINT_CATEGORIES, COMPLAINT_CATEGORY_CODES } from '../../src/domain/complaintCategories.js';
+import { acceptanceRate, cancellationRate } from '../../src/domain/driverQuality.js';
 
 describe('geo', () => {
   it('haversine ~ distância conhecida', () => {
@@ -92,5 +93,18 @@ describe('categorias de reclamação (plano §3)', () => {
     expect(COMPLAINT_CATEGORIES.some((c) => c.code === 'other')).toBe(true);
     expect(COMPLAINT_CATEGORY_CODES).toEqual(COMPLAINT_CATEGORIES.map((c) => c.code));
     expect(new Set(COMPLAINT_CATEGORY_CODES).size).toBe(COMPLAINT_CATEGORY_CODES.length);
+  });
+});
+
+describe('métricas de qualidade do motorista (plano §11.6)', () => {
+  it('null sem amostra suficiente, nunca 0 enganoso', () => {
+    expect(acceptanceRate(0, 0)).toBeNull();
+    expect(acceptanceRate(2, 2)).toBeNull();
+    expect(cancellationRate(0, 0)).toBeNull();
+    expect(cancellationRate(2, 0)).toBeNull();
+  });
+  it('percentual arredondado com amostra suficiente', () => {
+    expect(acceptanceRate(10, 8)).toBe(80);
+    expect(cancellationRate(10, 1)).toBe(10);
   });
 });

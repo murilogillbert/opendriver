@@ -166,7 +166,20 @@ export async function dispatch(rideId: string): Promise<void> {
     ? [...ranked.filter((c) => favoriteIds.has(c.driverId)), ...ranked.filter((c) => !favoriteIds.has(c.driverId))]
     : ranked;
 
-  for (const c of prioritized) {
+  // Métricas de qualidade (plano §11.6): motorista com histórico de cancelar muito depois de
+  // aceitar vai pro fim da fila — nunca excluído, só perde a vez pros demais primeiro.
+  const quality = await prisma.driverProfile.findMany({
+    where: { userId: { in: prioritized.map((c) => c.driverId) } },
+    select: { userId: true, offersAccepted: true, ridesCancelled: true },
+  });
+  const lowQuality = new Set(
+    quality.filter((q) => q.ridesCancelled >= 5 && q.ridesCancelled / Math.max(1, q.offersAccepted) > 0.3).map((q) => q.userId),
+  );
+  const final = lowQuality.size
+    ? [...prioritized.filter((c) => !lowQuality.has(c.driverId)), ...prioritized.filter((c) => lowQuality.has(c.driverId))]
+    : prioritized;
+
+  for (const c of final) {
     const offer = await prisma.$transaction(async (tx) => {
       await lockRide(tx, rideId);
       await lockDriver(tx, c.driverId);
@@ -187,6 +200,7 @@ export async function dispatch(rideId: string): Promise<void> {
         },
       });
       await tx.ride.update({ where: { id: rideId }, data: { dispatchRound: { increment: 1 } } });
+      await tx.driverProfile.update({ where: { userId: c.driverId }, data: { offersSent: { increment: 1 } } });
       await tx.rideEvent.create({ data: { rideId, type: 'offer_sent', actor: 'System', payload: { driverId: c.driverId, etaS: c.durationS } } });
       return created;
     });
@@ -256,6 +270,7 @@ export async function acceptOffer(offerId: string, driverId: string): Promise<st
     }
     await tx.rideOffer.update({ where: { id: offerId }, data: { status: 'Accepted', respondedAt: new Date() } });
     await tx.rideOffer.updateMany({ where: { rideId, status: 'Pending', NOT: { id: offerId } }, data: { status: 'Withdrawn' } });
+    await tx.driverProfile.update({ where: { userId: driverId }, data: { offersAccepted: { increment: 1 } } });
     await tx.rideEvent.create({ data: { rideId, type: 'accepted', actor: 'Driver', actorId: driverId } });
   });
   clearTimer(offerId);

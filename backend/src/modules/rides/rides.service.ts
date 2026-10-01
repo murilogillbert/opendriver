@@ -223,6 +223,7 @@ export async function cancelRide(rideId: string, userId: string, reasonCode: str
         { type: 'driver_cancelled', actor: 'Driver', actorId: userId },
       );
       if (!ok) throw new AppError('Não é possível cancelar a corrida agora.', 409, 'invalid_state');
+      await prisma.driverProfile.update({ where: { userId }, data: { ridesCancelled: { increment: 1 } } }); // métrica de qualidade (plano §11.6)
       // Debuff é só monetário — nunca mexe em ratingSum/ratingCount de ninguém (plano §1).
       if (tardio) {
         const pricing = await prisma.pricing.findUnique({ where: { category: ride.category } });
