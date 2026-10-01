@@ -1,7 +1,7 @@
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { LatLng } from '../../domain/geo.js';
-import { googleSearch } from './google.js';
+import { googleReverse, googleSearch } from './google.js';
 
 export interface Place {
   /** Linha principal curta: "Av. Getúlio Vargas, 1200". */
@@ -82,10 +82,9 @@ async function nominatim(path: string, params: Record<string, string>): Promise<
   return res.json();
 }
 
-/** Busca por texto, priorizando resultados perto do usuário (viewbox ~30 km).
- * Fallback opcional (plano §10): se o Nominatim não achar nada (ou estiver
- * indisponível) e GEOCODER_FALLBACK=google estiver ligado, tenta o Google
- * Geocoding — só na cauda de endereços difíceis, pra manter o custo baixo. */
+/** Busca por texto. Google é o provedor padrão (plano §10, melhor cobertura
+ * e qualidade de resultado); o Nominatim self-hosted entra como reserva —
+ * só é chamado quando o Google não está configurado ou não acha nada. */
 export async function search(query: string, near?: LatLng): Promise<Place[]> {
   const q = query.trim();
   if (q.length < 3) return [];
@@ -93,31 +92,32 @@ export async function search(query: string, near?: LatLng): Promise<Place[]> {
   const hit = cached(key);
   if (hit) return hit;
 
-  let places: Place[] = [];
+  let places: Place[] = await googleSearch(q, near);
   let nominatimFailed = false;
-  try {
-    const params: Record<string, string> = { q, limit: '8', countrycodes: config.geo.countryCodes };
-    if (near) {
-      const d = 0.3;
-      params.viewbox = `${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}`;
+  if (places.length === 0) {
+    try {
+      const params: Record<string, string> = { q, limit: '8', countrycodes: config.geo.countryCodes };
+      if (near) {
+        const d = 0.3;
+        params.viewbox = `${near.lng - d},${near.lat + d},${near.lng + d},${near.lat - d}`;
+      }
+      const data = (await nominatim('search', params)) as NominatimItem[];
+      places = (Array.isArray(data) ? data : []).map(toPlace).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    } catch (err) {
+      nominatimFailed = true;
+      if (!(err instanceof AppError)) throw err;
     }
-    const data = (await nominatim('search', params)) as NominatimItem[];
-    places = (Array.isArray(data) ? data : []).map(toPlace).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-  } catch (err) {
-    nominatimFailed = true;
-    if (!(err instanceof AppError)) throw err;
   }
 
-  if (places.length === 0 && config.geo.fallbackProvider === 'google') {
-    places = await googleSearch(q, near);
-  } else if (places.length === 0 && nominatimFailed) {
-    // Sem Nominatim e sem fallback ligado: mantém o erro original (serviço genuinamente indisponível).
+  // Google vazio/indisponível E Nominatim genuinamente fora do ar (não só "sem resultado"): serviço indisponível de verdade.
+  if (places.length === 0 && nominatimFailed) {
     throw new AppError('Busca de endereços indisponível no momento.', 503, 'geo_unavailable');
   }
   return cached(key, places)!;
 }
 
-/** Endereço do ponto (usado para "Meu local" — UX09). */
+/** Endereço do ponto (usado para "Meu local" — UX09 — e para o pin arrastável — §9).
+ * Mesma ordem de prioridade da busca por texto: Google primeiro, Nominatim de reserva. */
 export async function reverse(point: LatLng): Promise<Place> {
   const key = `r:${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
   const hit = cached(key);
@@ -129,7 +129,14 @@ export async function reverse(point: LatLng): Promise<Place> {
     lat: point.lat,
     lng: point.lng,
   };
-  // O endereço é informativo: sem Nominatim, a corrida segue com as coordenadas.
+
+  const g = await googleReverse(point);
+  if (g) {
+    cached(key, [g]);
+    return g;
+  }
+
+  // O endereço é informativo: sem Google nem Nominatim, a corrida segue com as coordenadas.
   let data: (NominatimItem & { error?: string }) | null = null;
   try {
     data = (await nominatim('reverse', { lat: String(point.lat), lon: String(point.lng), zoom: '18' })) as NominatimItem & { error?: string };

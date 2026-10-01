@@ -4,10 +4,12 @@ import type { LatLng } from '../../domain/geo.js';
 import type { Place } from './geocoding.js';
 
 /**
- * Fallback de geocoding (plano §10) — só chamado quando o Nominatim não
- * retorna nada, e só se GEOCODER_FALLBACK=google estiver ligado. Mantém o
- * custo perto de zero: a maioria das buscas resolve no Nominatim (grátis,
- * self-hosted); o Google entra só na cauda de endereços difíceis.
+ * Google é o provedor PADRÃO de geocoding quando GOOGLE_MAPS_API_KEY está
+ * configurada (plano §10) — tentado antes do Nominatim, que vira reserva
+ * (chamado só se o Google não encontrar nada). Sem chave configurada,
+ * `apiKey()` devolve null e as duas funções abaixo saem de cara com
+ * [] / null, caindo direto pro Nominatim — nenhum código chamador precisa
+ * checar se o Google está configurado.
  */
 interface GoogleGeocodeResult {
   formatted_address: string;
@@ -43,7 +45,6 @@ function componentsToPlace(r: GoogleGeocodeResult): Place {
   };
 }
 
-/** Só busca por texto — reverse já tem fallback gracioso próprio (geocoding.ts) e não precisa de custo extra. */
 export async function googleSearch(query: string, near?: LatLng): Promise<Place[]> {
   const key = await apiKey();
   if (!key) return [];
@@ -65,4 +66,21 @@ export async function googleSearch(query: string, near?: LatLng): Promise<Place[
   const body = (await res.json()) as GoogleGeocodeResponse;
   if (body.status !== 'OK') return [];
   return body.results.map(componentsToPlace);
+}
+
+/** Endereço de um ponto do mapa (pin arrastável — plano §9). */
+export async function googleReverse(point: LatLng): Promise<Place | null> {
+  const key = await apiKey();
+  if (!key) return null;
+  const params = new URLSearchParams({ latlng: `${point.lat},${point.lng}`, key, language: 'pt-BR', region: 'br' });
+  let res: Response;
+  try {
+    res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`, { signal: AbortSignal.timeout(config.geo.timeoutMs) });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const body = (await res.json()) as GoogleGeocodeResponse;
+  if (body.status !== 'OK' || !body.results.length) return null;
+  return { ...componentsToPlace(body.results[0]!), lat: point.lat, lng: point.lng };
 }

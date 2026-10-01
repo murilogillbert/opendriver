@@ -62,8 +62,7 @@ export const config = {
     fallbackDetourFactor: float(process.env.GEO_FALLBACK_DETOUR_FACTOR, 1.35),
     fallbackAvgSpeedKmh: float(process.env.GEO_FALLBACK_AVG_SPEED_KMH, 28),
     timeoutMs: int(process.env.GEO_TIMEOUT_MS, 4000),
-    /** 'google' liga o fallback quando o Nominatim não acha nada (plano §10). Vazio = só Nominatim. */
-    fallbackProvider: (process.env.GEOCODER_FALLBACK ?? '').toLowerCase(),
+    /** Google é o provedor padrão de geocoding quando configurado (plano §10); sem chave, cai pra Nominatim sozinho. */
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
   },
   vehicleValidation: {

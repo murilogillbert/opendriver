@@ -330,15 +330,15 @@ Confirma que o passageiro certo entrou no carro certo e regula o "no-show".
 
 ## 9. Pin no mapa para embarque/destino (RF07, UX03, UX09)
 
-Quando o passageiro não acha o endereço na busca por texto, ele **arrasta um pin no mapa** e usamos
-as coordenadas diretamente.
+**Decisão (atualizada):** o pin arrastável fica **sempre disponível** como alternativa à busca por
+texto — tanto para origem quanto para destino — não só como fallback de busca-sem-resultado.
 
-- O backend já suporta isso: `geocoding.reverse(point)` devolve um `Place` e, **sem Nominatim,
-  cai num endereço genérico "Local no mapa (lat, lng)"** sem quebrar a corrida. A cotação e a
-  corrida funcionam com lat/lng puros.
-- Mobile: no seletor de origem/destino, botão "Marcar no mapa" abre um mapa (reutiliza `RideMap`)
-  com um pin central arrastável; ao confirmar, chama `reverse` para exibir o endereço aproximado e
-  segue com as coordenadas. Já existe base para "Local no mapa" no `reverse`.
+- O backend já suporta isso: `geocoding.reverse(point)` devolve um `Place` e, **sem Google nem
+  Nominatim, cai num endereço genérico "Local no mapa (lat, lng)"** sem quebrar a corrida. A
+  cotação e a corrida funcionam com lat/lng puros.
+- Mobile: no seletor de origem/destino, uma opção "Marcar no mapa" sempre visível (não só quando a
+  busca falha) abre um mapa (reutiliza `RideMap`) com um pin central arrastável; ao soltar, chama
+  `reverse` para exibir o endereço aproximado e segue com as coordenadas.
 - Salvar o ponto como `SavedPlace` opcionalmente (UX09).
 
 ---
@@ -355,22 +355,17 @@ requisições** (a faixa de Geocoding historicamente ~US$ 5/1.000, podendo varia
 [pricing](https://developers.google.com/maps/billing-and-pricing/pricing),
 [geocoding usage & billing](https://developers.google.com/maps/documentation/geocoding/usage-and-billing).
 
-**Situação atual do projeto:** já usamos **Nominatim (OpenStreetMap)** em `infra/geo/geocoding.ts`
-para busca (`search`) e reverse (`reverse`), com cache em memória e fallback gracioso. É a mesma
-família OSM do OSRM/MapLibre já adotada. O Nominatim público **proíbe uso comercial pesado** — em
-produção precisa de instância própria (ou provedor gerenciado compatível).
+**Situação atual do projeto (decisão revista):** o **Google Maps Geocoding é o provedor padrão**
+quando `GOOGLE_MAPS_API_KEY` está configurada — tentado antes do Nominatim, tanto em `search()`
+quanto em `reverse()` (`infra/geo/geocoding.ts` + `infra/geo/google.ts`). O **Nominatim
+(OpenStreetMap) self-hosted continua como reserva**: só é chamado quando o Google não está
+configurado ou não acha nada, mantendo um plano B sem custo caso o Google fique indisponível ou a
+cota se esgote. A escolha prioriza qualidade/cobertura de resultado sobre custo — aceitamos pagar
+pela maioria das buscas, dado que o volume do negócio não torna isso proibitivo.
 
-**Recomendação (em camadas, barato primeiro):**
-1. Manter **Nominatim** como provedor primário (self-host em produção; já está integrado).
-2. Se a busca não retornar resultado suficiente, oferecer o **pin no mapa** (§9) — resolve a maioria
-   dos casos sem custo.
-3. **Opcional**, atrás de flag (`GEOCODER_FALLBACK=google`): usar Google Geocoding **só como
-   fallback** quando o Nominatim falha, para ficar dentro da cota grátis e minimizar custo. Encapsular
-   num provedor plugável em `infra/geo/` (mesmo padrão dos demais), com a chave em
-   `integration_settings`.
-
-Assim, no dia a dia o custo é ~zero e o Google entra só na cauda de endereços difíceis, se e quando
-o negócio quiser ligar.
+A chave fica em `GOOGLE_MAPS_API_KEY` (env) ou `Google:MapsApiKey` (`integration_settings`, editável
+sem redeploy). O debounce de 3s na busca por texto (mobile) já reduz bastante o número de chamadas
+faturáveis, evitando cobrar por cada tecla digitada.
 
 ---
 
