@@ -8,6 +8,7 @@ import { driverRouter } from './modules/driver/driver.routes.js';
 import { geoRouter } from './modules/geo/geo.routes.js';
 import { legalRouter } from './modules/legal/legal.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
+import { complaintsRouter } from './modules/complaints/complaints.routes.js';
 import { meRouter } from './modules/me/me.routes.js';
 import { recordingRouter } from './modules/recording/recording.routes.js';
 import { safetyRouter, trackingRouter } from './modules/safety/safety.routes.js';
@@ -38,6 +39,7 @@ export function createApp() {
   api.use(paymentsRouter);
   api.use(meRouter);
   api.use(safetyRouter);
+  api.use(complaintsRouter);
   api.use(recordingRouter);
   api.use(adminRouter);
   app.use('/api/v1', api);

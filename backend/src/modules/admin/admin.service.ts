@@ -354,14 +354,37 @@ export async function updatePricing(adminId: string, category: 'Economy' | 'Comf
 }
 
 // ------------------------------------------------------------------ ocorrências
-export async function listIncidents(status: string | undefined, p: z.infer<typeof pageSchema>) {
-  const where: Prisma.SafetyIncidentWhereInput = status ? { status: status as Prisma.EnumIncidentStatusFilter['equals'] } : {};
+export async function listIncidents(status: string | undefined, type: string | undefined, p: z.infer<typeof pageSchema>) {
+  const where: Prisma.SafetyIncidentWhereInput = {
+    ...(status ? { status: status as Prisma.EnumIncidentStatusFilter['equals'] } : {}),
+    ...(type ? { type: type as Prisma.EnumIncidentTypeFilter['equals'] } : {}),
+  };
   const [rows, total] = await Promise.all([
-    prisma.safetyIncident.findMany({ where, include: { reporter: { select: { name: true, phone: true } } }, orderBy: { createdAt: 'desc' }, skip: (p.page - 1) * p.pageSize, take: p.pageSize }),
+    prisma.safetyIncident.findMany({
+      where,
+      include: { reporter: { select: { name: true, phone: true } }, attachments: { where: { deletedAt: null }, select: { id: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip: (p.page - 1) * p.pageSize,
+      take: p.pageSize,
+    }),
     prisma.safetyIncident.count({ where }),
   ]);
   return page(
-    rows.map((i) => ({ id: i.id, rideId: i.rideId, type: i.type, status: i.status, description: i.description, reporter: i.reporter.name, reporterPhone: i.reporter.phone, lat: i.lat, lng: i.lng, createdAt: i.createdAt })),
+    rows.map((i) => ({
+      id: i.id,
+      rideId: i.rideId,
+      type: i.type,
+      category: i.category,
+      role: i.role,
+      status: i.status,
+      description: i.description,
+      reporter: i.reporter.name,
+      reporterPhone: i.reporter.phone,
+      lat: i.lat,
+      lng: i.lng,
+      attachmentIds: i.attachments.map((a) => a.id),
+      createdAt: i.createdAt,
+    })),
     total,
     p,
   );
@@ -404,4 +427,8 @@ export async function listUsers(q: string | undefined, p: z.infer<typeof pageSch
 
 export async function auditRecordingAccess(adminId: string, recordingId: string) {
   await audit(adminId, 'recording.accessed', 'RideRecording', recordingId);
+}
+
+export async function auditComplaintAttachmentAccess(adminId: string, attachmentId: string) {
+  await audit(adminId, 'complaint.attachment_accessed', 'IncidentAttachment', attachmentId);
 }

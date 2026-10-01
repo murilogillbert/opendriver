@@ -138,6 +138,7 @@ export function AccountScreen() {
             onPress={() => router.push('/safety')}
           />
           <ListRow icon="flag-outline" title="Relatar um problema" onPress={() => router.push('/safety/report')} />
+          <ListRow icon="chatbox-ellipses-outline" title="Minhas reclamações" onPress={() => router.push('/safety/complaints')} />
         </Card>
 
         <SectionTitle title="Conta" />

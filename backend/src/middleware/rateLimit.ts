@@ -42,6 +42,7 @@ export const limits = {
   requestRide: userRateLimiter('ride', 60 * 60_000, 30),
   emergency: userRateLimiter('emergency', 10 * 60_000, 5),
   report: userRateLimiter('report', 60 * 60_000, 10),
+  complaint: userRateLimiter('complaint', 60 * 60_000, 10),
   addCard: userRateLimiter('card', 60 * 60_000, 5),
   share: userRateLimiter('share', 60 * 60_000, 30),
   payout: userRateLimiter('payout', 60 * 60_000, 5),

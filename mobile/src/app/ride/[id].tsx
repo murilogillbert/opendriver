@@ -126,6 +126,12 @@ export default function RideDetail() {
             icon="flag-outline"
             onPress={() => router.push({ pathname: '/safety/report', params: { rideId: ride.id } })}
           />
+          <Button
+            title="Fazer reclamação"
+            variant="ghost"
+            icon="chatbox-ellipses-outline"
+            onPress={() => router.push({ pathname: '/safety/complaint', params: { rideId: ride.id } })}
+          />
         </Screen>
       )}
     </QueryView>

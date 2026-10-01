@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { envelope } from '../../lib/envelope.js';
 import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
+import { readComplaintAttachmentForStaff } from '../complaints/complaints.service.js';
 import { readRecordingForStaff } from '../recording/recording.service.js';
 import * as admin from './admin.service.js';
 
@@ -103,12 +104,23 @@ adminRouter.put('/admin/pricing/:category', validateBody(admin.pricingSchema), a
   res.json(envelope(await admin.updatePricing(userId(req), category, req.body)));
 });
 
-adminRouter.get('/admin/incidents', validateQuery(admin.pageSchema.extend({ status: z.enum(['Open', 'InReview', 'Closed']).optional() })), async (_req, res) => {
-  const q = res.locals.query as { status?: string; page: number; pageSize: number };
-  res.json(envelope(await admin.listIncidents(q.status, q)));
-});
+adminRouter.get(
+  '/admin/incidents',
+  validateQuery(admin.pageSchema.extend({ status: z.enum(['Open', 'InReview', 'Closed']).optional(), type: z.enum(['Emergency', 'Report', 'Complaint']).optional() })),
+  async (_req, res) => {
+    const q = res.locals.query as { status?: string; type?: string; page: number; pageSize: number };
+    res.json(envelope(await admin.listIncidents(q.status, q.type, q)));
+  },
+);
 adminRouter.put('/admin/incidents/:id/status', validateBody(z.object({ status: z.enum(['Open', 'InReview', 'Closed']) })), async (req, res) => {
   res.json(envelope(await admin.setIncidentStatus(userId(req), uuid(req.params.id), req.body.status)));
+});
+adminRouter.get('/admin/incidents/attachments/:id', async (req, res) => {
+  const id = uuid(req.params.id);
+  const { data, mimeType } = await readComplaintAttachmentForStaff(id);
+  await admin.auditComplaintAttachmentAccess(userId(req), id);
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.type(mimeType).send(data);
 });
 
 adminRouter.get('/admin/recordings/:id', async (req, res) => {

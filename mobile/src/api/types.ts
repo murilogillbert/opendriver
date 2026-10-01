@@ -314,6 +314,24 @@ export interface EmergencyResult {
   contacts: TrustedContact[];
 }
 
+// ---------- Reclamações (plano §3) ----------
+export interface ComplaintCategory {
+  code: string;
+  label: string;
+}
+
+export interface Complaint {
+  id: string;
+  rideId: string | null;
+  category: string | null;
+  role: 'passenger' | 'driver' | null;
+  description: string;
+  status: 'Open' | 'InReview' | 'Closed';
+  createdAt: string;
+  resolvedAt: string | null;
+  attachmentCount: number;
+}
+
 export interface RecordingTerms {
   consentVersion: string;
   retentionDays: number;

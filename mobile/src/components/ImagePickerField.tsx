@@ -18,7 +18,7 @@ const MAX_BYTES = 5 * 1024 * 1024; // STORAGE_MAX_IMAGE_BYTES padrão do backend
  * iPhone vêm em HEIC por padrão — toda imagem é redimensionada e convertida
  * para JPEG antes do upload.
  */
-async function toUploadableJpeg(uri: string, width?: number, height?: number) {
+export async function toUploadableJpeg(uri: string, width?: number, height?: number) {
   const ctx = ImageManipulator.manipulate(uri);
   if (width && height && Math.max(width, height) > MAX_SIDE) {
     ctx.resize(width >= height ? { width: MAX_SIDE } : { height: MAX_SIDE });

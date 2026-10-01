@@ -3,6 +3,7 @@ import { boundingBox, decodePolyline, encodePolyline, haversineMeters } from '..
 import { computeFare } from '../../src/domain/pricing.js';
 import { ageOn, isValidCnh, isValidCpf, isValidRenavam, normalizePixKey, normalizePlate } from '../../src/domain/validators.js';
 import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
+import { COMPLAINT_CATEGORIES, COMPLAINT_CATEGORY_CODES } from '../../src/domain/complaintCategories.js';
 
 describe('geo', () => {
   it('haversine ~ distância conhecida', () => {
@@ -83,5 +84,13 @@ describe('motivos de cancelamento (plano §1.2)', () => {
     expect(driver.some((r) => r.code === 'driver_too_far')).toBe(false);
     expect(passenger.some((r) => r.code === 'other')).toBe(true);
     expect(driver.some((r) => r.code === 'other')).toBe(true);
+  });
+});
+
+describe('categorias de reclamação (plano §3)', () => {
+  it('lista fixa, com "other", e os códigos batem com os rótulos', () => {
+    expect(COMPLAINT_CATEGORIES.some((c) => c.code === 'other')).toBe(true);
+    expect(COMPLAINT_CATEGORY_CODES).toEqual(COMPLAINT_CATEGORIES.map((c) => c.code));
+    expect(new Set(COMPLAINT_CATEGORY_CODES).size).toBe(COMPLAINT_CATEGORY_CODES.length);
   });
 });

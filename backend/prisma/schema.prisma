@@ -263,6 +263,8 @@ enum PayoutStatus {
 enum IncidentType {
   Emergency
   Report
+  /// Reclamação com possível anexo de foto (plano §3) — distinta do botão de emergência e do relato rápido.
+  Complaint
 
   @@schema("opendriver")
 }
@@ -703,13 +705,37 @@ model SafetyIncident {
   description String         @default("") @db.VarChar(1000)
   lat         Float?
   lng         Float?
+  /// Categoria da reclamação (domain/complaintCategories.ts) — só preenchido quando type = Complaint.
+  category    String?        @db.VarChar(40)
+  /// Papel de quem reclamou ('passenger' | 'driver') — só preenchido quando type = Complaint.
+  role        String?        @db.VarChar(12)
   createdAt   DateTime       @default(now()) @map("created_at")
   resolvedAt  DateTime?      @map("resolved_at")
   resolvedBy  String?        @map("resolved_by") @db.Uuid
 
+  attachments IncidentAttachment[]
+
   @@index([status, createdAt])
   @@index([rideId])
   @@map("safety_incidents")
+  @@schema("opendriver")
+}
+
+/// Fotos anexadas a uma reclamação (plano §3) — cifradas no storage privado, apagadas após retenção.
+model IncidentAttachment {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId String         @map("incident_id") @db.Uuid
+  incident   SafetyIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  storageKey String         @map("storage_key")
+  mimeType   String         @map("mime_type") @db.VarChar(40)
+  sizeBytes  Int            @map("size_bytes")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  expiresAt  DateTime       @map("expires_at")
+  deletedAt  DateTime?      @map("deleted_at")
+
+  @@index([incidentId])
+  @@index([expiresAt, deletedAt])
+  @@map("incident_attachments")
   @@schema("opendriver")
 }
 

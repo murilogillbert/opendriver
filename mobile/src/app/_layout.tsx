@@ -95,6 +95,8 @@ function RootNavigator() {
         <Stack.Screen name="rides" options={{ title: 'Viagens' }} />
         <Stack.Screen name="safety/index" options={{ title: 'Segurança' }} />
         <Stack.Screen name="safety/report" options={{ title: 'Relatar problema' }} />
+        <Stack.Screen name="safety/complaint" options={{ title: 'Fazer reclamação' }} />
+        <Stack.Screen name="safety/complaints" options={{ title: 'Minhas reclamações' }} />
         <Stack.Screen name="account/profile" options={{ title: 'Dados pessoais' }} />
         <Stack.Screen name="account/password" options={{ title: 'Alterar senha' }} />
         <Stack.Screen name="account/delete" options={{ title: 'Excluir conta' }} />

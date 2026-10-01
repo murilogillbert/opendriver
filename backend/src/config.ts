@@ -96,6 +96,11 @@ export const config = {
     retentionDays: int(process.env.RECORDING_RETENTION_DAYS, 30),
     consentVersion: process.env.RECORDING_CONSENT_VERSION ?? 'v1-2026-09',
   },
+  complaints: {
+    // Fotos anexadas à reclamação (plano §3) — apagadas automaticamente após esse prazo.
+    attachmentRetentionDays: int(process.env.COMPLAINT_ATTACHMENT_RETENTION_DAYS, 180),
+    maxAttachments: int(process.env.COMPLAINT_MAX_ATTACHMENTS, 5),
+  },
 };
 
 /** Falha cedo em produção em vez de rodar com segredos de desenvolvimento. */

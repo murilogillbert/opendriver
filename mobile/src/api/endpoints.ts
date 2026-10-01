@@ -3,6 +3,8 @@ import type {
   AuthResponse,
   CancelReason,
   CardInput,
+  Complaint,
+  ComplaintCategory,
   DriverDataInput,
   DriverProfile,
   Earning,
@@ -38,6 +40,12 @@ function form(file: UploadFile): FormData {
   const fd = new FormData();
   // React Native aceita { uri, name, type } como parte de arquivo.
   fd.append('file', file as unknown as Blob);
+  return fd;
+}
+
+function multiForm(field: string, files: UploadFile[]): FormData {
+  const fd = new FormData();
+  for (const file of files) fd.append(field, file as unknown as Blob);
   return fd;
 }
 
@@ -99,6 +107,15 @@ export function createApi(http: HttpClient) {
     },
     safety: {
       report: (description: string, rideId?: string) => http.post<{ incidentId: string }>('/safety/incidents', { description, rideId }),
+    },
+    complaints: {
+      categories: () => http.get<ComplaintCategory[]>('/complaints/categories'),
+      open: (input: { rideId?: string; category: string; description: string; role?: 'passenger' | 'driver' }) =>
+        http.post<{ incidentId: string; status: string }>('/complaints', input),
+      uploadAttachments: (id: string, files: UploadFile[]) =>
+        http.request<{ attached: number; total: number }>(`/complaints/${enc(id)}/attachments`, { method: 'POST', body: multiForm('files', files), timeoutMs: 60_000 }),
+      mine: () => http.get<Complaint[]>('/me/complaints'),
+      get: (id: string) => http.get<Complaint>(`/me/complaints/${enc(id)}`),
     },
     payments: {
       list: () => http.get<PaymentMethods>('/payment-methods'),

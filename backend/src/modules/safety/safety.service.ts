@@ -43,7 +43,7 @@ export async function removeContact(userId: string, id: string) {
 }
 
 /** Alerta a equipe (push para admins + e-mail de plantão, se configurado). */
-async function alertStaff(title: string, body: string) {
+export async function alertStaff(title: string, body: string) {
   const admins = await prisma.user.findMany({ where: { role: 'Admin' }, select: { id: true }, take: 50 });
   await Promise.all(admins.map((a) => sendPush(a.id, { title, body, urgent: true })));
   const email = await getSetting('OpenDriver:SafetyEmail');

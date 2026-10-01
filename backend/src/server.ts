@@ -1,6 +1,7 @@
 import { assertProductionConfig, config } from './config.js';
 import { createServer } from './httpServer.js';
 import { startPaymentReconciliation } from './jobs/paymentReconciliation.js';
+import { startComplaintAttachmentRetention } from './modules/complaints/complaints.service.js';
 import { startRecordingRetention } from './modules/recording/recording.service.js';
 import { startStaleDriverSweep, stopStaleDriverSweep } from './jobs/staleDrivers.js';
 import { prisma } from './infra/prisma.js';
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
   startDispatchSweeper();
   startPaymentReconciliation();
   startRecordingRetention();
+  startComplaintAttachmentRetention();
   startStaleDriverSweep();
 
   // Deploy/reinício: para de aceitar conexões, fecha sockets e o pool do banco.
