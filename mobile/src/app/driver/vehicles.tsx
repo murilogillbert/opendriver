@@ -19,6 +19,14 @@ const statusBadge: Record<Vehicle['status'], { label: string; tone: 'success' | 
   Rejected: { label: 'Recusado', tone: 'danger' },
 };
 
+/** Resultado da consulta automática ao Detran (plano §4) — 'Pending' não mostra nada (sem RENAVAM informado). */
+const validationHint: Record<Vehicle['validationStatus'], string | null> = {
+  Pending: null,
+  Auto: 'Documento validado automaticamente ✅',
+  Manual: 'Recebemos os dados, vamos revisar em breve.',
+  Rejected: 'A consulta ao Detran encontrou uma restrição — fale com o suporte.',
+};
+
 /** Veículos (RF13): o selecionado é o usado nas corridas. */
 export default function Vehicles() {
   const { me, refreshMe } = useAuth();
@@ -75,6 +83,7 @@ export default function Vehicles() {
                     <Badge label={statusBadge[v.status].label} tone={statusBadge[v.status].tone} />
                   </Row>
                   {v.rejectionReason ? <AppText variant="small">{v.rejectionReason}</AppText> : null}
+                  {validationHint[v.validationStatus] ? <AppText variant="small">{validationHint[v.validationStatus]}</AppText> : null}
                   <DocumentPhotoField label="CRLV" hint="Documento do veículo, legível." done={v.hasCrlv} aspect={[3, 4]} onUpload={uploadCrlv(v)} />
                   <Row gap={spacing.sm}>
                     {current ? (

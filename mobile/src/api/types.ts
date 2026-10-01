@@ -225,6 +225,9 @@ export interface CardInput {
 export type VehicleStatus = 'InReview' | 'Approved' | 'Rejected';
 export type PixKeyType = 'CPF' | 'CNPJ' | 'Email' | 'Phone' | 'Random';
 
+/** Resultado da consulta automática ao Detran (plano §4) — 'Pending' quando não há RENAVAM informado. */
+export type VehicleValidationStatus = 'Pending' | 'Auto' | 'Manual' | 'Rejected';
+
 export interface Vehicle {
   id: string;
   plate: string;
@@ -236,6 +239,7 @@ export interface Vehicle {
   status: VehicleStatus;
   rejectionReason: string | null;
   hasCrlv: boolean;
+  validationStatus: VehicleValidationStatus;
 }
 
 export interface DriverProfile {
@@ -269,6 +273,10 @@ export interface VehicleInput {
   color: string;
   year: number;
   category: Category;
+  /** Opcionais — informados, disparam a validação automática do CRLV (plano §4). */
+  renavam?: string;
+  uf?: string;
+  chassi?: string;
 }
 
 export interface EarningsSummary {

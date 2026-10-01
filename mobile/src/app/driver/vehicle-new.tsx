@@ -11,6 +11,7 @@ import { TextField } from '@/components/ui/TextField';
 import { AppText } from '@/components/ui/primitives';
 import { useAuth } from '@/context/AuthContext';
 import { maskPlate, onlyDigits } from '@/lib/masks';
+import { spacing } from '@/theme/tokens';
 import { alertError } from '@/lib/recovery';
 
 const PLATE = /^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/;
@@ -24,16 +25,36 @@ export default function NewVehicle() {
   const [color, setColor] = useState('');
   const [year, setYear] = useState('');
   const [category, setCategory] = useState<Category>('Economy');
+  const [renavam, setRenavam] = useState('');
+  const [uf, setUf] = useState('');
   const [saving, setSaving] = useState(false);
   const thisYear = new Date().getFullYear();
   const y = Number(year);
   const yearError = year.length === 4 && (y < thisYear - 15 || y > thisYear + 1) ? `Aceitamos veículos de ${thisYear - 15} em diante.` : undefined;
-  const valid = PLATE.test(plate) && brand.trim().length >= 2 && model.trim().length >= 1 && color.trim().length >= 3 && year.length === 4 && !yearError;
+  const renavamError = renavam.length > 0 && renavam.length !== 11 ? 'RENAVAM tem 11 números.' : undefined;
+  const valid =
+    PLATE.test(plate) &&
+    brand.trim().length >= 2 &&
+    model.trim().length >= 1 &&
+    color.trim().length >= 3 &&
+    year.length === 4 &&
+    !yearError &&
+    !renavamError &&
+    (renavam.length === 0 || uf.length === 2);
 
   const save = async () => {
     setSaving(true);
     try {
-      await api.driver.addVehicle({ plate: plate.replace('-', ''), brand: brand.trim(), model: model.trim(), color: color.trim(), year: y, category });
+      await api.driver.addVehicle({
+        plate: plate.replace('-', ''),
+        brand: brand.trim(),
+        model: model.trim(),
+        color: color.trim(),
+        year: y,
+        category,
+        renavam: renavam || undefined,
+        uf: uf || undefined,
+      });
       await queryClient.invalidateQueries({ queryKey: qk.driverProfile });
       await refreshMe();
       router.back(); // volta para Veículos, onde envia o CRLV
@@ -61,7 +82,28 @@ export default function NewVehicle() {
           { value: 'Comfort', label: 'Conforto' },
         ]}
       />
-      <AppText variant="small">Depois de salvar, envie a foto do CRLV na lista de veículos.</AppText>
+      <AppText variant="label">RENAVAM (opcional)</AppText>
+      <AppText variant="small">Informando o RENAVAM e a UF, tentamos validar o CRLV automaticamente — hoje isso funciona pra MT e MS; outros estados seguem para revisão manual.</AppText>
+      <TextField
+        label="RENAVAM"
+        value={renavam}
+        onChangeText={(v) => setRenavam(onlyDigits(v).slice(0, 11))}
+        keyboardType="number-pad"
+        placeholder="11 números"
+        error={renavamError}
+      />
+      {renavam.length > 0 ? (
+        <TextField
+          label="UF do veículo"
+          value={uf}
+          onChangeText={(v) => setUf(v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))}
+          autoCapitalize="characters"
+          placeholder="MT"
+        />
+      ) : null}
+      <AppText variant="small" style={{ marginTop: spacing.sm }}>
+        Depois de salvar, envie a foto do CRLV na lista de veículos.
+      </AppText>
     </Screen>
   );
 }
