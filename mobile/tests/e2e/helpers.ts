@@ -87,15 +87,38 @@ export async function uploadJpeg(path: string, token: string) {
 
 /** Sem cliente `psql` instalado localmente (comum em máquinas Windows), aponte
  * E2E_PG_CONTAINER para o container Docker do Postgres local e os comandos
- * passam por `docker exec` em vez de precisar do binário `psql` no PATH. */
+ * passam por `docker exec` em vez de precisar do binário `psql` no PATH.
+ *
+ * Testando contra um servidor remoto (E2E_API_URL apontando pra fora),
+ * E2E_PG_CONTAINER não serve — o Postgres não é local. Nesse caso, aponte
+ * E2E_PG_SSH (usuário@host) e E2E_PG_SSH_CONTAINER (nome do container do
+ * Postgres nesse servidor) pra rodar via `ssh ... docker exec ... psql`. A
+ * senha, se houver, vem de E2E_DATABASE_URL (ex.:
+ * postgresql://postgres:SENHA@host-interno:5432/hub). */
 const PG_CONTAINER = process.env.E2E_PG_CONTAINER;
+const PG_SSH = process.env.E2E_PG_SSH;
+const PG_SSH_CONTAINER = process.env.E2E_PG_SSH_CONTAINER;
+const PG_PASSWORD = (() => {
+  try {
+    return new URL(process.env.E2E_DATABASE_URL ?? '').password || undefined;
+  } catch {
+    return undefined;
+  }
+})();
 
 function psql(sql: string) {
   const args = [DB_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql];
   try {
     execFileSync('psql', args, { stdio: 'pipe' });
   } catch (err) {
-    if ((err as { code?: string }).code !== 'ENOENT' || !PG_CONTAINER) throw err;
+    if ((err as { code?: string }).code !== 'ENOENT') throw err;
+    if (PG_SSH && PG_SSH_CONTAINER) {
+      const remoteSql = sql.replace(/"/g, '\\"');
+      const remote = `docker exec ${PG_SSH_CONTAINER} sh -c "PGPASSWORD='${PG_PASSWORD ?? ''}' psql -U postgres -d hub -v ON_ERROR_STOP=1 -q -c \\"${remoteSql}\\""`;
+      execFileSync('ssh', [PG_SSH, remote], { stdio: 'pipe' });
+      return;
+    }
+    if (!PG_CONTAINER) throw err;
     execFileSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', 'postgres', '-d', 'hub', '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'pipe' });
   }
 }
