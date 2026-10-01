@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Share, StyleSheet, Vibration } from 'react-native';
 import { api } from '@/api/client';
@@ -212,6 +213,14 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
           {etaText ? <AppText variant="small">{etaText}</AppText> : null}
           <RecordingBadge />
           {ride.driver ? <PersonCard name={ride.driver.name} avatarUrl={ride.driver.avatarUrl} rating={ride.driver.rating} vehicle={ride.driver.vehicle} /> : null}
+          <Button
+            title="Mudar destino"
+            icon="location-outline"
+            variant="outline"
+            size="sm"
+            style={{ alignSelf: 'flex-start' }}
+            onPress={() => router.push({ pathname: '/search', params: { field: 'active-destination', rideId: ride.id } })}
+          />
           {sideActions}
         </>
       );

@@ -7,6 +7,7 @@ import { api } from '@/api/client';
 import { errorMessage } from '@/api/errors';
 import { qk } from '@/api/queryKeys';
 import type { Address, Place } from '@/api/types';
+import { useToast } from '@/components/Toast';
 import { ListRow } from '@/components/ui/Controls';
 import { TextField } from '@/components/ui/TextField';
 import { AppText } from '@/components/ui/primitives';
@@ -17,7 +18,7 @@ import { tripDraftStore } from '@/lib/tripDraft';
 import { getCurrentPosition } from '@/services/location';
 import { colors, spacing } from '@/theme/tokens';
 
-type Field = 'origin' | 'destination' | 'save';
+type Field = 'origin' | 'destination' | 'save' | 'active-destination';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -35,9 +36,12 @@ const LABELS = ['Casa', 'Trabalho'];
  * salvos e recentes — 1 toque escolhe (UX09).
  */
 export default function Search() {
-  const params = useLocalSearchParams<{ field?: string }>();
-  const field: Field = params.field === 'origin' || params.field === 'save' ? params.field : 'destination';
+  const params = useLocalSearchParams<{ field?: string; rideId?: string }>();
+  const field: Field =
+    params.field === 'origin' || params.field === 'save' || params.field === 'active-destination' ? params.field : 'destination';
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const [changing, setChanging] = useState(false);
   const [text, setText] = useState('');
   // 3s: dá tempo da pessoa terminar de digitar o endereço (pode estar pensando no bairro/número
   // ainda) antes de gastar uma busca — importante agora que o Google Maps é o provedor padrão.
@@ -51,7 +55,7 @@ export default function Search() {
     return () => clearTimeout(t);
   }, []);
 
-  const places = useQuery({ queryKey: qk.places, queryFn: () => api.me.places(), enabled: field !== 'save' });
+  const places = useQuery({ queryKey: qk.places, queryFn: () => api.me.places(), enabled: field !== 'save' && field !== 'active-destination' });
   const results = useQuery({
     queryKey: ['geo', 'search', q, near?.lat.toFixed(2), near?.lng.toFixed(2)],
     queryFn: ({ signal }) => api.geo.search(q, near, signal),
@@ -67,6 +71,23 @@ export default function Search() {
         { text: 'Outro', onPress: () => void save('Favorito', a) },
         { text: 'Voltar', style: 'cancel' as const },
       ]);
+      return;
+    }
+    // Parada extra/mudança de destino em viagem (plano §11.3): aqui já é a corrida de verdade, não um rascunho.
+    if (field === 'active-destination') {
+      if (!params.rideId || changing) return;
+      setChanging(true);
+      try {
+        const next = await api.rides.changeDestination(params.rideId, { lat: a.lat, lng: a.lng, address: a.address });
+        queryClient.setQueryData(qk.ride(params.rideId), next);
+        queryClient.setQueryData(qk.activeRide, next);
+        toast.success('Destino alterado.');
+        router.back();
+      } catch (err) {
+        alertError(err, 'Não foi possível mudar o destino');
+      } finally {
+        setChanging(false);
+      }
       return;
     }
     tripDraftStore.set((d) => ({ ...d, [field]: { lat: a.lat, lng: a.lng, address: a.address } }));
@@ -104,7 +125,9 @@ export default function Search() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['bottom']}>
-      <Stack.Screen options={{ title: field === 'origin' ? 'Embarque' : field === 'save' ? 'Salvar local' : 'Para onde?' }} />
+      <Stack.Screen
+        options={{ title: field === 'origin' ? 'Embarque' : field === 'save' ? 'Salvar local' : field === 'active-destination' ? 'Novo destino' : 'Para onde?' }}
+      />
       <View style={{ padding: spacing.lg, paddingBottom: spacing.sm }}>
         <TextField
           ref={inputRef}
@@ -122,7 +145,7 @@ export default function Search() {
         data={showSuggestions ? suggestions : (results.data ?? [])}
         keyExtractor={(item, i) => `${item.lat},${item.lng},${i}`}
         ListHeaderComponent={
-          field === 'save' ? null : (
+          field === 'save' || field === 'active-destination' ? null : (
             <>
               {field === 'origin' ? <ListRow icon="navigate-outline" title="Usar minha localização" onPress={useMyLocation} /> : null}
               <ListRow icon="pin-outline" title="Marcar no mapa" subtitle="Arraste o pin até o ponto certo" onPress={pickOnMap} />

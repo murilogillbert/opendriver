@@ -71,6 +71,10 @@ ridesRouter.post('/rides/:id/share', requireAuth, limits.share, async (req, res)
   res.json(envelope(await rides.shareRide(id(req.params.id), userId(req))));
 });
 
+ridesRouter.put('/rides/:id/destination', requireAuth, geoRateLimiter, validateBody(rides.changeDestinationSchema), async (req, res) => {
+  res.json(envelope(await rides.changeDestination(id(req.params.id), userId(req), req.body)));
+});
+
 ridesRouter.post('/rides/:id/tip', requireAuth, validateBody(tipSchema), async (req, res) => {
   res.json(envelope(await tipRide(id(req.params.id), userId(req), req.body.amount)));
 });

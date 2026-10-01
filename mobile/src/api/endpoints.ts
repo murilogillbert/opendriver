@@ -114,6 +114,8 @@ export function createApi(http: HttpClient) {
       rate: (id: string, stars: number, comment?: string) => http.post<Ride>(`/rides/${enc(id)}/rating`, { stars, comment }),
       share: (id: string) => http.post<{ url: string; token: string }>(`/rides/${enc(id)}/share`),
       tip: (id: string, amount: number) => http.post<{ amount: number }>(`/rides/${enc(id)}/tip`, { amount }),
+      changeDestination: (id: string, input: { lat: number; lng: number; address?: string }) =>
+        http.request<Ride>(`/rides/${enc(id)}/destination`, { method: 'PUT', body: input }),
       emergency: (id: string, at?: LatLng | null) => http.post<EmergencyResult>(`/rides/${enc(id)}/emergency`, at ?? {}),
       uploadRecording: (id: string, file: UploadFile) =>
         http.request<{ id: string; expiresAt: string }>(`/rides/${enc(id)}/recordings`, { method: 'POST', body: form(file), timeoutMs: 120_000 }),

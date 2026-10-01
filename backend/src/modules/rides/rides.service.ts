@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { DRIVER_CANCEL_REASON_CODES, PASSENGER_CANCEL_REASON_CODES, cancelReasonsFor } from '../../domain/cancelReasons.js';
-import { haversineMeters } from '../../domain/geo.js';
+import { haversineMeters, isValidLatLng } from '../../domain/geo.js';
+import { computeFare } from '../../domain/pricing.js';
 import { ACTIVE_STATUSES, NO_SHOW_GRACE_SECONDS, canTransition, type RideStatus } from '../../domain/rideState.js';
 import { AppError } from '../../errors.js';
+import { reverse } from '../../infra/geo/geocoding.js';
 import { route } from '../../infra/geo/routing.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
@@ -498,4 +500,67 @@ export async function shareRide(rideId: string, passengerId: string) {
   const token = ride.shareToken ?? randomToken(24);
   if (!ride.shareToken) await prisma.ride.update({ where: { id: rideId }, data: { shareToken: token } });
   return { url: `${config.publicBaseUrl}/t/${token}`, token };
+}
+
+export const changeDestinationSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  address: z.string().trim().max(300).optional(),
+});
+
+/**
+ * Parada extra/mudança de destino em viagem (plano §11.3): recotação completa
+ * (origem → novo destino), nunca um ajuste parcial — mesma lógica da cotação
+ * original. Em corrida agendada, reaplica o acréscimo (plano §5.1) sobre o
+ * novo trajeto, senão a mudança "driblaria" o acréscimo já pago.
+ */
+export async function changeDestination(rideId: string, passengerId: string, input: z.infer<typeof changeDestinationSchema>) {
+  return withLock(`ride:${rideId}`, async () => {
+    const ride = await loadForUser(rideId, passengerId);
+    if (ride.passengerId !== passengerId) throw new AppError('Corrida não encontrada.', 404, 'not_found');
+    if (ride.status !== 'InProgress') throw new AppError('Só é possível mudar o destino durante a viagem.', 409, 'invalid_state');
+    const destination = { lat: input.lat, lng: input.lng };
+    if (!isValidLatLng(destination)) throw new AppError('Não conseguimos identificar o novo destino.', 400, 'invalid_location');
+    const origin = { lat: ride.originLat, lng: ride.originLng };
+    const straight = haversineMeters(origin, destination);
+    if (straight < 200) throw new AppError('O novo destino está muito perto da origem.', 400, 'too_close');
+    if (straight > 200_000) throw new AppError('O novo destino está longe demais para esta corrida.', 400, 'too_far');
+
+    const [r, addr, rule] = await Promise.all([
+      route(origin, destination),
+      input.address ? Promise.resolve(input.address) : reverse(destination).then((p) => p.address),
+      prisma.pricing.findUnique({ where: { category: ride.category } }),
+    ]);
+    if (!rule) throw new AppError('Categoria indisponível no momento.', 503, 'no_categories');
+    const f = computeFare(rule, r.distanceM, r.durationS);
+    let fare = f.fare;
+    let platformFee = f.platformFee;
+    if (ride.isScheduled) {
+      const pct = config.scheduled.surchargePercent;
+      fare = round2(fare * (1 + pct / 100));
+      platformFee = round2(platformFee * (1 + pct / 100));
+    }
+    const driverEarning = round2(fare - platformFee);
+
+    await prisma.ride.update({
+      where: { id: rideId },
+      data: {
+        destLat: destination.lat,
+        destLng: destination.lng,
+        destAddress: addr.slice(0, 300),
+        distanceM: r.distanceM,
+        durationS: r.durationS,
+        polyline: r.polyline,
+        fare,
+        platformFee,
+        driverEarning,
+      },
+    });
+    await prisma.rideEvent.create({
+      data: { rideId, type: 'destination_changed', actor: 'Passenger', actorId: passengerId, payload: { destAddress: addr.slice(0, 300), fare } },
+    });
+    await publishRide(rideId);
+    if (ride.driverId) void sendPush(ride.driverId, { title: 'Destino alterado', body: 'O passageiro mudou o destino desta corrida.', data: { rideId } });
+    return getRide(rideId, passengerId);
+  });
 }
