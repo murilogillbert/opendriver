@@ -2,6 +2,7 @@ import type { DriverProfile, Vehicle } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { isValidLatLng } from '../../domain/geo.js';
+import { isImplausibleJump } from '../../domain/mockLocation.js';
 import { ratingAverage } from '../../domain/rating.js';
 import { ageOn, isValidCnh, isValidRenavam, normalizePixKey, normalizePlate, type PixKeyType } from '../../domain/validators.js';
 import { AppError } from '../../errors.js';
@@ -315,6 +316,7 @@ export async function goOffline(userId: string) {
 
 export async function updateLocation(userId: string, input: z.infer<typeof locationSchema>) {
   if (!isValidLatLng(input)) throw new AppError('Localização inválida.', 400, 'invalid_location');
+  const prevLoc = await prisma.driverLocation.findUnique({ where: { driverId: userId } });
   const data = {
     lat: input.lat,
     lng: input.lng,
@@ -324,6 +326,20 @@ export async function updateLocation(userId: string, input: z.infer<typeof locat
     updatedAt: new Date(),
   };
   await prisma.driverLocation.upsert({ where: { driverId: userId }, create: { driverId: userId, ...data }, update: data });
+  if (prevLoc && isImplausibleJump(prevLoc.lat, prevLoc.lng, prevLoc.updatedAt, input.lat, input.lng, data.updatedAt)) {
+    void flagMockLocation(userId);
+  }
+}
+
+/** Nunca bloqueia o motorista — só registra pro admin revisar (plano §11.4, detecção, não punição automática). */
+async function flagMockLocation(driverId: string): Promise<void> {
+  try {
+    await prisma.driverProfile.update({ where: { userId: driverId }, data: { mockLocationFlags: { increment: 1 } } });
+    const active = await prisma.ride.findFirst({ where: { driverId, status: { in: ['DriverAssigned', 'DriverArrived', 'InProgress'] } }, select: { id: true } });
+    if (active) await prisma.rideEvent.create({ data: { rideId: active.id, type: 'mock_location_suspected', actor: 'System' } });
+  } catch (err) {
+    console.warn('Falha ao registrar possível GPS falsificado', driverId, err);
+  }
 }
 
 // ------------------------------------------------------------------ ganhos

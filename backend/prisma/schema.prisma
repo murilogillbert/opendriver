@@ -287,32 +287,35 @@ enum IncidentStatus {
 }
 
 model DriverProfile {
-  userId           String       @id @map("user_id") @db.Uuid
-  user             User         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status           DriverStatus @default(PendingDocuments)
-  cnhNumber        String?      @map("cnh_number") @db.VarChar(20)
-  cnhCategory      String?      @map("cnh_category") @db.VarChar(5)
-  cnhExpiresAt     DateTime?    @map("cnh_expires_at") @db.Date
-  birthDate        DateTime?    @map("birth_date") @db.Date
-  cnhPhotoKey      String?      @map("cnh_photo_key")
-  selfieKey        String?      @map("selfie_key")
-  rejectionReason  String?      @map("rejection_reason") @db.VarChar(400)
-  reviewedAt       DateTime?    @map("reviewed_at")
-  reviewedBy       String?      @map("reviewed_by") @db.Uuid
-  pixKey           String?      @map("pix_key") @db.VarChar(140)
-  pixKeyType       PixKeyType?  @map("pix_key_type")
-  isOnline         Boolean      @default(false) @map("is_online")
-  onlineSince      DateTime?    @map("online_since")
-  currentVehicleId String?      @map("current_vehicle_id") @db.Uuid
-  ratingSum        Int          @default(0) @map("rating_sum")
-  ratingCount      Int          @default(0) @map("rating_count")
+  userId            String       @id @map("user_id") @db.Uuid
+  user              User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status            DriverStatus @default(PendingDocuments)
+  cnhNumber         String?      @map("cnh_number") @db.VarChar(20)
+  cnhCategory       String?      @map("cnh_category") @db.VarChar(5)
+  cnhExpiresAt      DateTime?    @map("cnh_expires_at") @db.Date
+  birthDate         DateTime?    @map("birth_date") @db.Date
+  cnhPhotoKey       String?      @map("cnh_photo_key")
+  selfieKey         String?      @map("selfie_key")
+  rejectionReason   String?      @map("rejection_reason") @db.VarChar(400)
+  reviewedAt        DateTime?    @map("reviewed_at")
+  reviewedBy        String?      @map("reviewed_by") @db.Uuid
+  pixKey            String?      @map("pix_key") @db.VarChar(140)
+  pixKeyType        PixKeyType?  @map("pix_key_type")
+  isOnline          Boolean      @default(false) @map("is_online")
+  onlineSince       DateTime?    @map("online_since")
+  currentVehicleId  String?      @map("current_vehicle_id") @db.Uuid
+  ratingSum         Int          @default(0) @map("rating_sum")
+  ratingCount       Int          @default(0) @map("rating_count")
   /// Métricas de qualidade (plano §11.6) — aceite/cancelamento, usadas no admin (RF17) e com
   /// leve efeito no matching (dispatch.ts manda quem cancela muito pro fim da fila, sem excluir).
-  offersSent       Int          @default(0) @map("offers_sent")
-  offersAccepted   Int          @default(0) @map("offers_accepted")
-  ridesCancelled   Int          @default(0) @map("rides_cancelled")
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at")
+  offersSent        Int          @default(0) @map("offers_sent")
+  offersAccepted    Int          @default(0) @map("offers_accepted")
+  ridesCancelled    Int          @default(0) @map("rides_cancelled")
+  /// Antifraude de localização (plano §11.4) — contagem de "teleportes" (deslocamento implicando
+  /// velocidade impossível de carro) detectados; só para revisão do admin, nunca bloqueia sozinho.
+  mockLocationFlags Int          @default(0) @map("mock_location_flags")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @default(now()) @updatedAt @map("updated_at")
 
   @@index([status])
   @@index([isOnline])

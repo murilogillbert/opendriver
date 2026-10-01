@@ -113,6 +113,7 @@ export async function listDrivers(q: { status?: string; q?: string } & z.infer<t
       rating: ratingAverage(d.ratingSum, d.ratingCount),
       acceptanceRate: acceptanceRate(d.offersSent, d.offersAccepted),
       cancellationRate: cancellationRate(d.offersAccepted, d.ridesCancelled),
+      mockLocationFlags: d.mockLocationFlags,
       updatedAt: d.updatedAt,
     })),
     total,
@@ -154,6 +155,8 @@ export async function driverDetail(userId: string) {
     ridesCancelled: d.ridesCancelled,
     acceptanceRate: acceptanceRate(d.offersSent, d.offersAccepted),
     cancellationRate: cancellationRate(d.offersAccepted, d.ridesCancelled),
+    /// Antifraude de localização (plano §11.4) — contagem de "teleportes" detectados; revisão manual.
+    mockLocationFlags: d.mockLocationFlags,
     vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, brand: v.brand, model: v.model, color: v.color, year: v.year, category: v.category, status: v.status, active: v.active, hasCrlv: !!v.crlvKey, rejectionReason: v.rejectionReason })),
   };
 }

@@ -5,6 +5,7 @@ import { ageOn, isValidCnh, isValidCpf, isValidRenavam, normalizePixKey, normali
 import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
 import { COMPLAINT_CATEGORIES, COMPLAINT_CATEGORY_CODES } from '../../src/domain/complaintCategories.js';
 import { acceptanceRate, cancellationRate } from '../../src/domain/driverQuality.js';
+import { isImplausibleJump } from '../../src/domain/mockLocation.js';
 
 describe('geo', () => {
   it('haversine ~ distância conhecida', () => {
@@ -93,6 +94,20 @@ describe('categorias de reclamação (plano §3)', () => {
     expect(COMPLAINT_CATEGORIES.some((c) => c.code === 'other')).toBe(true);
     expect(COMPLAINT_CATEGORY_CODES).toEqual(COMPLAINT_CATEGORIES.map((c) => c.code));
     expect(new Set(COMPLAINT_CATEGORY_CODES).size).toBe(COMPLAINT_CATEGORY_CODES.length);
+  });
+});
+
+describe('antifraude de localização (plano §11.4)', () => {
+  const a = { lat: -15.5961, lng: -56.0967 }; // Praça Alencastro
+  const b = { lat: -15.5754, lng: -56.079 }; // Shopping Pantanal, ~3,1 km de a
+  it('teleporte (distância grande, tempo curto) é implausível', () => {
+    expect(isImplausibleJump(a.lat, a.lng, new Date('2026-01-01T12:00:00Z'), b.lat, b.lng, new Date('2026-01-01T12:00:02Z'))).toBe(true);
+  });
+  it('mesma distância num tempo plausível de carro não é flagrada', () => {
+    expect(isImplausibleJump(a.lat, a.lng, new Date('2026-01-01T12:00:00Z'), b.lat, b.lng, new Date('2026-01-01T12:05:00Z'))).toBe(false);
+  });
+  it('deslocamento pequeno (jitter de GPS) nunca é flagrado, mesmo instantâneo', () => {
+    expect(isImplausibleJump(a.lat, a.lng, new Date('2026-01-01T12:00:00Z'), a.lat + 0.0001, a.lng, new Date('2026-01-01T12:00:00Z'))).toBe(false);
   });
 });
 
