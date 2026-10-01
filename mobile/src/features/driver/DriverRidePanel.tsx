@@ -13,10 +13,12 @@ import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { AppText, Badge, Card, Icon, KeyValue, Row, Stack } from '@/components/ui/primitives';
+import { useLiveRoute } from '@/hooks/useLiveRoute';
+import { useNow } from '@/hooks/useNow';
 import { formatCurrency } from '@/lib/format';
 import { openNavigation } from '@/lib/navigation';
 import { alertError } from '@/lib/recovery';
-import { can, driverHeadline } from '@/lib/ride';
+import { can, driverHeadline, etaFromDurationS } from '@/lib/ride';
 import { useStore } from '@/lib/store';
 import { dismissRide } from '@/lib/tripDraft';
 import { colors, spacing } from '@/theme/tokens';
@@ -93,6 +95,9 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
 
   const toPickup = ride.status === 'DriverAssigned' || ride.status === 'DriverArrived';
   const target = toPickup ? ride.origin : ride.destination;
+  const liveRoute = useLiveRoute(ride);
+  const now = useNow(15_000, ride.status === 'DriverAssigned' || ride.status === 'InProgress');
+  const etaText = etaFromDurationS(liveRoute.durationS, now);
 
   let body: ReactNode = null;
   let footer: ReactNode = null;
@@ -108,6 +113,7 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
             {target.address}
           </AppText>
         </Row>
+        {etaText ? <AppText variant="small">{etaText}</AppText> : null}
         {ride.status === 'InProgress' && recording ? <Badge label="Gravando áudio da viagem" tone="danger" icon="mic" /> : null}
         <Row gap={spacing.sm}>
           <Button title="Navegar" icon="navigate" variant="secondary" size="sm" style={{ flex: 1 }} onPress={() => void openNavigation(target, target.address)} />

@@ -20,8 +20,9 @@ import { driverLocationStore } from '@/context/RealtimeContext';
 import { formatCurrency, formatDistance, formatTime } from '@/lib/format';
 import { haversineMeters } from '@/lib/geo';
 import { alertError } from '@/lib/recovery';
+import { useLiveRoute } from '@/hooks/useLiveRoute';
 import { useNow } from '@/hooks/useNow';
-import { can, passengerHeadline, pickupEtaText, searchingHint } from '@/lib/ride';
+import { can, etaFromDurationS, passengerHeadline, pickupEtaText, searchingHint } from '@/lib/ride';
 import { useStore } from '@/lib/store';
 import { dismissRide, tripDraftStore } from '@/lib/tripDraft';
 import { colors, spacing } from '@/theme/tokens';
@@ -55,7 +56,8 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   const [comment, setComment] = useState('');
   const driverLoc = useStore(driverLocationStore);
   const live = driverLoc?.rideId === ride.id ? driverLoc : null;
-  const now = useNow(15_000, ride.status === 'Searching' || ride.status === 'DriverAssigned');
+  const liveRoute = useLiveRoute(ride);
+  const now = useNow(15_000, ride.status === 'Searching' || ride.status === 'DriverAssigned' || ride.status === 'InProgress');
 
   // Motorista chegou: avisa com vibração (o passageiro pode estar com o celular no bolso).
   const lastStatus = useRef(ride.status);
@@ -163,8 +165,9 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
         <>
           {ride.status === 'DriverAssigned' ? (
             <AppText variant="bodyStrong">
-              {[pickupEtaText(ride.pickupEta, now), live ? `a ${formatDistance(haversineMeters(live, ride.origin))}` : null].filter(Boolean).join(' · ') ||
-                'A caminho do embarque'}
+              {[etaFromDurationS(liveRoute.durationS, now) ?? pickupEtaText(ride.pickupEta, now), live ? `a ${formatDistance(haversineMeters(live, ride.origin))}` : null]
+                .filter(Boolean)
+                .join(' · ') || 'A caminho do embarque'}
             </AppText>
           ) : null}
           {ride.status === 'DriverArrived' ? <AppText variant="small">Confira a placa antes de entrar.</AppText> : null}
@@ -184,13 +187,14 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
       break;
 
     case 'InProgress': {
-      const eta = ride.startedAt ? new Date(new Date(ride.startedAt).getTime() + ride.durationS * 1000) : null;
+      const staticEta = ride.startedAt ? new Date(new Date(ride.startedAt).getTime() + ride.durationS * 1000) : null;
+      const etaText = etaFromDurationS(liveRoute.durationS, now) ?? (staticEta ? `Chegada prevista às ${formatTime(staticEta)}` : null);
       body = (
         <>
           <AppText variant="body" numberOfLines={2}>
             {ride.destination.address}
           </AppText>
-          {eta ? <AppText variant="small">Chegada prevista às {formatTime(eta)}</AppText> : null}
+          {etaText ? <AppText variant="small">{etaText}</AppText> : null}
           <RecordingBadge />
           {ride.driver ? <PersonCard name={ride.driver.name} avatarUrl={ride.driver.avatarUrl} rating={ride.driver.rating} vehicle={ride.driver.vehicle} /> : null}
           {sideActions}

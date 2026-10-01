@@ -108,6 +108,12 @@ export function pickupEtaText(pickupEta: string | null | undefined, now: number)
   return `Chega em ~${Math.ceil(ms / 60_000)} min`;
 }
 
+/** ETA sempre visível (plano §11.2): usa o trajeto em tempo real (useLiveRoute) quando disponível. */
+export function etaFromDurationS(durationS: number | null | undefined, now: number): string | null {
+  if (durationS == null) return null;
+  return pickupEtaText(new Date(now + durationS * 1000).toISOString(), now);
+}
+
 /** Busca demorando: tranquiliza o passageiro em vez de só mostrar um spinner. */
 export function searchingHint(requestedAt: string, now: number): string {
   const s = (now - new Date(requestedAt).getTime()) / 1000;

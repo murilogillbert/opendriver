@@ -9,7 +9,7 @@ import { liveRoutePhase } from '@/lib/ride';
  * o mesmo para passageiro e motorista. Atualiza sozinho; sem trajeto (offline,
  * sem posição) devolve null e o mapa segue com os marcadores — nunca bloqueia a corrida.
  */
-export function useLiveRoute(ride: Ride | null): { polyline: string | null; phase: 'pickup' | 'dropoff' | null } {
+export function useLiveRoute(ride: Ride | null): { polyline: string | null; phase: 'pickup' | 'dropoff' | null; durationS: number | null } {
   const phase = liveRoutePhase(ride);
   const q = useQuery({
     queryKey: qk.liveRoute(ride?.id ?? '', phase ?? ''),
@@ -19,6 +19,7 @@ export function useLiveRoute(ride: Ride | null): { polyline: string | null; phas
     staleTime: 15_000,
     retry: false,
   });
-  // Nunca mostra o trajeto de uma fase anterior (ex.: até o embarque, já em viagem).
-  return { phase, polyline: q.data && q.data.phase === phase ? q.data.polyline : null };
+  // Nunca mostra o trajeto (nem o ETA) de uma fase anterior (ex.: até o embarque, já em viagem).
+  const current = q.data && q.data.phase === phase ? q.data : null;
+  return { phase, polyline: current?.polyline ?? null, durationS: current?.durationS ?? null };
 }

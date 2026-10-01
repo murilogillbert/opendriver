@@ -4,7 +4,7 @@ import { NO_SHOW_GRACE_SECONDS, driverActions, passengerActions, type Role } fro
 import { round2 } from '../../lib/money.js';
 
 export const rideInclude = {
-  passenger: { select: { id: true, name: true, avatarUrl: true, phone: true, passengerProfile: { select: { ratingSum: true, ratingCount: true } } } },
+  passenger: { select: { id: true, name: true, email: true, avatarUrl: true, phone: true, passengerProfile: { select: { ratingSum: true, ratingCount: true } } } },
   driver: { select: { id: true, name: true, avatarUrl: true, phone: true, driverProfile: { select: { ratingSum: true, ratingCount: true } } } },
   scheduledFavoriteDriver: { select: { name: true } },
   vehicle: true,

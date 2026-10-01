@@ -3,6 +3,7 @@ import { config } from '../../config.js';
 import { isValidLatLng } from '../../domain/geo.js';
 import { AppError } from '../../errors.js';
 import { escapeHtml, sendEmail } from '../../infra/email.js';
+import { route } from '../../infra/geo/routing.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
 import { getSetting } from '../../infra/settings.js';
@@ -95,6 +96,13 @@ export async function trackingData(token: string) {
   const endedAt = ride.completedAt ?? ride.cancelledAt;
   if (!active && (!endedAt || Date.now() - endedAt.getTime() > TRACKING_GRACE_MS)) return null;
   const loc = active && ride.driverId ? await prisma.driverLocation.findUnique({ where: { driverId: ride.driverId } }) : null;
+  // ETA sempre visível (plano §11.2) — também no acompanhamento compartilhado, não só no app.
+  let etaMinutes: number | null = null;
+  if (loc && (ride.status === 'DriverAssigned' || ride.status === 'InProgress')) {
+    const target = ride.status === 'InProgress' ? { lat: ride.destLat, lng: ride.destLng } : { lat: ride.originLat, lng: ride.originLng };
+    const r = await route({ lat: loc.lat, lng: loc.lng }, target);
+    etaMinutes = Math.max(1, Math.round(r.durationS / 60));
+  }
   const statusLabel: Record<string, string> = {
     DriverAssigned: 'Motorista a caminho do embarque',
     DriverArrived: 'Motorista no local de embarque',
@@ -109,6 +117,7 @@ export async function trackingData(token: string) {
     driver: ride.driver ? ride.driver.name.split(' ')[0] : null,
     vehicle: ride.vehicle ? `${ride.vehicle.model} ${ride.vehicle.color} · ${ride.vehicle.plate}` : null,
     location: loc ? { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt } : null,
+    etaMinutes,
   };
 }
 
@@ -124,7 +133,7 @@ h1{font-size:20px;color:#0a1726}.card{background:#fff;border-radius:16px;padding
 <p class="muted">Atualiza sozinho a cada 10 segundos. Em emergência, ligue 190.</p></main>
 <script>
 async function load(){try{const r=await fetch('/t/${safe}/data',{cache:'no-store'});if(!r.ok){document.getElementById('status').textContent='Link inválido ou expirado.';return}
-const d=await r.json();document.getElementById('status').textContent=d.status;document.getElementById('dest').textContent='Destino: '+d.destination;
+const d=await r.json();document.getElementById('status').textContent=d.status+(d.etaMinutes?' · chega em ~'+d.etaMinutes+' min':'');document.getElementById('dest').textContent='Destino: '+d.destination;
 document.getElementById('driver').textContent=d.driver?('Motorista: '+d.driver):'';document.getElementById('vehicle').textContent=d.vehicle||'';
 const m=document.getElementById('map');if(d.location){m.hidden=false;m.href='https://www.openstreetmap.org/?mlat='+d.location.lat+'&mlon='+d.location.lng+'#map=16/'+d.location.lat+'/'+d.location.lng}else{m.hidden=true}
 if(d.active)setTimeout(load,10000)}catch(e){setTimeout(load,15000)}}load();

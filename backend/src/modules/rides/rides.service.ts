@@ -14,6 +14,7 @@ import { resolveDefault } from '../payments/paymentMethods.service.js';
 import { settleRide, syncRidePayment, latestPendingPix } from '../payments/settlement.service.js';
 import { dispatch, withdrawPendingOffers } from './dispatch.js';
 import { publishRide } from './publish.js';
+import { sendRideReceiptEmail } from './receipt.js';
 import { rideInclude, toRideDto } from './rideDto.js';
 import { assertValidScheduledAt, type QuotePrice } from './quote.service.js';
 
@@ -400,6 +401,7 @@ export async function finishRide(rideId: string, driverId: string) {
     void settleRide(rideId)
       .then(() => publishRide(rideId))
       .catch((err) => console.error('Falha na liquidação', rideId, err));
+    void sendRideReceiptEmail(ride); // nunca bloqueia a conclusão da corrida (plano §11.8)
     return getRide(rideId, driverId);
   });
 }
