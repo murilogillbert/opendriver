@@ -89,10 +89,17 @@ export function createApi(http: HttpClient) {
       reverse: (p: LatLng) => http.get<Place>(`/geo/reverse?lat=${p.lat}&lng=${p.lng}`),
     },
     rides: {
-      quote: (origin: LatLng & { address?: string }, destination: LatLng & { address?: string }) =>
-        http.post<Quote>('/rides/quote', { origin, destination }),
-      request: (input: { quoteId: string; category?: string; paymentMethodId?: string; useCashback?: boolean; guestPassengerName?: string }) =>
-        http.post<Ride>('/rides', input),
+      quote: (origin: LatLng & { address?: string }, destination: LatLng & { address?: string }, scheduledAt?: Date) =>
+        http.post<Quote>('/rides/quote', { origin, destination, scheduledAt: scheduledAt?.toISOString() }),
+      request: (input: {
+        quoteId: string;
+        category?: string;
+        paymentMethodId?: string;
+        useCashback?: boolean;
+        guestPassengerName?: string;
+        scheduledAt?: Date;
+        favoriteDriverId?: string;
+      }) => http.post<Ride>('/rides', { ...input, scheduledAt: input.scheduledAt?.toISOString() }),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),
       liveRoute: (id: string) => http.get<LiveRoute>(`/rides/${enc(id)}/live-route`),

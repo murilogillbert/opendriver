@@ -16,8 +16,9 @@ import { AppText, Card, Divider, Icon, KeyValue, Row } from '@/components/ui/pri
 import { TextField } from '@/components/ui/TextField';
 import { ErrorState } from '@/components/ui/States';
 import { useAuth } from '@/context/AuthContext';
-import { formatCurrency, formatDistance, formatDuration } from '@/lib/format';
+import { formatCurrency, formatDateTime, formatDistance, formatDuration } from '@/lib/format';
 import { alertError } from '@/lib/recovery';
+import { useStore } from '@/lib/store';
 import { resetTripDraft, tripDraftStore } from '@/lib/tripDraft';
 import { colors, radius, spacing } from '@/theme/tokens';
 
@@ -45,6 +46,8 @@ export function QuotePanel({
   const { me } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const draft = useStore(tripDraftStore);
+  const scheduledAt = draft.scheduledAt ? new Date(draft.scheduledAt) : null;
   const [category, setCategory] = useState<Category | null>(null);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [useCashback, setUseCashback] = useState<boolean | null>(null);
@@ -52,10 +55,10 @@ export function QuotePanel({
   const [picker, setPicker] = useState(false);
   const [guestName, setGuestName] = useState('');
 
-  const quoteKey = ['quote', origin.lat, origin.lng, destination.lat, destination.lng] as const;
+  const quoteKey = ['quote', origin.lat, origin.lng, destination.lat, destination.lng, draft.scheduledAt] as const;
   const quote = useQuery({
     queryKey: quoteKey,
-    queryFn: () => api.rides.quote(origin, destination),
+    queryFn: () => api.rides.quote(origin, destination, scheduledAt ?? undefined),
     staleTime: 4 * 60_000, // cotação vale 5 min no servidor
     gcTime: 0,
   });
@@ -90,10 +93,13 @@ export function QuotePanel({
         paymentMethodId: method?.id,
         useCashback: balance > 0 ? cashbackOn : undefined,
         guestPassengerName: needsGuestName ? guestName.trim() : undefined,
+        scheduledAt: scheduledAt ?? undefined,
+        favoriteDriverId: scheduledAt ? (draft.favoriteDriverId ?? undefined) : undefined,
       }),
     onSuccess: (ride) => {
       AsyncStorage.setItem(LAST_CATEGORY, ride.category).catch(() => undefined);
-      queryClient.setQueryData(qk.activeRide, ride);
+      if (ride.status === 'Scheduled') toast.success(`Corrida agendada para ${formatDateTime(ride.scheduledAt)}.`);
+      else queryClient.setQueryData(qk.activeRide, ride);
       resetTripDraft();
     },
     onError: async (err) => {
@@ -141,7 +147,7 @@ export function QuotePanel({
       footer={
         <>
           <Button
-            title={selected ? `Pedir corrida · ${formatCurrency(toPay)}` : 'Calculando preço…'}
+            title={selected ? `${scheduledAt ? 'Agendar corrida' : 'Pedir corrida'} · ${formatCurrency(toPay)}` : 'Calculando preço…'}
             size="lg"
             disabled={!selected || needsCpf || guestNameMissing}
             loading={request.isPending || quote.isPending}
@@ -185,6 +191,21 @@ export function QuotePanel({
           })}
         </Row>
       ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={scheduledAt ? `Agendada para ${formatDateTime(scheduledAt)}. Tocar para alterar` : 'Pedir agora. Tocar para agendar pra depois'}
+        onPress={() => router.push('/schedule')}
+        style={styles.payRow}
+      >
+        <Icon name="calendar-outline" size={20} color={colors.navy} />
+        <AppText variant="bodyStrong" style={{ flex: 1 }}>
+          {scheduledAt ? `Agendada para ${formatDateTime(scheduledAt)}` : 'Pedir agora'}
+        </AppText>
+        <AppText variant="small" color={colors.blue}>
+          {scheduledAt ? 'Alterar' : 'Agendar'}
+        </AppText>
+      </Pressable>
 
       <Pressable
         accessibilityRole="button"
@@ -241,6 +262,7 @@ export function QuotePanel({
           ) : (
             <AppText variant="small">O preço é fixo e não muda com o trânsito.</AppText>
           )}
+          {scheduledAt ? <AppText variant="small">Corrida agendada: o preço já inclui o acréscimo por reservar o horário.</AppText> : null}
         </Card>
       ) : null}
 

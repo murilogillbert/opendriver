@@ -15,7 +15,7 @@ import { settleRide, syncRidePayment, latestPendingPix } from '../payments/settl
 import { dispatch, withdrawPendingOffers } from './dispatch.js';
 import { publishRide } from './publish.js';
 import { rideInclude, toRideDto } from './rideDto.js';
-import type { QuotePrice } from './quote.service.js';
+import { assertValidScheduledAt, type QuotePrice } from './quote.service.js';
 
 export const requestSchema = z.object({
   quoteId: z.string().uuid(),
@@ -24,7 +24,13 @@ export const requestSchema = z.object({
   useCashback: z.boolean().optional(),
   /** Preenchido pelo app quando o embarque escolhido não é a localização atual de quem pediu. */
   guestPassengerName: z.string().trim().min(1).max(100).optional(),
+  /** Plano §5: corrida agendada — precisa bater com uma cotação criada com o mesmo `scheduledAt`. */
+  scheduledAt: z.coerce.date().optional(),
+  /** Motorista favorito escolhido pra oferta exclusiva antes da busca geral (plano §5/§6). */
+  favoriteDriverId: z.string().uuid().optional(),
 });
+
+const MAX_PENDING_SCHEDULED_RIDES = 3;
 
 export const cancelSchema = z.object({
   // Validado contra a lista certa (passageiro × motorista) dentro do serviço,
@@ -100,6 +106,22 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
     if (quote.usedAt) throw new AppError('Esta cotação já foi usada. Busque o destino de novo.', 409, 'quote_used');
     if (quote.expiresAt.getTime() < Date.now()) throw new AppError('O preço expirou. Toque em buscar para atualizar.', 409, 'quote_expired');
 
+    // Plano §5: agendar exige uma cotação que já veio com o acréscimo, e vice-versa (preço sempre bate com o que foi mostrado — UX01).
+    if (!!input.scheduledAt !== quote.scheduled)
+      throw new AppError('A cotação não corresponde ao tipo de corrida (agendada ou imediata). Busque de novo.', 409, 'quote_mismatch');
+    if (input.scheduledAt) {
+      assertValidScheduledAt(input.scheduledAt);
+      const pendingScheduled = await prisma.ride.count({ where: { passengerId, status: 'Scheduled' } });
+      if (pendingScheduled >= MAX_PENDING_SCHEDULED_RIDES)
+        throw new AppError('Você já tem corridas agendadas demais. Cancele uma para agendar outra.', 409, 'too_many_scheduled');
+      if (input.favoriteDriverId) {
+        const isFavorite = await prisma.favoriteDriver.findUnique({
+          where: { passengerId_driverId: { passengerId, driverId: input.favoriteDriverId } },
+        });
+        if (!isFavorite) throw new AppError('Este motorista não está nos seus favoritos.', 400, 'not_a_favorite');
+      }
+    }
+
     const prices = quote.prices as unknown as QuotePrice[];
     // Categoria: a pedida; senão a última usada; senão a mais barata (UX09 — valor padrão).
     let category = input.category;
@@ -142,12 +164,17 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
           useCashback: input.useCashback ?? profile.useHubCashback,
           pickupCode: randomPickupCode(),
           guestPassengerName: input.guestPassengerName,
+          status: input.scheduledAt ? 'Scheduled' : undefined,
+          isScheduled: !!input.scheduledAt,
+          scheduledAt: input.scheduledAt,
+          scheduledFavoriteDriverId: input.favoriteDriverId,
         },
       });
       await tx.rideEvent.create({ data: { rideId: created.id, type: 'requested', actor: 'Passenger', actorId: passengerId } });
       return created;
     });
-    await dispatch(ride.id);
+    // Agendada: fica em Scheduled até o job de promoção (jobs/scheduledRides.ts) abrir a busca perto do horário.
+    if (!input.scheduledAt) await dispatch(ride.id);
     return getRide(ride.id, passengerId);
   });
 }
@@ -160,9 +187,18 @@ async function transition(rideId: string, from: RideStatus[], to: RideStatus, da
   return true;
 }
 
-/** true se o motorista já aceitou há mais que a janela de tolerância (plano §1: 3 min, config.cancel.graceSeconds). */
-function isLateCancel(acceptedAt: Date | null): boolean {
-  return !!acceptedAt && Date.now() - acceptedAt.getTime() > config.cancel.graceSeconds * 1000;
+/**
+ * true se cancelar agora gera cobrança/debuff. Corrida normal (plano §1): passou da tolerância
+ * de 3 min após o aceite. Corrida agendada (plano §5.3): além da tolerância do aceite, só pena
+ * quando também faltar pouco (SCHEDULED_LATE_CANCEL_WINDOW_SECONDS) pro horário marcado — cancelar
+ * com antecedência nunca é penalizado, mesmo que o aceite já tenha sido há muito tempo.
+ */
+function isLateCancel(acceptedAt: Date | null, scheduledAt: Date | null = null): boolean {
+  if (!acceptedAt) return false;
+  const pastGrace = Date.now() - acceptedAt.getTime() > config.cancel.graceSeconds * 1000;
+  if (!scheduledAt) return pastGrace;
+  const closeToStart = scheduledAt.getTime() - Date.now() <= config.scheduled.lateCancelWindowSeconds * 1000;
+  return pastGrace && closeToStart;
 }
 
 export async function cancelRide(rideId: string, userId: string, reasonCode: string, reason?: string) {
@@ -177,7 +213,7 @@ export async function cancelRide(rideId: string, userId: string, reasonCode: str
       // Motorista desistiu antes do embarque: a corrida volta a procurar outro (passageiro não perde nada).
       if (!['DriverAssigned', 'DriverArrived'].includes(ride.status))
         throw new AppError('Não é possível cancelar a corrida agora.', 409, 'invalid_state');
-      const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt);
+      const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt, ride.scheduledAt);
       const ok = await transition(
         rideId,
         ['DriverAssigned', 'DriverArrived'],
@@ -208,16 +244,16 @@ export async function cancelRide(rideId: string, userId: string, reasonCode: str
       return { cancelled: true };
     }
 
-    if (!['Searching', 'DriverAssigned', 'DriverArrived'].includes(ride.status))
+    if (!['Scheduled', 'Searching', 'DriverAssigned', 'DriverArrived'].includes(ride.status))
       throw new AppError('A corrida já começou e não pode ser cancelada. Em caso de problema, use o botão de segurança.', 409, 'invalid_state');
 
-    // Cobrança só se o motorista já estava a caminho há mais que a tolerância, ou já chegou (plano §1.1).
-    const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt);
+    // Cobrança só se o motorista já estava a caminho há mais que a tolerância, ou já chegou (plano §1.1/§5.3).
+    const tardio = ride.status === 'DriverArrived' || isLateCancel(ride.acceptedAt, ride.scheduledAt);
     const hasDriver = tardio && !!ride.driverId;
     const fare = hasDriver ? round2(ride.fare) : 0;
     const ok = await transition(
       rideId,
-      ['Searching', 'DriverAssigned', 'DriverArrived'],
+      ['Scheduled', 'Searching', 'DriverAssigned', 'DriverArrived'],
       'Cancelled',
       {
         cancelledAt: new Date(),

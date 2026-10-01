@@ -83,6 +83,16 @@ export const config = {
     /** Janela após o aceite em que cancelar não gera cobrança/debuff (plano §1). */
     graceSeconds: int(process.env.CANCEL_GRACE_SECONDS, 180),
   },
+  scheduled: {
+    /** Acréscimo no preço de uma corrida agendada — compensa a espera do motorista (plano §5.1). */
+    surchargePercent: float(process.env.SCHEDULED_SURCHARGE_PERCENT, 10),
+    /** Quanto antes do horário marcado a busca por motorista começa. */
+    dispatchLeadMinutes: int(process.env.SCHEDULE_DISPATCH_LEAD_MINUTES, 15),
+    /** Janela em que só o motorista favorito escolhido recebe a oferta, antes de abrir pra busca geral. */
+    favoriteWindowMinutes: int(process.env.SCHEDULE_FAVORITE_WINDOW_MINUTES, 5),
+    /** Cancelar dentro desse tempo do horário marcado (e fora da tolerância do aceite) gera cobrança/debuff (plano §5.3). */
+    lateCancelWindowSeconds: int(process.env.SCHEDULED_LATE_CANCEL_WINDOW_SECONDS, 600),
+  },
   storage: {
     endpoint: process.env.MINIO_ENDPOINT ?? '',
     accessKey: process.env.MINIO_ACCESS_KEY ?? '',

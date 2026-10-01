@@ -1,6 +1,7 @@
 import { assertProductionConfig, config } from './config.js';
 import { createServer } from './httpServer.js';
 import { startPaymentReconciliation } from './jobs/paymentReconciliation.js';
+import { startScheduledRidesSweeper, stopScheduledRidesSweeper } from './jobs/scheduledRides.js';
 import { startComplaintAttachmentRetention } from './modules/complaints/complaints.service.js';
 import { startRecordingRetention } from './modules/recording/recording.service.js';
 import { startStaleDriverSweep, stopStaleDriverSweep } from './jobs/staleDrivers.js';
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
   server.listen(config.port, () => console.log(`OpenDriver API ouvindo na porta ${config.port}`));
   startDispatchSweeper();
   startPaymentReconciliation();
+  startScheduledRidesSweeper();
   startRecordingRetention();
   startComplaintAttachmentRetention();
   startStaleDriverSweep();
@@ -24,6 +26,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     stopDispatchSweeper();
+    stopScheduledRidesSweeper();
     stopStaleDriverSweep();
     setTimeout(() => process.exit(0), 10_000).unref();
     server.close();

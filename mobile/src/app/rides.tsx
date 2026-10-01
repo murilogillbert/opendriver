@@ -52,7 +52,7 @@ export default function Rides() {
           >
             <Card style={{ gap: 6 }}>
               <Row style={{ justifyContent: 'space-between' }}>
-                <AppText variant="small">{formatDateTime(item.requestedAt)}</AppText>
+                <AppText variant="small">{item.scheduledAt ? `Agendada para ${formatDateTime(item.scheduledAt)}` : formatDateTime(item.requestedAt)}</AppText>
                 <Badge label={statusLabel[item.status]} tone={statusTone(item.status)} />
               </Row>
               <AppText variant="bodyStrong" numberOfLines={1}>

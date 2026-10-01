@@ -3,7 +3,7 @@
  * são válidas em cada estado para cada papel (UX07, UX14). O app não decide
  * sozinho: ele renderiza `actions` que a API devolve em cada corrida.
  */
-export type RideStatus = 'Searching' | 'DriverAssigned' | 'DriverArrived' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoDrivers';
+export type RideStatus = 'Scheduled' | 'Searching' | 'DriverAssigned' | 'DriverArrived' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoDrivers';
 export type PaymentStatus = 'NotDue' | 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'NotRequired';
 export type Role = 'passenger' | 'driver';
 
@@ -18,6 +18,8 @@ export const ACTIVE_STATUSES: RideStatus[] = ['Searching', 'DriverAssigned', 'Dr
 export const LOCATION_SHARING_STATUSES: RideStatus[] = ['DriverAssigned', 'DriverArrived', 'InProgress'];
 
 const TRANSITIONS: Record<RideStatus, RideStatus[]> = {
+  // Corrida agendada (plano §5): aguarda o horário/lead para virar Searching (jobs/scheduledRides.ts).
+  Scheduled: ['Searching', 'Cancelled'],
   // Searching → Searching acontece quando o motorista desiste antes do embarque (novo matching).
   Searching: ['DriverAssigned', 'Cancelled', 'NoDrivers'],
   DriverAssigned: ['DriverArrived', 'Cancelled', 'Searching'],
@@ -49,7 +51,7 @@ export interface ActionContext {
 
 export function passengerActions(c: ActionContext): PassengerAction[] {
   const a: PassengerAction[] = [];
-  if (['Searching', 'DriverAssigned', 'DriverArrived'].includes(c.status)) a.push('cancel');
+  if (['Scheduled', 'Searching', 'DriverAssigned', 'DriverArrived'].includes(c.status)) a.push('cancel');
   if (LOCATION_SHARING_STATUSES.includes(c.status)) a.push('share', 'safety');
   if ((c.status === 'Completed' || c.status === 'Cancelled') && c.paymentStatus === 'Failed') a.push('pay');
   if (c.status === 'Completed' && c.paymentStatus === 'Pending') a.push('pay');

@@ -276,7 +276,7 @@ export async function forceCancel(adminId: string, rideId: string, reason: strin
   const ride = await prisma.ride.findUnique({ where: { id: rideId } });
   if (!ride) throw new AppError('Corrida não encontrada.', 404, 'not_found');
   const done = await prisma.ride.updateMany({
-    where: { id: rideId, status: { in: ['Searching', 'DriverAssigned', 'DriverArrived', 'InProgress'] } },
+    where: { id: rideId, status: { in: ['Scheduled', 'Searching', 'DriverAssigned', 'DriverArrived', 'InProgress'] } },
     data: { status: 'Cancelled', cancelledAt: new Date(), cancelledBy: 'Admin', cancelReason: reason, paymentStatus: 'NotRequired' },
   });
   if (!done.count) throw new AppError('A corrida não está em andamento.', 409, 'invalid_state');

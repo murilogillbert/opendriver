@@ -114,7 +114,7 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
   };
 
   const tryAgain = () => {
-    tripDraftStore.set({ origin: ride.origin, destination: ride.destination });
+    tripDraftStore.set({ origin: ride.origin, destination: ride.destination, scheduledAt: null, favoriteDriverId: null });
     finish();
   };
 

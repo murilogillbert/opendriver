@@ -19,9 +19,13 @@ describe('máquina de estados da corrida (UX07, UX14)', () => {
     expect(canTransition('Searching', 'InProgress')).toBe(false);
     expect(canTransition('Completed', 'Cancelled')).toBe(false);
     expect(canTransition('DriverAssigned', 'Searching')).toBe(true); // motorista desistiu
+    expect(canTransition('Scheduled', 'Searching')).toBe(true); // promovida pelo job de agendamento (plano §5)
+    expect(canTransition('Scheduled', 'Cancelled')).toBe(true);
+    expect(canTransition('Scheduled', 'DriverAssigned')).toBe(false);
   });
 
   it('passageiro vê só ações válidas', () => {
+    expect(passengerActions(ctx('Scheduled'))).toEqual(['cancel']); // sem share/safety: ainda não há motorista (plano §5)
     expect(passengerActions(ctx('Searching'))).toEqual(['cancel']);
     expect(passengerActions(ctx('DriverAssigned'))).toEqual(['cancel', 'share', 'safety']);
     expect(passengerActions(ctx('InProgress'))).toEqual(['share', 'safety']); // não cancela em viagem
@@ -37,6 +41,7 @@ describe('máquina de estados da corrida (UX07, UX14)', () => {
     expect(driverActions(ctx('InProgress'))).toEqual(['finish', 'safety']);
     expect(driverActions(ctx('Completed', { withinRatingWindow: false }))).toEqual([]);
     expect(driverActions(ctx('Searching'))).toEqual([]);
+    expect(driverActions(ctx('Scheduled'))).toEqual([]);
   });
 
   it('"não compareceu" só aparece 5 min depois de "cheguei" (plano §8)', () => {

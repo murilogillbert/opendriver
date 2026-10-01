@@ -69,7 +69,7 @@ adminRouter.get(
   '/admin/rides',
   validateQuery(
     admin.pageSchema.extend({
-      status: z.enum(['Searching', 'DriverAssigned', 'DriverArrived', 'InProgress', 'Completed', 'Cancelled', 'NoDrivers']).optional(),
+      status: z.enum(['Scheduled', 'Searching', 'DriverAssigned', 'DriverArrived', 'InProgress', 'Completed', 'Cancelled', 'NoDrivers']).optional(),
       from: z.coerce.date().optional(),
       to: z.coerce.date().optional(),
     }),

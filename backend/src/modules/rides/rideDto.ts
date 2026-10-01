@@ -6,6 +6,7 @@ import { round2 } from '../../lib/money.js';
 export const rideInclude = {
   passenger: { select: { id: true, name: true, avatarUrl: true, phone: true, passengerProfile: { select: { ratingSum: true, ratingCount: true } } } },
   driver: { select: { id: true, name: true, avatarUrl: true, phone: true, driverProfile: { select: { ratingSum: true, ratingCount: true } } } },
+  scheduledFavoriteDriver: { select: { name: true } },
   vehicle: true,
   paymentMethod: true,
   ratings: { select: { raterId: true } },
@@ -92,6 +93,9 @@ export function toRideDto(r: RideRow, viewerId: string) {
           }
         : null,
     guestPassengerName: r.guestPassengerName,
+    /// Plano §5 — só preenchido em corridas agendadas.
+    scheduledAt: r.scheduledAt,
+    scheduledFavoriteDriverName: r.scheduledFavoriteDriver?.name ?? null,
     /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
     pickupEta:
       r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]

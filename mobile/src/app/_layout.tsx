@@ -71,6 +71,7 @@ function RootNavigator() {
         <Stack.Screen name="passenger" options={{ headerShown: false }} />
         <Stack.Screen name="search" options={{ title: 'Para onde?', presentation: 'modal' }} />
         <Stack.Screen name="pick-location" options={{ title: 'Marcar no mapa', presentation: 'modal' }} />
+        <Stack.Screen name="schedule" options={{ title: 'Agendar corrida', presentation: 'modal' }} />
         <Stack.Screen name="payments/index" options={{ title: 'Pagamento' }} />
         <Stack.Screen name="payments/add-card" options={{ title: 'Adicionar cartão' }} />
         <Stack.Screen name="places" options={{ title: 'Locais salvos' }} />

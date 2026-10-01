@@ -121,18 +121,33 @@ export async function dispatch(rideId: string): Promise<void> {
   if (!ride || ride.status !== 'Searching') return;
   lastAttempt.set(rideId, Date.now());
 
-  // A busca recomeça se o motorista desistiu antes do embarque.
-  const restart = await prisma.rideEvent.findFirst({ where: { rideId, type: 'driver_cancelled' }, orderBy: { createdAt: 'desc' } });
+  // A busca recomeça se o motorista desistiu antes do embarque, ou (corrida agendada) quando o
+  // job de promoção (jobs/scheduledRides.ts) acabou de abrir a busca.
+  const restart = await prisma.rideEvent.findFirst({ where: { rideId, type: { in: ['driver_cancelled', 'scheduled_promoted'] } }, orderBy: { createdAt: 'desc' } });
   const searchStart = restart?.createdAt ?? ride.requestedAt;
-  const elapsed = (Date.now() - searchStart.getTime()) / 1000;
-  const offersMade = await prisma.rideOffer.count({ where: { rideId, sentAt: { gte: searchStart } } });
-  if (elapsed > config.dispatch.searchTimeoutSeconds || offersMade >= config.dispatch.maxOffers) {
-    const pending = await prisma.rideOffer.count({ where: { rideId, status: 'Pending' } });
-    if (!pending) await markNoDrivers(rideId);
-    return;
+
+  // Plano §5: agendada p/ favorito tem uma janela exclusiva (só a oferta pra ele) antes da busca
+  // geral — o timeout/contagem de ofertas da busca geral só começa a valer depois dela, senão o
+  // tempo gasto esperando o favorito já consumiria o orçamento da busca geral.
+  const favoriteWindowEnd = ride.scheduledFavoriteDriverId ? searchStart.getTime() + config.scheduled.favoriteWindowMinutes * 60_000 : 0;
+  const inFavoriteWindow = favoriteWindowEnd > Date.now();
+  const effectiveSearchStart = favoriteWindowEnd ? new Date(Math.max(searchStart.getTime(), favoriteWindowEnd)) : searchStart;
+
+  if (!inFavoriteWindow) {
+    const elapsed = (Date.now() - effectiveSearchStart.getTime()) / 1000;
+    const offersMade = await prisma.rideOffer.count({ where: { rideId, sentAt: { gte: effectiveSearchStart } } });
+    if (elapsed > config.dispatch.searchTimeoutSeconds || offersMade >= config.dispatch.maxOffers) {
+      const pending = await prisma.rideOffer.count({ where: { rideId, status: 'Pending' } });
+      if (!pending) await markNoDrivers(rideId);
+      return;
+    }
   }
 
-  const list = await candidates(ride);
+  const allCandidates = await candidates(ride);
+  // Dentro da janela exclusiva, só o favorito escolhido pode receber a oferta — se ele não estiver
+  // elegível agora (offline, ocupado, fora do raio), a varredura tenta de novo em alguns segundos,
+  // sem cair pra busca geral antes da hora.
+  const list = inFavoriteWindow ? allCandidates.filter((c) => c.driverId === ride.scheduledFavoriteDriverId) : allCandidates;
   if (!list.length) return; // a varredura tenta de novo em alguns segundos
 
   // Ordena os mais próximos pelo tempo real de chegada (OSRM /table), não pela linha reta.

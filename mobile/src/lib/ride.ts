@@ -21,6 +21,8 @@ export function liveRoutePhase(r: Pick<Ride, 'status'> | null | undefined): 'pic
 /** Título do estado para o passageiro — "o que está acontecendo agora". */
 export function passengerHeadline(r: Ride): string {
   switch (r.status) {
+    case 'Scheduled':
+      return 'Corrida agendada';
     case 'Searching':
       return 'Procurando motorista';
     case 'DriverAssigned':
@@ -56,6 +58,7 @@ export function driverHeadline(r: Ride): string {
 }
 
 export const statusLabel: Record<RideStatus, string> = {
+  Scheduled: 'Agendada',
   Searching: 'Procurando',
   DriverAssigned: 'A caminho',
   DriverArrived: 'Motorista chegou',

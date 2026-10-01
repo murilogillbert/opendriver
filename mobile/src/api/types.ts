@@ -73,7 +73,7 @@ export interface PlacesResponse {
 
 // ---------- Corridas ----------
 export type Category = 'Economy' | 'Comfort';
-export type RideStatus = 'Searching' | 'DriverAssigned' | 'DriverArrived' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoDrivers';
+export type RideStatus = 'Scheduled' | 'Searching' | 'DriverAssigned' | 'DriverArrived' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoDrivers';
 export type PaymentStatus = 'NotDue' | 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'NotRequired';
 export type PaymentMethodType = 'Card' | 'Pix';
 export type PassengerAction = 'cancel' | 'pay' | 'rate' | 'share' | 'safety';
@@ -108,6 +108,8 @@ export interface Quote {
   polyline: string;
   routeSource: 'osrm' | 'estimate';
   expiresAt: string;
+  /** Plano §5 — preço já vem com o acréscimo de corrida agendada. */
+  scheduled: boolean;
   prices: QuotePrice[];
 }
 
@@ -170,6 +172,9 @@ export interface Ride {
   cancelReasonCode?: string | null;
   /** Preenchido quando o embarque não é a localização de quem pediu (corrida pra outra pessoa). */
   guestPassengerName?: string | null;
+  /** Plano §5 — só preenchido em corridas agendadas. */
+  scheduledAt?: string | null;
+  scheduledFavoriteDriverName?: string | null;
 }
 
 export interface Page<T> {

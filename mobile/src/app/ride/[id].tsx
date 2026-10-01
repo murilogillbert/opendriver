@@ -6,6 +6,7 @@ import { api } from '@/api/client';
 import { qk } from '@/api/queryKeys';
 import type { FavoriteDriver } from '@/api/types';
 import { RideMap } from '@/components/map/RideMap';
+import { CancelReasonSheet } from '@/components/ride/CancelReasonSheet';
 import { PaymentDue } from '@/components/ride/PaymentDue';
 import { PersonCard } from '@/components/ride/PersonCard';
 import { RatingInput } from '@/components/ride/RatingInput';
@@ -31,6 +32,14 @@ export default function RideDetail() {
   const isFavorite = !!ride?.driver && (favorites.data ?? []).some((f: FavoriteDriver) => f.driverId === ride.driver!.id);
   const [stars, setStars] = useState(0);
   const [sending, setSending] = useState(false);
+  const [cancelSheet, setCancelSheet] = useState(false);
+
+  const onCancelled = async (res: { cancelled: boolean; cancellationFee?: number }) => {
+    setCancelSheet(false);
+    await q.refetch();
+    await queryClient.invalidateQueries({ queryKey: ['rides'] });
+    toast.info(res.cancellationFee ? `Corrida cancelada. Taxa de ${formatCurrency(res.cancellationFee)}.` : 'Corrida cancelada.');
+  };
 
   const toggleFavorite = async () => {
     if (!ride?.driver) return;
@@ -81,9 +90,15 @@ export default function RideDetail() {
             <Button title="Ver corrida em andamento" icon="navigate" onPress={() => router.navigate(ride.role === 'driver' ? '/drive' : '/passenger')} />
           ) : null}
           <Row style={{ justifyContent: 'space-between' }}>
-            <AppText variant="small">{formatDateTime(ride.requestedAt)}</AppText>
+            <AppText variant="small">{ride.scheduledAt ? `Agendada para ${formatDateTime(ride.scheduledAt)}` : formatDateTime(ride.requestedAt)}</AppText>
             <Badge label={statusLabel[ride.status]} tone={statusTone(ride.status)} />
           </Row>
+          {ride.scheduledFavoriteDriverName ? (
+            <AppText variant="small">Oferta exclusiva reservada para {ride.scheduledFavoriteDriverName} antes da busca geral.</AppText>
+          ) : null}
+          {can(ride, 'cancel') ? (
+            <Button title="Cancelar corrida" variant="outline" icon="close-circle-outline" onPress={() => setCancelSheet(true)} />
+          ) : null}
           <Card style={{ gap: spacing.sm }}>
             <Row gap={6} style={{ alignItems: 'flex-start' }}>
               <Icon name="radio-button-on" size={14} color={colors.navy} />
@@ -173,6 +188,7 @@ export default function RideDetail() {
             onPress={() => router.push({ pathname: '/safety/complaint', params: { rideId: ride.id } })}
           />
           {canBlock ? <Button title={`Bloquear ${otherParty!.name}`} variant="ghost" icon="ban-outline" onPress={() => void block()} /> : null}
+          <CancelReasonSheet ride={ride} visible={cancelSheet} onClose={() => setCancelSheet(false)} onCancelled={(res) => void onCancelled(res)} />
         </Screen>
       )}
     </QueryView>
