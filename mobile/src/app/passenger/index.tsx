@@ -12,9 +12,13 @@ import { QuotePanel } from '@/features/passenger/QuotePanel';
 import { WhereToPanel } from '@/features/passenger/WhereToPanel';
 import { useHere } from '@/hooks/useHere';
 import { useLiveRoute } from '@/hooks/useLiveRoute';
+import { haversineMeters } from '@/lib/geo';
 import { useStore } from '@/lib/store';
 import { dismissedRidesStore, tripDraftStore } from '@/lib/tripDraft';
 import { colors } from '@/theme/tokens';
+
+/** Embarque escolhido a mais de 150 m da localização atual: provavelmente é pra outra pessoa. */
+const GUEST_PICKUP_THRESHOLD_M = 150;
 
 /** Aba Viagem: mapa + um painel com a única decisão do momento. */
 export default function Trip() {
@@ -53,7 +57,10 @@ export default function Trip() {
     panel = <PassengerRidePanel ride={ride} onHeight={setPanelHeight} />;
   } else if (draft.destination && origin) {
     map = { bottomInset: panelHeight, origin, destination: draft.destination, polyline: quote?.polyline };
-    panel = <QuotePanel origin={origin} destination={draft.destination} onHeight={setPanelHeight} onQuote={onQuote} />;
+    // Embarque bem diferente de onde a pessoa está agora: provavelmente está pedindo pra outra
+    // pessoa — pede o nome de quem embarca (mostrado ao motorista) em vez do nome de quem paga.
+    const needsGuestName = !!draft.origin && (!here || haversineMeters(draft.origin, here) > GUEST_PICKUP_THRESHOLD_M);
+    panel = <QuotePanel origin={origin} destination={draft.destination} needsGuestName={needsGuestName} onHeight={setPanelHeight} onQuote={onQuote} />;
   } else {
     map = { center: origin, origin: draft.origin, bottomInset: panelHeight };
     panel = <WhereToPanel name={me?.name} onHeight={setPanelHeight} originLabel={draft.origin?.address ?? (here ? 'Minha localização' : 'Defina o embarque')} />;

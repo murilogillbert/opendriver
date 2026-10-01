@@ -75,7 +75,8 @@ export function createApi(http: HttpClient) {
     rides: {
       quote: (origin: LatLng & { address?: string }, destination: LatLng & { address?: string }) =>
         http.post<Quote>('/rides/quote', { origin, destination }),
-      request: (input: { quoteId: string; category?: string; paymentMethodId?: string; useCashback?: boolean }) => http.post<Ride>('/rides', input),
+      request: (input: { quoteId: string; category?: string; paymentMethodId?: string; useCashback?: boolean; guestPassengerName?: string }) =>
+        http.post<Ride>('/rides', input),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),
       liveRoute: (id: string) => http.get<LiveRoute>(`/rides/${enc(id)}/live-route`),

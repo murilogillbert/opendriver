@@ -165,6 +165,8 @@ export interface Ride {
   /** Código de 4 dígitos pra iniciar a corrida — só visível ao passageiro (plano §8). */
   pickupCode?: string | null;
   cancelReasonCode?: string | null;
+  /** Preenchido quando o embarque não é a localização de quem pediu (corrida pra outra pessoa). */
+  guestPassengerName?: string | null;
 }
 
 export interface Page<T> {

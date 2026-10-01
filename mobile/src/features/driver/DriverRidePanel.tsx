@@ -101,6 +101,7 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
     body = (
       <>
         {ride.passenger ? <PersonCard name={ride.passenger.name} avatarUrl={ride.passenger.avatarUrl} rating={ride.passenger.rating} /> : null}
+        {ride.guestPassengerName ? <Badge label="Corrida pedida por outra pessoa" icon="person-outline" tone="info" /> : null}
         <Row gap={6} style={{ alignItems: 'flex-start' }}>
           <Icon name={toPickup ? 'radio-button-on' : 'square'} size={14} color={toPickup ? colors.navy : colors.limeDark} />
           <AppText variant="body" style={{ flex: 1 }} numberOfLines={2}>

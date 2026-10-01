@@ -22,6 +22,8 @@ export const requestSchema = z.object({
   category: z.enum(['Economy', 'Comfort']).optional(),
   paymentMethodId: z.string().uuid().optional(),
   useCashback: z.boolean().optional(),
+  /** Preenchido pelo app quando o embarque escolhido não é a localização atual de quem pediu. */
+  guestPassengerName: z.string().trim().min(1).max(100).optional(),
 });
 
 export const cancelSchema = z.object({
@@ -139,6 +141,7 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
           paymentMethodId: method!.id,
           useCashback: input.useCashback ?? profile.useHubCashback,
           pickupCode: randomPickupCode(),
+          guestPassengerName: input.guestPassengerName,
         },
       });
       await tx.rideEvent.create({ data: { rideId: created.id, type: 'requested', actor: 'Passenger', actorId: passengerId } });

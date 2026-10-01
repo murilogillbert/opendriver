@@ -80,11 +80,14 @@ export function toRideDto(r: RideRow, viewerId: string) {
     passenger:
       role === 'driver'
         ? {
-            name: firstName(r.passenger.name),
+            // Corrida pedida pra outra pessoa (embarque ≠ localização de quem pediu): o motorista
+            // vê o nome de quem vai embarcar, não de quem pagou.
+            name: firstName(r.guestPassengerName || r.passenger.name),
             avatarUrl: r.passenger.avatarUrl,
             rating: rating(r.passenger.passengerProfile?.ratingSum, r.passenger.passengerProfile?.ratingCount),
           }
         : null,
+    guestPassengerName: r.guestPassengerName,
     /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
     pickupEta:
       r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]

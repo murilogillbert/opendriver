@@ -13,6 +13,7 @@ import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
 import { SwitchRow } from '@/components/ui/Controls';
 import { AppText, Card, Divider, Icon, KeyValue, Row } from '@/components/ui/primitives';
+import { TextField } from '@/components/ui/TextField';
 import { ErrorState } from '@/components/ui/States';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDistance, formatDuration } from '@/lib/format';
@@ -30,11 +31,14 @@ const LAST_CATEGORY = 'odh.lastCategory';
 export function QuotePanel({
   origin,
   destination,
+  needsGuestName = false,
   onHeight,
   onQuote,
 }: {
   origin: Address | (LatLng & { address?: string });
   destination: Address;
+  /** Embarque diferente da localização atual — provavelmente é pra outra pessoa. */
+  needsGuestName?: boolean;
   onHeight: (h: number) => void;
   onQuote: (q: Quote | null) => void;
 }) {
@@ -46,6 +50,7 @@ export function QuotePanel({
   const [useCashback, setUseCashback] = useState<boolean | null>(null);
   const [details, setDetails] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [guestName, setGuestName] = useState('');
 
   const quoteKey = ['quote', origin.lat, origin.lng, destination.lat, destination.lng] as const;
   const quote = useQuery({
@@ -75,6 +80,7 @@ export function QuotePanel({
   const cashbackUsed = selected && cashbackOn ? Math.min(balance, selected.fare) : 0;
   const toPay = selected ? Math.max(0, selected.fare - cashbackUsed) : 0;
   const needsCpf = !me?.cpf;
+  const guestNameMissing = needsGuestName && !guestName.trim();
 
   const request = useMutation({
     mutationFn: () =>
@@ -83,6 +89,7 @@ export function QuotePanel({
         category: selected!.category,
         paymentMethodId: method?.id,
         useCashback: balance > 0 ? cashbackOn : undefined,
+        guestPassengerName: needsGuestName ? guestName.trim() : undefined,
       }),
     onSuccess: (ride) => {
       AsyncStorage.setItem(LAST_CATEGORY, ride.category).catch(() => undefined);
@@ -136,7 +143,7 @@ export function QuotePanel({
           <Button
             title={selected ? `Pedir corrida · ${formatCurrency(toPay)}` : 'Calculando preço…'}
             size="lg"
-            disabled={!selected || needsCpf}
+            disabled={!selected || needsCpf || guestNameMissing}
             loading={request.isPending || quote.isPending}
             onPress={() => request.mutate()}
           />
@@ -201,6 +208,14 @@ export function QuotePanel({
           value={cashbackOn}
           onValueChange={setUseCashback}
         />
+      ) : null}
+
+      {needsGuestName ? (
+        <Card style={{ gap: spacing.sm }}>
+          <AppText variant="bodyStrong">Essa corrida é pra outra pessoa?</AppText>
+          <AppText variant="small">O embarque escolhido é diferente de onde você está agora. Informe o nome de quem vai pegar a corrida — é isso que o motorista vai ver.</AppText>
+          <TextField label="Nome do passageiro" value={guestName} onChangeText={setGuestName} autoCapitalize="words" maxLength={100} />
+        </Card>
       ) : null}
 
       {needsCpf ? (

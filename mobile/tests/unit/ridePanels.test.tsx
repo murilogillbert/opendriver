@@ -138,6 +138,7 @@ describe('corrida do motorista: uma ação dominante por estado (UX06)', () => {
     expect(screen.getByText('Cheguei')).toBeTruthy();
     expect(screen.getByText('Cancelar')).toBeTruthy();
     expect(screen.getByText('Navegar')).toBeTruthy();
+    expect(screen.queryByText('Corrida pedida por outra pessoa')).toBeNull();
     expect(screen.queryByText('Iniciar')).toBeNull();
     expect(screen.queryByText('Finalizar')).toBeNull();
   });
@@ -156,6 +157,12 @@ describe('corrida do motorista: uma ação dominante por estado (UX06)', () => {
   it('no embarque depois da tolerância: oferece "Passageiro não veio" (plano §8.1)', async () => {
     await render(wrap(<DriverRidePanel ride={driverRide('DriverArrived', ['start', 'cancel', 'safety', 'no_show'])} onHeight={noop} />));
     expect(screen.getByText('Passageiro não veio')).toBeTruthy();
+  });
+
+  it('corrida pedida pra outra pessoa: mostra o aviso pro motorista', async () => {
+    const ride = { ...driverRide('DriverAssigned', ['arrived', 'cancel', 'safety']), guestPassengerName: 'Michael Gillbert' };
+    await render(wrap(<DriverRidePanel ride={ride} onHeight={noop} />));
+    expect(screen.getByText('Corrida pedida por outra pessoa')).toBeTruthy();
   });
 
   it('em viagem: Finalizar, sem Cancelar', async () => {

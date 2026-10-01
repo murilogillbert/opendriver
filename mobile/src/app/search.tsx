@@ -39,7 +39,9 @@ export default function Search() {
   const field: Field = params.field === 'origin' || params.field === 'save' ? params.field : 'destination';
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
-  const q = useDebounced(text.trim(), 350);
+  // 3s: dá tempo da pessoa terminar de digitar o endereço (pode estar pensando no bairro/número
+  // ainda) antes de gastar uma busca — importante agora que o Google Maps é o provedor padrão.
+  const q = useDebounced(text.trim(), 3000);
   const inputRef = useRef<TextInput>(null);
   const [near, setNear] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -91,6 +93,10 @@ export default function Search() {
     router.back();
   };
 
+  // Troca a tela (não empilha): ao confirmar o pin, "Voltar" na próxima tela volta direto pra
+  // corrida, sem passar de novo pela busca.
+  const pickOnMap = () => router.replace({ pathname: '/pick-location', params: { field } });
+
   const showSuggestions = q.length < 3;
   const suggestions: (Address & { label?: string })[] = showSuggestions
     ? [...(places.data?.saved ?? []), ...(places.data?.recent ?? [])]
@@ -116,7 +122,12 @@ export default function Search() {
         data={showSuggestions ? suggestions : (results.data ?? [])}
         keyExtractor={(item, i) => `${item.lat},${item.lng},${i}`}
         ListHeaderComponent={
-          field === 'origin' ? <ListRow icon="navigate-outline" title="Usar minha localização" onPress={useMyLocation} /> : null
+          field === 'save' ? null : (
+            <>
+              {field === 'origin' ? <ListRow icon="navigate-outline" title="Usar minha localização" onPress={useMyLocation} /> : null}
+              <ListRow icon="pin-outline" title="Marcar no mapa" subtitle="Arraste o pin até o ponto certo" onPress={pickOnMap} />
+            </>
+          )
         }
         ListEmptyComponent={
           <View style={{ padding: spacing.lg }}>
