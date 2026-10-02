@@ -1,18 +1,18 @@
-import type { Prisma, User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
+import { hubDeletionBlockers, purgeHubAccount } from '../../infra/accountSync.js';
 import { issueTokens, validateRefreshToken } from '../../infra/auth/jwt.js';
 import { consumeToken, issueToken } from '../../infra/auth/oneTimeTokens.js';
 import { hashPassword, verifyPassword } from '../../infra/auth/password.js';
-import { randomToken } from '../../infra/crypto.js';
 import { escapeHtml, sendEmail } from '../../infra/email.js';
 import { prisma } from '../../infra/prisma.js';
-import { deleteObject } from '../../infra/storage/storage.js';
-import { DELETED_EMAIL_SUFFIX, markUserRevoked } from '../../middleware/auth.js';
+import { DELETED_EMAIL_SUFFIX } from '../../middleware/auth.js';
 import type { Gender } from '../../domain/genderPolicy.js';
 import { ratingAverage } from '../../domain/rating.js';
 import { round2 } from '../../lib/money.js';
+import * as accountPurge from '../account/accountPurge.service.js';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -260,9 +260,23 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 /**
- * Exclusão de conta pelo app (App Store 5.1.1(v) / Google Play). A identidade
- * é compartilhada com o hub, então a linha de public.users é ANONIMIZADA (não
- * apagada: pedidos/corridas/lançamentos fiscais continuam íntegros).
+ * Exclusão de conta pedida pela pessoa (App Store 5.1.1(v) / Google Play). Orquestra os DOIS
+ * serviços, porque a conta é a mesma nos dois: `public.users` é compartilhada, mas cada serviço é
+ * dono do seu schema e dos arquivos que subiu.
+ *
+ * A linha de `public.users` é ANONIMIZADA, não apagada: corridas, pedidos e lançamentos fiscais
+ * continuam íntegros.
+ *
+ * Ordem deliberada:
+ *  1. senha e papel conferidos aqui;
+ *  2. impedimentos somados dos dois lados (corrida em andamento aqui, voucher não resgatado lá) —
+ *     se o hub não responder, a exclusão é recusada, nunca feita pela metade;
+ *  3. hub apaga o lado dele;
+ *  4. OpenDriver apaga o lado dele (inclui CNH, selfie e CRLV no storage) e anonimiza `users`.
+ *
+ * O passo 4 vem no fim porque os dois purges são idempotentes: se algo falhar no meio, a conta
+ * continua viva e a pessoa pode repetir até concluir. O contrário — conta morta com dado pessoal
+ * sobrando no outro schema — é o resultado que não pode acontecer.
  */
 export async function deleteAccount(id: string, password: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id } });
@@ -270,55 +284,10 @@ export async function deleteAccount(id: string, password: string): Promise<void>
   if (!(await verifyPassword(password, user.passwordHash))) throw new AppError('Senha incorreta.', 400, 'wrong_password');
   if (user.partnerId || ['Partner', 'Admin', 'Financeiro'].includes(user.role))
     throw new AppError('Contas de loja ou da equipe são encerradas pelo suporte.', 409, 'managed_account');
-  const active = await prisma.ride.count({
-    where: {
-      // `passengerForId`: a pessoa pode estar embarcada numa corrida que outra conta pediu pra ela.
-      OR: [{ passengerId: id }, { driverId: id }, { passengerForId: id }],
-      status: { in: ['Searching', 'DriverAssigned', 'DriverArrived', 'InProgress'] },
-    },
-  });
-  if (active > 0) throw new AppError('Finalize ou cancele a corrida em andamento antes de excluir a conta.', 409, 'active_ride');
 
-  const anonymized: Prisma.UserUpdateInput = {
-    name: 'Conta excluída',
-    email: `excluido+${id}${DELETED_EMAIL_SUFFIX}`,
-    passwordHash: await hashPassword(randomToken(32)),
-    phone: null,
-    cpf: null,
-    avatarUrl: null,
-    emailVerifiedAt: null,
-  };
-  // Fotos de documentos (CNH, selfie, CRLV) saem do armazenamento — LGPD.
-  const [dp, vehicles] = await Promise.all([
-    prisma.driverProfile.findUnique({ where: { userId: id }, select: { cnhPhotoKey: true, selfieKey: true } }),
-    prisma.vehicle.findMany({ where: { driverId: id, crlvKey: { not: null } }, select: { crlvKey: true } }),
-  ]);
-  const documentKeys = [dp?.cnhPhotoKey, dp?.selfieKey, ...vehicles.map((v) => v.crlvKey)].filter((k): k is string => !!k);
+  const blockers = [...(await accountPurge.deletionBlockers(id)), ...(await hubDeletionBlockers(id))];
+  if (blockers.length) throw new AppError(`${blockers.join(' ')} Resolva antes de excluir a conta.`, 409, 'deletion_blocked');
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id }, data: anonymized }),
-    prisma.vehicle.updateMany({ where: { driverId: id }, data: { active: false, crlvKey: null } }),
-    prisma.driverProfile.updateMany({
-      where: { userId: id },
-      // Gênero (plano §7) é dado sensível: sai junto com os documentos, não só o acesso — LGPD.
-      data: { status: 'Suspended', isOnline: false, pixKey: null, pixKeyType: null, cnhNumber: null, cnhPhotoKey: null, selfieKey: null, gender: null, womenOnlyPref: false },
-    }),
-    prisma.passengerProfile.updateMany({ where: { userId: id }, data: { gender: null, womenOnlyPref: false } }),
-    // Corrida para terceiros: o vínculo com outras contas cai, e os dados dos dependentes (CPF e
-    // telefone de TERCEIROS) são apagados. A linha fica, anonimizada, porque corridas antigas
-    // apontam pra ela — o nome que o motorista viu na época segue em Ride.guestPassengerName.
-    prisma.passengerLink.deleteMany({ where: { OR: [{ ownerId: id }, { linkedUserId: id }] } }),
-    prisma.guestPassenger.updateMany({
-      where: { ownerId: id },
-      data: { name: 'Passageiro removido', cpfEnc: null, cpfHash: null, phone: null, deletedAt: new Date() },
-    }),
-    prisma.paymentMethod.updateMany({ where: { userId: id, deletedAt: null }, data: { deletedAt: new Date(), tokenEnc: null } }),
-    prisma.pushToken.deleteMany({ where: { userId: id } }),
-    prisma.trustedContact.deleteMany({ where: { userId: id } }),
-    prisma.savedPlace.deleteMany({ where: { userId: id } }),
-    prisma.driverLocation.deleteMany({ where: { driverId: id } }),
-    prisma.authToken.updateMany({ where: { userId: id, usedAt: null }, data: { usedAt: new Date() } }),
-  ]);
-  markUserRevoked(id);
-  await Promise.all(documentKeys.map((k) => deleteObject(k).catch(() => undefined)));
+  await purgeHubAccount(id);
+  await accountPurge.purgeOpendriverAccount(id);
 }

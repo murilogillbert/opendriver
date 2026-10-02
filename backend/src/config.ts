@@ -40,6 +40,8 @@ export const config = {
   corsOrigins: list(process.env.CORS_ORIGINS, 'http://localhost:5173'),
   /** Site do OpenDriverHub: aba Hub do app e páginas de e-mail (/verificar-email, /redefinir-senha). */
   hubWebUrl: (process.env.HUB_WEB_URL ?? 'https://opendriver.com.br').replace(/\/+$/, ''),
+  /** API do hub (servidor-a-servidor, exclusão de conta). Sem ela a exclusão é recusada. */
+  hubApiUrl: (process.env.HUB_API_URL ?? '').replace(/\/+$/, ''),
   /** URL pública desta API (link de compartilhar viagem /t/:token). */
   publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? 'http://localhost:5100').replace(/\/+$/, ''),
   rateLimit: {

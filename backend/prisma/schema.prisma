@@ -117,6 +117,24 @@ model AuthToken {
   @@schema("public")
 }
 
+/// Chaves de integração servidor-a-servidor do hub (Admin → Chaves de API) — espelho SOMENTE
+/// LEITURA, como IntegrationSetting. Usada para autenticar as chamadas que o hub faz em
+/// /internal/* (exclusão de conta). `lastUsedAt` é atualizado só pelo hub: este serviço não
+/// escreve em tabela do schema public fora do que já fazia (cashback/auditoria).
+model ServiceApiKey {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label      String    @db.VarChar(120)
+  hashedKey  String    @unique @map("hashed_key")
+  keyPreview String    @map("key_preview") @db.VarChar(16)
+  scopes     String[]
+  active     Boolean   @default(true)
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("service_api_keys")
+  @@schema("public")
+}
+
 /// Credenciais editáveis no admin do hub (Asaas, e-mail) — lidas, nunca escritas aqui.
 model IntegrationSetting {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

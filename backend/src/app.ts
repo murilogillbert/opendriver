@@ -7,6 +7,7 @@ import { authRouter } from './modules/auth/auth.routes.js';
 import { driverRouter } from './modules/driver/driver.routes.js';
 import { geoRouter } from './modules/geo/geo.routes.js';
 import { legalRouter } from './modules/legal/legal.routes.js';
+import { internalRouter } from './modules/account/internal.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { complaintsRouter } from './modules/complaints/complaints.routes.js';
 import { meRouter } from './modules/me/me.routes.js';
@@ -40,6 +41,8 @@ export function createApp() {
   api.use(paymentsRouter);
   api.use(meRouter);
   api.use(passengersRouter);
+  // Chamadas do hub (exclusão de conta) — autenticadas por ServiceApiKey, nunca por usuário.
+  api.use(internalRouter);
   api.use(safetyRouter);
   api.use(complaintsRouter);
   api.use(recordingRouter);
