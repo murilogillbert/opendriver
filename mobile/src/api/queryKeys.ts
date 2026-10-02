@@ -14,6 +14,8 @@ export const qk = {
   favorites: ['me', 'favorites'] as const,
   blocked: ['me', 'blocked'] as const,
   recordingTerms: ['me', 'recording'] as const,
+  guestPassengers: ['me', 'guest-passengers'] as const,
+  passengerLinks: ['me', 'passenger-links'] as const,
   driverProfile: ['driver', 'profile'] as const,
   offer: ['driver', 'offer'] as const,
   earningsSummary: ['driver', 'earnings', 'summary'] as const,

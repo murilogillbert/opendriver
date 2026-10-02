@@ -185,11 +185,14 @@ despacho). Use esses arquivos como modelo direto, trocando "cadeira de rodas" po
 
 ### Tarefas
 
-1. [ ] **Confirmar com o usuário** a política de coleta/uso de gênero (texto de consentimento,
+1. [x] **Confirmar com o usuário** a política de coleta/uso de gênero (texto de consentimento,
        onde a opção de "apenas mulheres" aparece, se motoristas homens veem alguma indicação de
        que perderam a corrida por isso — recomendação: não, só "motorista não disponível").
-2. [ ] Migration nova `backend/prisma/migrations/<timestamp>_women_only_rides/migration.sql`
-       (próximo timestamp depois de `20261002180000_ride_messages`), aditiva:
+       Confirmado em 2026-10-02: opções `Mulher | Homem | Outro | Prefiro não informar`, finalidade
+       escrita na própria tela (`GENDER_PURPOSE` em `mobile/src/components/GenderPicker.tsx`), e
+       motorista homem não recebe nenhuma indicação — simplesmente não recebe a oferta.
+2. [x] Migration nova `backend/prisma/migrations/20261002190000_women_only_rides/migration.sql`,
+       aditiva:
        - `opendriver.passenger_profiles`: `ADD COLUMN gender VARCHAR(12)`,
          `ADD COLUMN women_only_pref BOOLEAN NOT NULL DEFAULT false`.
        - `opendriver.driver_profiles`: `ADD COLUMN gender VARCHAR(12)`,
@@ -197,29 +200,102 @@ despacho). Use esses arquivos como modelo direto, trocando "cadeira de rodas" po
        - `opendriver.rides`: `ADD COLUMN women_only BOOLEAN NOT NULL DEFAULT false`.
        - Espelhar essas três mudanças em `prisma/schema.prisma` antes de gerar a migration à mão
          (mesmo processo das migrations desta sessão — nunca `prisma migrate dev` contra produção).
-3. [ ] Backend: endpoint pra coletar gênero (opt-in) — passageiro e motorista. Pode ser um campo
-       novo em telas que já existem (`PUT /me/profile` ganha `gender` opcional) ou uma rota
-       dedicada, à escolha de quem implementar — mas sempre opt-in, nunca obrigatório pra usar o
-       app.
-4. [ ] Backend: `requestSchema` em `rides.service.ts` ganha `womenOnly` opcional; validar que só
-       passa a `true` se `passenger_profiles.gender === 'female'`.
-5. [ ] Backend: `dispatch.ts`'s `candidates()` — filtro por gênero nos dois sentidos (item 4 do
-       Design acima).
-6. [ ] Backend: `rideDto.ts` expõe `womenOnly` na corrida (mesmo padrão de
+3. [x] Backend: endpoint pra coletar gênero (opt-in) — passageiro e motorista. Ficaram rotas
+       dedicadas (e não um campo em `PUT /me/profile`, que escreve em `public.users`, do hub):
+       `PUT /me/gender` + `PUT /me/women-only` (`me.routes.ts`) e `PUT /driver/preferences`
+       (`driver.routes.ts` → `driver.service.ts:setPreferences`). `GET /me` devolve o que a pessoa
+       declarou, pra ela poder trocar ou apagar; `deleteAccount` limpa o gênero dos dois perfis.
+4. [x] Backend: `requestSchema` em `rides.service.ts` ganha `womenOnly` opcional; validar que só
+       passa a `true` se `passenger_profiles.gender === 'female'` — e recusar junto com
+       `guestPassengerName` (`women_only_guest_ride`), que o schema já apontava como incompatível.
+5. [x] Backend: `dispatch.ts`'s `candidates()` — filtro por gênero nos dois sentidos (item 4 do
+       Design acima), via `driverMatchesRideGender()`.
+6. [x] Backend: `rideDto.ts` expõe `womenOnly` na corrida (mesmo padrão de
        `accessibilityRequired`).
-7. [ ] Mobile: telas de coleta de gênero (opt-in, com texto claro de finalidade) em conta
-       (passageira) e no cadastro/perfil de motorista.
-8. [ ] Mobile: alternador "Apenas mulheres" no `QuotePanel` (condicional ao gênero) e preferência
-       equivalente na tela de perfil da motorista.
-9. [ ] Testes: espelhar os testes de domínio já existentes (`tests/unit/domain.test.ts`) pra
-       qualquer função pura nova (ex.: se a elegibilidade por gênero virar uma função isolada tipo
-       `domain/driverQuality.ts`/`domain/mockLocation.ts`, testá-la sem precisar de banco).
+7. [x] Mobile: telas de coleta de gênero (opt-in, com texto claro de finalidade) em conta
+       (`app/account/gender.tsx`) e no perfil de motorista (`app/driver/preferences.tsx`), as duas
+       usando o mesmo `GenderPicker`/`GENDER_PURPOSE` pra não haver duas promessas diferentes.
+8. [x] Mobile: alternador "Apenas mulheres" no `QuotePanel` (condicional ao gênero e escondido em
+       corrida pedida pra outra pessoa) e preferência equivalente na tela da motorista. Badge no
+       `DriverRidePanel` e texto próprio de `NoDrivers` no `RidePanel`.
+9. [x] Testes: regra isolada em `backend/src/domain/genderPolicy.ts` e coberta em
+       `tests/unit/domain.test.ts`, sem precisar de banco (backend 28 testes, mobile 32, typecheck
+       e lint limpos).
 10. [ ] Rodar o mesmo protocolo de migration do topo deste documento antes de aplicar em
-        produção.
+        produção. **Pendente** — a migration está escrita e versionada, mas não foi aplicada em
+        nenhum banco: fazer backup, `pg_dump --schema-only --schema=public` antes, aplicar
+        `bootstrap/001_migrations_table.sql`, `prisma migrate deploy`, e comparar o dump depois.
 
 ---
 
-## 4. Fora de escopo deste documento (decisão de produto, não técnica)
+## 4. Corrida para terceiros — implementado em 2026-10-02
+
+> Esta seção documenta uma funcionalidade que **não existia em nenhum documento** de `docs/` antes
+> desta sessão. O que havia no código era só `rides.guest_passenger_name` (nome em texto livre,
+> pedido por heurística de distância do embarque), sem CPF, sem nascimento e sem vínculo entre
+> contas.
+
+### Regra
+
+Quem pede e paga a corrida não é necessariamente quem embarca. Três casos, com rigor diferente:
+
+| Caso | Como entra | "Apenas mulheres" (§3) |
+|---|---|---|
+| `self` | o padrão — quem pede embarca | permitido se a própria pessoa declarou `female` |
+| `linked` | outra conta da plataforma, por **convite + aceite** (`opendriver.passenger_links`) | permitido **se a passageira autorizou no aceite** (`women_only_allowed`) |
+| `guest` | dependente sem perfil, cadastrado por quem pede (`opendriver.guest_passengers`): nome completo, CPF e nascimento obrigatórios, telefone opcional | **nunca** — só existe um nome informado por terceiro |
+
+Menor de idade (`< 18`, por `birth_date`) só viaja com a confirmação explícita de que um adulto
+responsável embarca junto; a confirmação fica gravada em `rides.minor_accompanied` e é mostrada ao
+motorista.
+
+### Duas decisões de design que não estavam no enunciado
+
+1. **`passenger_links.women_only_allowed` é da convidada, não de quem convida.** A regra pede que a
+   exclusividade feminina continue valendo para passageira cadastrada, mas a §3 proíbe expor o
+   gênero de alguém a terceiros — e o app de quem pede precisaria saber se a opção se aplica. A
+   única forma de habilitar sem vazar nada é a própria pessoa autorizar essa divulgação no aceite
+   do vínculo. Sem autorização, o pedido é recusado com `women_only_not_authorized`.
+2. **CPF de terceiro fica cifrado.** `guest_passengers.cpf_enc` usa o mesmo AES-256-GCM do token de
+   cartão, e `cpf_hash` é um HMAC determinístico que existe só para a chave única `(owner, CPF)` —
+   evita cadastro duplicado sem guardar o número em claro. As duas colunas são anuláveis para que a
+   exclusão da conta do dono apague o CPF sem destruir a linha que o histórico referencia.
+
+### Onde mora
+
+- Domínio: `backend/src/domain/ridePassenger.ts` (tipos de passageiro, `requiresAdultEscort`).
+- Módulo: `backend/src/modules/passengers/` — `/me/guest-passengers` (CRUD) e `/me/passenger-links`
+  (convite, aceite, recusa, desfazer). O convite responde sempre igual, exista ou não a conta, pra
+  não virar um verificador de e-mails (mesma postura do `forgotPassword`); o limite por usuário é
+  `limits.passengerInvite`.
+- Pedido: `requestSchema.passengerFor` em `rides.service.ts` (união discriminada) e
+  `resolveRequestedPassenger()`.
+- Despacho: `dispatch.ts` usa o gênero de **quem embarca** (desconhecido em `guest`, nunca herdado
+  de quem pediu), exclui quem embarca dos candidatos e respeita os bloqueios dos dois lados.
+- Mobile: `app/passengers/*`, `components/ride/PassengerPicker.tsx`, e o seletor "Quem vai
+  embarcar?" no `QuotePanel` (a heurística de distância virou só um lembrete).
+
+### Pendências desta seção
+
+1. [ ] Aplicar a migration `20261002200000_ride_for_other_passenger` em produção pelo protocolo do
+       topo deste documento. Ela foi validada contra um Postgres 16 descartável (as 14 migrations
+       aplicam limpas e `prisma migrate diff` não acusa divergência no schema `opendriver`), mas
+       **não foi aplicada em nenhum banco real**.
+2. [ ] Decidir se o passageiro `linked` passa a acompanhar a corrida no app dele (PIN de embarque,
+       rastreamento, botão de emergência). Hoje não: quem pede segue com o PIN e o acompanhamento,
+       e a FK `rides.passenger_for_id` já está gravada pra habilitar isso depois sem migration nova.
+       Mexe em `loadForUser`, `rideInclude`, `publishRide`, `activeRide`, safety, mensagens e
+       gravações — todos assumem dois participantes hoje.
+3. [ ] Decidir se o caminho legado `guestPassengerName` (nome em texto livre, sem CPF/nascimento)
+       deve ser recusado. Ele continua aceito para não quebrar versões do app já publicadas, e já
+       está fora da política de "apenas mulheres" — mas é um desvio da coleta obrigatória de dados
+       para quem chamar a API direto. Fechar é uma linha em `rides.service.ts`.
+4. [ ] Confirmar com o jurídico a política de transporte de menor acompanhado (o app exige a
+       confirmação, mas a responsabilidade pelo embarque é de quem pede).
+
+---
+
+## 5. Fora de escopo deste documento (decisão de produto, não técnica)
 
 - **Ligação com número mascarado** (parte do plano §11.1 — chat mascarado). As mensagens rápidas
   já estão prontas e em produção; só a ligação por número mascarado falta, e depende de contratar
@@ -233,4 +309,6 @@ despacho). Use esses arquivos como modelo direto, trocando "cadeira de rodas" po
 1. §1 (pagamento real) — maior impacto, destrava receita de verdade nas duas plataformas.
 2. §2 (CRLV automático) — independente de §1, pode ser feito em paralelo.
 3. §3 (apenas mulheres) — feature nova, só depois de confirmar a política de produto (tarefa 1 da
-   seção) com o usuário.
+   seção) com o usuário. **Código concluído**; falta aplicar a migration em produção.
+4. §4 (corrida para terceiros) — **código concluído**; falta aplicar a migration em produção e
+   fechar as quatro pendências da seção.

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { DRIVER_CANCEL_REASON_CODES, PASSENGER_CANCEL_REASON_CODES, cancelReasonsFor } from '../../domain/cancelReasons.js';
+import { canRequestWomenOnly, type Gender } from '../../domain/genderPolicy.js';
 import { haversineMeters, isValidLatLng } from '../../domain/geo.js';
+import type { RidePassengerKind } from '../../domain/ridePassenger.js';
 import { computeFare } from '../../domain/pricing.js';
 import { ACTIVE_STATUSES, NO_SHOW_GRACE_SECONDS, canTransition, type RideStatus } from '../../domain/rideState.js';
 import { AppError } from '../../errors.js';
@@ -12,6 +14,7 @@ import { sendPush } from '../../infra/push.js';
 import { randomToken } from '../../infra/crypto.js';
 import { round2 } from '../../lib/money.js';
 import { withLock } from '../../lib/mutex.js';
+import { MINOR_ESCORT_ERROR, resolveGuestPassenger, resolveLinkedPassenger } from '../passengers/passengers.service.js';
 import { resolveDefault } from '../payments/paymentMethods.service.js';
 import { settleRide, syncRidePayment, latestPendingPix } from '../payments/settlement.service.js';
 import { dispatch, withdrawPendingOffers } from './dispatch.js';
@@ -25,17 +28,114 @@ export const requestSchema = z.object({
   category: z.enum(['Economy', 'Comfort']).optional(),
   paymentMethodId: z.string().uuid().optional(),
   useCashback: z.boolean().optional(),
-  /** Preenchido pelo app quando o embarque escolhido não é a localização atual de quem pediu. */
+  /**
+   * Caminho legado: nome digitado solto de quem embarca, sem cadastro. Continua aceito para não
+   * quebrar versões do app já publicadas, mas o fluxo atual usa `passengerFor` — ali o dependente
+   * é cadastrado com CPF e nascimento, o que este campo não tem como garantir.
+   */
   guestPassengerName: z.string().trim().min(1).max(100).optional(),
+  /**
+   * Corrida para terceiros — quem embarca. Omitido significa o próprio solicitante.
+   * `linked` exige vínculo aceito; `guest` exige dependente cadastrado, e menor de idade exige
+   * `adultAccompanies` (confirmação de adulto responsável no embarque).
+   */
+  passengerFor: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('self') }),
+      z.object({ kind: z.literal('linked'), userId: z.string().uuid() }),
+      z.object({ kind: z.literal('guest'), guestPassengerId: z.string().uuid(), adultAccompanies: z.boolean().optional() }),
+    ])
+    .optional(),
   /** Plano §5: corrida agendada — precisa bater com uma cotação criada com o mesmo `scheduledAt`. */
   scheduledAt: z.coerce.date().optional(),
   /** Motorista favorito escolhido pra oferta exclusiva antes da busca geral (plano §5/§6). */
   favoriteDriverId: z.string().uuid().optional(),
   /** Plano §11.7 — sem informar, usa a preferência salva do passageiro. */
   accessibilityRequired: z.boolean().optional(),
+  /** Plano §7 — sem informar, usa a preferência salva da passageira. Só vale se ela declarou `female`. */
+  womenOnly: z.boolean().optional(),
 });
 
 const MAX_PENDING_SCHEDULED_RIDES = 3;
+
+interface RequestedPassenger {
+  kind: RidePassengerKind;
+  /** Conta de quem embarca — igual ao solicitante em `self`, a conta vinculada em `linked`, nula em `guest`. */
+  riderUserId: string | null;
+  guestPassengerId: string | null;
+  guestPassengerName: string | null;
+  minorAccompanied: boolean;
+  /**
+   * Plano §7: em `linked`, a passageira autorizou no aceite do vínculo que corridas pedidas para
+   * ela possam ser restritas a motoristas mulheres. Sempre `true` em `self` (a decisão é de quem
+   * pede, que é quem embarca) e sempre `false` em `guest`.
+   */
+  womenOnlyAllowedByRider: boolean;
+}
+
+/**
+ * Decide quem embarca nesta corrida (corrida para terceiros) e valida o direito de pedir por essa
+ * pessoa. Toda a confiança vem do servidor: vínculo aceito, dependente do próprio solicitante e
+ * confirmação de adulto responsável quando o dependente é menor.
+ */
+async function resolveRequestedPassenger(requesterId: string, input: z.infer<typeof requestSchema>): Promise<RequestedPassenger> {
+  const forOther = input.passengerFor && input.passengerFor.kind !== 'self' ? input.passengerFor : null;
+  if (forOther && input.guestPassengerName)
+    throw new AppError('Escolha quem embarca de uma só forma: a pessoa cadastrada ou o nome digitado.', 400, 'passenger_conflict');
+
+  if (forOther?.kind === 'linked') {
+    const r = await resolveLinkedPassenger(requesterId, forOther.userId);
+    return {
+      kind: 'linked',
+      riderUserId: r.riderUserId,
+      guestPassengerId: null,
+      guestPassengerName: r.guestPassengerName,
+      minorAccompanied: false,
+      womenOnlyAllowedByRider: r.womenOnlyAllowed,
+    };
+  }
+
+  if (forOther?.kind === 'guest') {
+    const r = await resolveGuestPassenger(requesterId, forOther.guestPassengerId);
+    // Menor de idade: a corrida só segue com a confirmação explícita de adulto responsável.
+    if (r.requiresEscort && !forOther.adultAccompanies) throw new AppError(MINOR_ESCORT_ERROR, 400, 'minor_escort_required');
+    return {
+      kind: 'guest',
+      riderUserId: null,
+      guestPassengerId: r.guestPassengerId,
+      guestPassengerName: r.guestPassengerName,
+      // Só marca quando de fato é menor — adulto não "vem acompanhado" por ter mandado a flag.
+      minorAccompanied: r.requiresEscort,
+      womenOnlyAllowedByRider: false,
+    };
+  }
+
+  // Caminho legado (nome digitado solto): é terceiro para todo efeito, inclusive pra §7.
+  if (input.guestPassengerName)
+    return {
+      kind: 'guest',
+      riderUserId: null,
+      guestPassengerId: null,
+      guestPassengerName: input.guestPassengerName,
+      minorAccompanied: false,
+      womenOnlyAllowedByRider: false,
+    };
+
+  return { kind: 'self', riderUserId: requesterId, guestPassengerId: null, guestPassengerName: null, minorAccompanied: false, womenOnlyAllowedByRider: true };
+}
+
+/** Mensagem de recusa do "apenas mulheres" conforme o motivo real (UX11: dizer o que aconteceu). */
+function womenOnlyRefusal(kind: RidePassengerKind): AppError {
+  if (kind === 'guest')
+    return new AppError(
+      'Corrida apenas com motoristas mulheres não está disponível para passageiro sem conta na plataforma — não há como confirmar o gênero informado.',
+      409,
+      'women_only_guest_ride',
+    );
+  if (kind === 'linked')
+    return new AppError('Esta passageira não autorizou corridas restritas a motoristas mulheres.', 409, 'women_only_not_authorized');
+  return new AppError('Informe seu gênero para pedir corridas apenas com motoristas mulheres.', 409, 'gender_required');
+}
 
 export const cancelSchema = z.object({
   // Validado contra a lista certa (passageiro × motorista) dentro do serviço,
@@ -144,6 +244,34 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
     method ??= await resolveDefault(passengerId);
     const profile = await prisma.passengerProfile.upsert({ where: { userId: passengerId }, create: { userId: passengerId }, update: {} });
 
+    const rider = await resolveRequestedPassenger(passengerId, input);
+    // Mesma pessoa não pode estar em dois carros: se quem embarca tem conta, ela também não pode
+    // estar numa corrida agora — nem como passageira, nem levada por outra pessoa, nem dirigindo.
+    if (rider.riderUserId && rider.riderUserId !== passengerId) {
+      const riderBusy = await prisma.ride.count({
+        where: {
+          status: { in: ACTIVE_STATUSES },
+          OR: [{ passengerId: rider.riderUserId }, { passengerForId: rider.riderUserId }, { driverId: rider.riderUserId }],
+        },
+      });
+      if (riderBusy) throw new AppError('Esta pessoa já está numa corrida em andamento.', 409, 'passenger_busy');
+    }
+
+    // Plano §7: a restrição fica travada na corrida e vale pelo gênero de QUEM EMBARCA, declarado
+    // pela própria pessoa (conta própria ou conta vinculada). Dependente sem perfil nunca entra.
+    // Validado aqui, nunca só no app (UX11): pedido explícito que não cabe dá erro com motivo, e a
+    // preferência salva simplesmente não se aplica, em silêncio.
+    const riderProfile =
+      rider.kind === 'self'
+        ? profile
+        : rider.riderUserId
+          ? await prisma.passengerProfile.findUnique({ where: { userId: rider.riderUserId } })
+          : null;
+    const womenOnlyAllowed =
+      rider.womenOnlyAllowedByRider && canRequestWomenOnly((riderProfile?.gender ?? null) as Gender, rider.kind);
+    if (input.womenOnly && !womenOnlyAllowed) throw womenOnlyRefusal(rider.kind);
+    const womenOnly = womenOnlyAllowed && (input.womenOnly ?? !!riderProfile?.womenOnlyPref);
+
     const ride = await prisma.$transaction(async (tx) => {
       const claimed = await tx.rideQuote.updateMany({ where: { id: quote.id, usedAt: null }, data: { usedAt: new Date() } });
       if (!claimed.count) throw new AppError('Esta cotação já foi usada. Busque o destino de novo.', 409, 'quote_used');
@@ -168,8 +296,12 @@ export async function requestRide(passengerId: string, input: z.infer<typeof req
           paymentMethodId: method!.id,
           useCashback: input.useCashback ?? profile.useHubCashback,
           pickupCode: randomPickupCode(),
-          guestPassengerName: input.guestPassengerName,
+          guestPassengerName: rider.guestPassengerName,
+          passengerForId: rider.kind === 'linked' ? rider.riderUserId : null,
+          guestPassengerId: rider.guestPassengerId,
+          minorAccompanied: rider.minorAccompanied,
           accessibilityRequired: input.accessibilityRequired ?? profile.wheelchairAccessible,
+          womenOnly,
           status: input.scheduledAt ? 'Scheduled' : undefined,
           isScheduled: !!input.scheduledAt,
           scheduledAt: input.scheduledAt,

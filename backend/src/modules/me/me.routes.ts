@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { GENDERS, canRequestWomenOnly, type Gender } from '../../domain/genderPolicy.js';
 import { ratingAverage } from '../../domain/rating.js';
 import { AppError } from '../../errors.js';
 import { prisma } from '../../infra/prisma.js';
@@ -77,6 +78,42 @@ meRouter.put('/me/accessibility', requireAuth, validateBody(z.object({ wheelchai
     update: { wheelchairAccessible: req.body.wheelchairAccessible },
   });
   res.json(envelope({ wheelchairAccessible: p.wheelchairAccessible }));
+});
+
+/**
+ * Corrida "apenas mulheres" (plano §7) — coleta de gênero da passageira, opt-in explícita.
+ *
+ * Rota dedicada (e não um campo novo em `PUT /me/profile`) porque aquele endpoint escreve em
+ * `public.users`, que é do hub, e este dado mora no perfil do schema `opendriver`. `null` apaga o
+ * que estava guardado ("prefiro não informar"), e nesse caso a preferência de apenas-mulheres cai
+ * junto: ela não faria sentido sem a declaração que a sustenta.
+ */
+meRouter.put(
+  '/me/gender',
+  requireAuth,
+  validateBody(z.object({ gender: z.enum(GENDERS).nullable() })),
+  async (req, res) => {
+    const uid = userId(req);
+    const gender = req.body.gender as Gender;
+    const clearPref = !canRequestWomenOnly(gender);
+    const p = await prisma.passengerProfile.upsert({
+      where: { userId: uid },
+      create: { userId: uid, gender },
+      update: { gender, ...(clearPref ? { womenOnlyPref: false } : {}) },
+    });
+    res.json(envelope({ gender: p.gender as Gender, womenOnlyPref: p.womenOnlyPref }));
+  },
+);
+
+/** Preferência salva da passageira (plano §7) — usada como padrão ao pedir corrida. */
+meRouter.put('/me/women-only', requireAuth, validateBody(z.object({ womenOnlyPref: z.boolean() })), async (req, res) => {
+  const uid = userId(req);
+  const profile = await prisma.passengerProfile.upsert({ where: { userId: uid }, create: { userId: uid }, update: {} });
+  // Nunca confiar só no cliente (UX11): sem a declaração de gênero, a preferência não pode ser ligada.
+  if (req.body.womenOnlyPref && !canRequestWomenOnly(profile.gender as Gender))
+    throw new AppError('Informe seu gênero para usar corridas apenas com motoristas mulheres.', 409, 'gender_required');
+  const p = await prisma.passengerProfile.update({ where: { userId: uid }, data: { womenOnlyPref: req.body.womenOnlyPref } });
+  res.json(envelope({ gender: p.gender as Gender, womenOnlyPref: p.womenOnlyPref }));
 });
 
 /** Motoristas favoritos (plano §6) — leve prioridade no despacho (dispatch.ts) e opção preferencial no agendamento. */

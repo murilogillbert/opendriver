@@ -76,6 +76,8 @@ function RootNavigator() {
         <Stack.Screen name="payments/add-card" options={{ title: 'Adicionar cartão' }} />
         <Stack.Screen name="places" options={{ title: 'Locais salvos' }} />
         <Stack.Screen name="favorites" options={{ title: 'Motoristas favoritos' }} />
+        <Stack.Screen name="passengers/index" options={{ title: 'Quem viaja comigo' }} />
+        <Stack.Screen name="passengers/new" options={{ title: 'Cadastrar dependente' }} />
       </Stack.Protected>
 
       <Stack.Protected guard={driving}>
@@ -90,6 +92,7 @@ function RootNavigator() {
         <Stack.Screen name="driver/vehicles" options={{ title: 'Veículos' }} />
         <Stack.Screen name="driver/vehicle-new" options={{ title: 'Novo veículo' }} />
         <Stack.Screen name="driver/pix" options={{ title: 'Chave Pix' }} />
+        <Stack.Screen name="driver/preferences" options={{ title: 'Preferências de atendimento' }} />
       </Stack.Protected>
 
       <Stack.Protected guard={signedIn}>
@@ -100,6 +103,7 @@ function RootNavigator() {
         <Stack.Screen name="safety/complaint" options={{ title: 'Fazer reclamação' }} />
         <Stack.Screen name="safety/complaints" options={{ title: 'Minhas reclamações' }} />
         <Stack.Screen name="account/profile" options={{ title: 'Dados pessoais' }} />
+        <Stack.Screen name="account/gender" options={{ title: 'Corridas apenas com mulheres' }} />
         <Stack.Screen name="account/password" options={{ title: 'Alterar senha' }} />
         <Stack.Screen name="account/delete" options={{ title: 'Excluir conta' }} />
         <Stack.Screen name="become-driver" options={{ title: 'Dirigir com a OpenDriver' }} />

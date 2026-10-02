@@ -21,6 +21,19 @@ export interface User {
 
 export type DriverStatus = 'PendingDocuments' | 'InReview' | 'Approved' | 'Rejected' | 'Suspended';
 
+/**
+ * Gênero declarado (plano §7) — opcional em todo o app: `null` é "prefiro não informar", e é o
+ * estado inicial de todo mundo. Só serve pra decidir elegibilidade de corrida "apenas mulheres";
+ * nunca aparece no perfil público nem nos dados do outro lado da corrida.
+ */
+export type Gender = 'female' | 'male' | 'other' | null;
+
+/** Preferência de "apenas mulheres" (plano §7) — mesma forma nos dois lados (passageira e motorista). */
+export interface WomenOnlySetting {
+  gender: Gender;
+  womenOnlyPref: boolean;
+}
+
 export interface Me extends User {
   passenger: {
     defaultPaymentMethodId: string | null;
@@ -29,6 +42,9 @@ export interface Me extends User {
     recordingEnabled: boolean;
     /** Modo acessibilidade (plano §11.7) — preferência salva, usada como padrão ao pedir corrida. */
     wheelchairAccessible: boolean;
+    /** Plano §7 — opt-in; habilita a opção "apenas mulheres" quando é `'female'`. */
+    gender: Gender;
+    womenOnlyPref: boolean;
   } | null;
   driver: {
     status: DriverStatus;
@@ -37,6 +53,9 @@ export interface Me extends User {
     hasPixKey: boolean;
     rating: number | null;
     rejectionReason: string | null;
+    /** Plano §7 — opt-in; habilita atender somente passageiras quando é `'female'`. */
+    gender: Gender;
+    womenOnlyPref: boolean;
   } | null;
 }
 
@@ -186,8 +205,12 @@ export interface Ride {
   /** Código de 4 dígitos pra iniciar a corrida — só visível ao passageiro (plano §8). */
   pickupCode?: string | null;
   cancelReasonCode?: string | null;
-  /** Preenchido quando o embarque não é a localização de quem pediu (corrida pra outra pessoa). */
+  /** Nome de quem embarca, congelado no pedido, quando a corrida é pra outra pessoa. */
   guestPassengerName?: string | null;
+  /** Corrida para terceiros: quem embarca, quando não é quem pediu. */
+  rideFor: { kind: 'linked' | 'guest'; name: string; avatarUrl: string | null } | null;
+  /** Passageiro menor de idade com adulto responsável confirmado no embarque. */
+  minorAccompanied: boolean;
   /** Plano §5 — só preenchido em corridas agendadas. */
   scheduledAt?: string | null;
   scheduledFavoriteDriverName?: string | null;
@@ -196,6 +219,8 @@ export interface Ride {
   canTip: boolean;
   /** Plano §11.7 — travado no pedido; motorista recebeu a oferta porque o veículo é adaptado. */
   accessibilityRequired: boolean;
+  /** Plano §7 — corrida restrita a motoristas mulheres. Nunca traz o gênero de ninguém. */
+  womenOnly: boolean;
 }
 
 export interface Page<T> {
@@ -285,6 +310,9 @@ export interface DriverProfile {
   isOnline: boolean;
   currentVehicleId: string | null;
   rating: number | null;
+  /** Plano §7 — só o próprio motorista vê o que declarou. */
+  gender: Gender;
+  womenOnlyPref: boolean;
   checklist: { personalData: boolean; cnhPhoto: boolean; selfie: boolean; vehicle: boolean; pixKey: boolean };
   vehicles: Vehicle[];
 }
@@ -353,6 +381,60 @@ export interface EmergencyResult {
   shareUrl: string | null;
   contacts: TrustedContact[];
 }
+
+// ---------- Corrida para terceiros ----------
+
+/**
+ * Dependente sem perfil na plataforma, cadastrado por quem pede e reutilizável nas corridas
+ * seguintes. O CPF nunca volta da API inteiro — só mascarado, para a pessoa reconhecer o cadastro.
+ */
+export interface GuestPassenger {
+  id: string;
+  name: string;
+  /** `123.***.***-45`, ou `null` em cadastro anonimizado. */
+  cpfMasked: string | null;
+  birthDate: string;
+  phone: string | null;
+  /** Menor de idade: pedir corrida exige confirmar que um adulto responsável embarca junto. */
+  minor: boolean;
+}
+
+export interface GuestPassengerInput {
+  name: string;
+  cpf: string;
+  /** AAAA-MM-DD */
+  birthDate: string;
+  phone?: string;
+}
+
+export type PassengerLinkStatus = 'Pending' | 'Accepted' | 'Revoked';
+
+export interface PassengerLink {
+  id: string;
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  status: PassengerLinkStatus;
+  /**
+   * A passageira vinculada autorizou, no aceite, que corridas pedidas para ela sejam restritas a
+   * motoristas mulheres (plano §7). É a única informação ligada a gênero que atravessa o vínculo,
+   * e atravessa porque ela mesma consentiu — o gênero em si nunca sai do perfil dela.
+   */
+  womenOnlyAllowed: boolean;
+  createdAt: string;
+}
+
+/** `owned` = quem eu posso levar nas minhas corridas; `received` = quem pode me levar nas dele. */
+export interface PassengerLinks {
+  owned: PassengerLink[];
+  received: PassengerLink[];
+}
+
+/** Quem embarca na corrida. Omitido no pedido significa o próprio solicitante. */
+export type RidePassengerFor =
+  | { kind: 'self' }
+  | { kind: 'linked'; userId: string }
+  | { kind: 'guest'; guestPassengerId: string; adultAccompanies?: boolean };
 
 // ---------- Favoritos e bloqueio (plano §6) ----------
 export interface FavoriteDriver {

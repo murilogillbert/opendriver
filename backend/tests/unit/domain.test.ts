@@ -5,6 +5,8 @@ import { ageOn, isValidCnh, isValidCpf, isValidRenavam, normalizePixKey, normali
 import { cancelReasonsFor } from '../../src/domain/cancelReasons.js';
 import { COMPLAINT_CATEGORIES, COMPLAINT_CATEGORY_CODES } from '../../src/domain/complaintCategories.js';
 import { acceptanceRate, cancellationRate } from '../../src/domain/driverQuality.js';
+import { canRequestWomenOnly, driverMatchesRideGender, isGender } from '../../src/domain/genderPolicy.js';
+import { requiresAdultEscort } from '../../src/domain/ridePassenger.js';
 import { isImplausibleJump } from '../../src/domain/mockLocation.js';
 import { DRIVER_QUICK_MESSAGE_CODES, PASSENGER_QUICK_MESSAGE_CODES, quickMessagesFor } from '../../src/domain/quickMessages.js';
 
@@ -118,6 +120,64 @@ describe('chat mascarado: mensagens rápidas (plano §11.1)', () => {
     expect(quickMessagesFor('driver').map((m) => m.code)).toEqual(DRIVER_QUICK_MESSAGE_CODES);
     const all = [...PASSENGER_QUICK_MESSAGE_CODES, ...DRIVER_QUICK_MESSAGE_CODES];
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe('corrida para terceiros: escolta de menor', () => {
+  const ref = new Date('2026-10-02T12:00:00Z');
+  it('menor de 18 exige adulto responsável; a partir de 18, não', () => {
+    expect(requiresAdultEscort(new Date('2010-10-03'), ref)).toBe(true); // faz 16 amanhã
+    expect(requiresAdultEscort(new Date('2008-10-03'), ref)).toBe(true); // faz 18 amanhã
+    expect(requiresAdultEscort(new Date('2008-10-02'), ref)).toBe(false); // fez 18 hoje
+    expect(requiresAdultEscort(new Date('1990-01-01'), ref)).toBe(false);
+  });
+});
+
+describe('corrida apenas mulheres (plano §7)', () => {
+  it('vale pelo gênero de quem embarca, declarado pela própria pessoa', () => {
+    expect(canRequestWomenOnly('female')).toBe(true);
+    expect(canRequestWomenOnly('male')).toBe(false);
+    expect(canRequestWomenOnly('other')).toBe(false);
+    // Gênero não informado nunca é curinga.
+    expect(canRequestWomenOnly(null)).toBe(false);
+  });
+
+  it('conta vinculada pode; dependente sem perfil nunca pode', () => {
+    // A identidade é da própria conta dela, então a declaração dela vale.
+    expect(canRequestWomenOnly('female', 'linked')).toBe(true);
+    expect(canRequestWomenOnly('male', 'linked')).toBe(false);
+    // Passageiro avulso: só existe um nome digitado por terceiro, nada declarado por quem embarca.
+    expect(canRequestWomenOnly('female', 'guest')).toBe(false);
+    expect(canRequestWomenOnly(null, 'guest')).toBe(false);
+  });
+
+  it('corrida restrita só vai pra motorista mulher', () => {
+    const ride = { womenOnly: true, riderGender: 'female' as const };
+    expect(driverMatchesRideGender(ride, { gender: 'female', womenOnlyPref: false })).toBe(true);
+    expect(driverMatchesRideGender(ride, { gender: 'male', womenOnlyPref: false })).toBe(false);
+    expect(driverMatchesRideGender(ride, { gender: 'other', womenOnlyPref: false })).toBe(false);
+    expect(driverMatchesRideGender(ride, { gender: null, womenOnlyPref: false })).toBe(false);
+  });
+
+  it('motorista que só atende passageiras não recebe corrida de quem não é mulher', () => {
+    const driver = { gender: 'female' as const, womenOnlyPref: true };
+    expect(driverMatchesRideGender({ womenOnly: false, riderGender: 'female' }, driver)).toBe(true);
+    expect(driverMatchesRideGender({ womenOnly: false, riderGender: 'male' }, driver)).toBe(false);
+    // Dependente sem perfil chega aqui com gênero desconhecido — nunca herdado de quem pediu.
+    expect(driverMatchesRideGender({ womenOnly: false, riderGender: null }, driver)).toBe(false);
+  });
+
+  it('sem restrição de nenhum dos lados, o gênero não filtra ninguém', () => {
+    const ride = { womenOnly: false, riderGender: null };
+    for (const gender of [null, 'female', 'male', 'other'] as const)
+      expect(driverMatchesRideGender(ride, { gender, womenOnlyPref: false })).toBe(true);
+  });
+
+  it('isGender aceita só os valores previstos (e null)', () => {
+    expect(isGender('female')).toBe(true);
+    expect(isGender(null)).toBe(true);
+    expect(isGender('Feminino')).toBe(false);
+    expect(isGender(undefined)).toBe(false);
   });
 });
 

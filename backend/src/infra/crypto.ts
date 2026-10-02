@@ -41,6 +41,16 @@ export function decryptBuffer(data: Buffer, iv: string, authTag: string): Buffer
   return Buffer.concat([decipher.update(data), decipher.final()]);
 }
 
+/**
+ * Impressão determinística de um valor (HMAC-SHA256 com a chave-mestra), para usar em índice único
+ * sem guardar o dado em claro — dois valores iguais dão o mesmo hash, e o hash não volta ao
+ * original. Usado no CPF do passageiro avulso (corrida para terceiros), que fica cifrado em
+ * `cpf_enc` e só precisa ser comparável para evitar cadastro duplicado.
+ */
+export function fingerprint(value: string): string {
+  return crypto.createHmac('sha256', key()).update(value).digest('hex');
+}
+
 export function randomToken(bytes = 24): string {
   return crypto.randomBytes(bytes).toString('base64url');
 }

@@ -12,11 +12,15 @@ import type {
   EarningsSummary,
   EmergencyResult,
   FavoriteDriver,
+  Gender,
+  GuestPassenger,
+  GuestPassengerInput,
   LatLng,
   Me,
   Message,
   Offer,
   Page,
+  PassengerLinks,
   PaymentMethod,
   PaymentMethods,
   Payout,
@@ -30,12 +34,14 @@ import type {
   LiveRoute,
   Ride,
   RideMessage,
+  RidePassengerFor,
   SavedPlace,
   TrustedContact,
   UploadFile,
   User,
   Vehicle,
   VehicleInput,
+  WomenOnlySetting,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -85,6 +91,23 @@ export function createApi(http: HttpClient) {
       recordingTerms: () => http.get<RecordingTerms>('/me/recording'),
       setRecording: (enabled: boolean, consentVersion?: string) => http.put<RecordingSetting>('/me/recording', { enabled, consentVersion }),
       setAccessibility: (wheelchairAccessible: boolean) => http.put<{ wheelchairAccessible: boolean }>('/me/accessibility', { wheelchairAccessible }),
+      /** Plano §7 — opt-in; `null` apaga a declaração e desliga a preferência junto. */
+      setGender: (gender: Gender) => http.put<WomenOnlySetting>('/me/gender', { gender }),
+      setWomenOnly: (womenOnlyPref: boolean) => http.put<WomenOnlySetting>('/me/women-only', { womenOnlyPref }),
+    },
+    /** Corrida para terceiros: dependentes sem perfil e vínculo (convite + aceite) entre contas. */
+    passengers: {
+      guests: () => http.get<GuestPassenger[]>('/me/guest-passengers'),
+      addGuest: (input: GuestPassengerInput) => http.post<GuestPassenger>('/me/guest-passengers', input),
+      updateGuest: (id: string, input: Partial<Omit<GuestPassengerInput, 'cpf'>>) => http.put<GuestPassenger>(`/me/guest-passengers/${enc(id)}`, input),
+      removeGuest: (id: string) => http.del<void>(`/me/guest-passengers/${enc(id)}`),
+      links: () => http.get<PassengerLinks>('/me/passenger-links'),
+      /** Resposta genérica de propósito: a rota não serve pra descobrir se um e-mail tem conta. */
+      invite: (email: string) => http.post<Message>('/me/passenger-links', { email }),
+      /** `womenOnlyAllowed` é a autorização da própria convidada (plano §7) — só ela pode marcar. */
+      acceptLink: (id: string, womenOnlyAllowed?: boolean) => http.post<PassengerLinks>(`/me/passenger-links/${enc(id)}/accept`, { womenOnlyAllowed }),
+      declineLink: (id: string) => http.post<PassengerLinks>(`/me/passenger-links/${enc(id)}/decline`),
+      removeLink: (id: string) => http.del<PassengerLinks>(`/me/passenger-links/${enc(id)}`),
     },
     geo: {
       search: (q: string, near?: LatLng | null, signal?: AbortSignal) =>
@@ -103,6 +126,9 @@ export function createApi(http: HttpClient) {
         scheduledAt?: Date;
         favoriteDriverId?: string;
         accessibilityRequired?: boolean;
+        womenOnly?: boolean;
+        /** Corrida para terceiros — omitido significa que quem pede é quem embarca. */
+        passengerFor?: RidePassengerFor;
       }) => http.post<Ride>('/rides', { ...input, scheduledAt: input.scheduledAt?.toISOString() }),
       active: () => http.get<Ride | null>('/rides/active'),
       get: (id: string) => http.get<Ride>(`/rides/${enc(id)}`),
@@ -162,6 +188,8 @@ export function createApi(http: HttpClient) {
       selectVehicle: (vehicleId: string) => http.put<DriverProfile>(`/driver/vehicles/${enc(vehicleId)}/current`),
       removeVehicle: (vehicleId: string) => http.del<void>(`/driver/vehicles/${enc(vehicleId)}`),
       setPix: (pixKeyType: PixKeyType, pixKey: string, password?: string) => http.put<DriverProfile>('/driver/pix', { pixKeyType, pixKey, password }),
+      /** Plano §7 — gênero (opt-in) e preferência de atender somente passageiras mulheres. */
+      setPreferences: (input: { gender?: Gender; womenOnlyPref?: boolean }) => http.put<DriverProfile>('/driver/preferences', input),
       online: () => http.post<{ isOnline: boolean }>('/driver/online'),
       offline: () => http.post<{ isOnline: boolean }>('/driver/offline'),
       location: (p: LatLng & { heading?: number | null; speed?: number | null; accuracy?: number | null }) => http.post<void>('/driver/location', p),

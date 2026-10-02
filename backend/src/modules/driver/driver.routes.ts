@@ -52,6 +52,11 @@ driverRouter.delete('/driver/vehicles/:id', ...asDriver, async (req, res) => {
   res.status(204).send();
 });
 
+/** Corrida "apenas mulheres" (plano §7) — gênero (opt-in) e preferência de atendimento. */
+driverRouter.put('/driver/preferences', ...asDriver, validateBody(driver.driverPreferencesSchema), async (req, res) => {
+  res.json(envelope(await driver.setPreferences(userId(req), req.body)));
+});
+
 driverRouter.put('/driver/pix', ...asDriver, validateBody(driver.pixSchema), async (req, res) => {
   res.json(envelope(await driver.setPixKey(userId(req), req.body)));
 });

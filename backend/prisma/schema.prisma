@@ -93,6 +93,10 @@ model User {
   blockedByUsers           BlockedUser[]     @relation("UserBlocked")
   ridesAsScheduledFavorite Ride[]            @relation("RideScheduledFavorite")
   rideMessages             RideMessage[]
+  ridesAsRealPassenger     Ride[]            @relation("RidePassengerFor")
+  passengerLinksOwned      PassengerLink[]   @relation("PassengerLinkOwner")
+  passengerLinksReceived   PassengerLink[]   @relation("PassengerLinkInvitee")
+  guestPassengers          GuestPassenger[]
 
   @@map("users")
   @@schema("public")
@@ -315,6 +319,12 @@ model DriverProfile {
   /// Antifraude de localização (plano §11.4) — contagem de "teleportes" (deslocamento implicando
   /// velocidade impossível de carro) detectados; só para revisão do admin, nunca bloqueia sozinho.
   mockLocationFlags Int          @default(0) @map("mock_location_flags")
+  /// Corrida "apenas mulheres" (plano §7). Dado sensível: coleta é opt-in explícita, NUNCA inferida
+  /// do nome, e só serve para decidir elegibilidade — jamais é exposto a passageiros ou a terceiros.
+  /// 'female' | 'male' | 'other' | null (null = preferiu não informar). Ver domain/genderPolicy.ts.
+  gender            String?      @db.VarChar(12)
+  /// Motorista mulher que optou por só receber ofertas de passageiras mulheres (plano §7).
+  womenOnlyPref     Boolean      @default(false) @map("women_only_pref")
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @default(now()) @updatedAt @map("updated_at")
 
@@ -337,6 +347,12 @@ model PassengerProfile {
   recordingConsentVer    String?   @map("recording_consent_version") @db.VarChar(40)
   /// Modo acessibilidade (plano §11.7): preferência salva, usada como padrão ao pedir corrida.
   wheelchairAccessible   Boolean   @default(false) @map("wheelchair_accessible")
+  /// Corrida "apenas mulheres" (plano §7). Dado sensível: coleta é opt-in explícita, NUNCA inferida
+  /// do nome, e só serve para decidir elegibilidade — jamais é exposto ao motorista ou a terceiros.
+  /// 'female' | 'male' | 'other' | null (null = preferiu não informar). Ver domain/genderPolicy.ts.
+  gender                 String?   @db.VarChar(12)
+  /// Passageira que quer, por padrão, ser atendida só por motorista mulher (plano §7).
+  womenOnlyPref          Boolean   @default(false) @map("women_only_pref")
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -404,6 +420,76 @@ model VehicleValidation {
 }
 
 /// Última posição conhecida do motorista (1 linha por motorista, upsert).
+enum PassengerLinkStatus {
+  /// Convite enviado, aguardando o indicado aceitar no app dele.
+  Pending
+  Accepted
+  /// Recusado pelo indicado ou desfeito por qualquer um dos dois.
+  Revoked
+
+  @@schema("opendriver")
+}
+
+/**
+ * Vínculo entre duas contas para que `owner` possa pedir corrida para `linkedUser` (corrida para
+ * terceiros). Exige convite + aceite: sem o aceite do indicado, qualquer um poderia declarar que
+ * outra pessoa viaja com ele e entregar o nome dela a um motorista.
+ */
+model PassengerLink {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId      String              @map("owner_id") @db.Uuid
+  owner        User                @relation("PassengerLinkOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  linkedUserId String              @map("linked_user_id") @db.Uuid
+  linkedUser   User                @relation("PassengerLinkInvitee", fields: [linkedUserId], references: [id], onDelete: Restrict)
+  status       PassengerLinkStatus @default(Pending)
+  /// A passageira vinculada autorizou que as corridas pedidas para ela possam ser restritas a
+  /// motoristas mulheres (plano §7). Quem decide é ela, no aceite — não quem convida: expor o
+  /// gênero dela a terceiro é justamente o que a §7 proíbe, então a única forma de habilitar a
+  /// opção sem vazar nada é ela mesma consentir com essa divulgação.
+  womenOnlyAllowed Boolean          @default(false) @map("women_only_allowed")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  respondedAt  DateTime?           @map("responded_at")
+
+  @@unique([ownerId, linkedUserId])
+  @@index([linkedUserId, status])
+  @@map("passenger_links")
+  @@schema("opendriver")
+}
+
+/**
+ * Passageiro avulso/dependente sem perfil na plataforma (corrida para terceiros), cadastrado uma
+ * vez por quem pede e reutilizável nas corridas seguintes.
+ *
+ * O CPF é de terceiro — possivelmente de menor — e nunca precisa ser consultado por valor, então
+ * fica cifrado (`cpfEnc`, AES-256-GCM, mesmo cofre do token de cartão). `cpfHash` é um HMAC
+ * determinístico que serve só para a unicidade por dono: evita duplicata sem guardar o número em
+ * claro. Remover é lógico (`deletedAt`), porque corridas antigas apontam para esta linha; re-
+ * cadastrar o mesmo CPF reativa o registro em vez de criar outro.
+ *
+ * `cpfEnc`/`cpfHash` são anuláveis para que a exclusão da conta do dono apague o CPF do terceiro
+ * (LGPD) sem destruir a linha que o histórico de corridas referencia.
+ */
+model GuestPassenger {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId   String    @map("owner_id") @db.Uuid
+  owner     User      @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  name      String    @db.VarChar(100)
+  cpfEnc    String?   @map("cpf_enc")
+  cpfHash   String?   @map("cpf_hash") @db.VarChar(64)
+  birthDate DateTime  @map("birth_date") @db.Date
+  phone     String?   @db.VarChar(20)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  rides Ride[]
+
+  @@unique([ownerId, cpfHash])
+  @@index([ownerId, deletedAt])
+  @@map("guest_passengers")
+  @@schema("opendriver")
+}
+
 model DriverLocation {
   driverId  String   @id @map("driver_id") @db.Uuid
   driver    User     @relation(fields: [driverId], references: [id], onDelete: Restrict)
@@ -564,11 +650,24 @@ model Ride {
   pickupCode                String?           @map("pickup_code") @db.VarChar(4)
   /// Quando o motorista marcou "passageiro não compareceu" (§8).
   noShowAt                  DateTime?         @map("no_show_at")
-  /// Preenchido quando quem pediu escolheu um embarque diferente da localização atual (pedindo pra
-  /// outra pessoa) — mostrado ao motorista no lugar do nome de quem pagou. Nesse caso a corrida não
-  /// pode entrar em política de exclusividade de gênero (§7, ainda não implementado) — não há como
-  /// confirmar que quem embarca é quem tem a conta.
+  /// Nome de quem embarca, mostrado ao motorista no lugar do nome de quem pagou. É um instantâneo:
+  /// fica congelado como estava no pedido, então editar ou remover o cadastro do dependente depois
+  /// nunca reescreve o histórico. Caminho legado (nome digitado solto, sem CPF/nascimento) também
+  /// grava só aqui, sem `guestPassengerId` — e, como ali não há declaração de ninguém sobre si
+  /// mesmo, `womenOnly` é recusado (ver domain/ridePassenger.ts e rides.service.ts).
   guestPassengerName        String?           @map("guest_passenger_name") @db.VarChar(100)
+  /// Corrida para terceiros, caso `linked`: outra conta da plataforma, vinculada por convite +
+  /// aceite (`PassengerLink`). É a conta dela, então o gênero que ela declarou vale para a política
+  /// de "apenas mulheres" — diferente do passageiro avulso.
+  passengerForId            String?           @map("passenger_for_id") @db.Uuid
+  passengerFor              User?             @relation("RidePassengerFor", fields: [passengerForId], references: [id], onDelete: Restrict)
+  /// Corrida para terceiros, caso `guest`: dependente sem perfil (`GuestPassenger`).
+  guestPassengerId          String?           @map("guest_passenger_id") @db.Uuid
+  guestPassenger            GuestPassenger?   @relation(fields: [guestPassengerId], references: [id], onDelete: Restrict)
+  /// Confirmação explícita de que um adulto responsável embarca junto, exigida quando o passageiro
+  /// avulso é menor de idade (domain/ridePassenger.ts). Guardada na corrida como registro de quem
+  /// confirmou o quê, e mostrada ao motorista.
+  minorAccompanied          Boolean           @default(false) @map("minor_accompanied")
   /// Plano §5 — corrida agendada: horário marcado, motorista favorito escolhido (oferta exclusiva por
   /// SCHEDULE_FAVORITE_WINDOW_MINUTES antes da busca geral) e o preço já veio com o acréscimo.
   scheduledAt               DateTime?         @map("scheduled_at")
@@ -577,6 +676,10 @@ model Ride {
   isScheduled               Boolean           @default(false) @map("is_scheduled")
   /// Modo acessibilidade (plano §11.7) — travado no pedido; dispatch.ts só oferece a motoristas com veículo adaptado.
   accessibilityRequired     Boolean           @default(false) @map("accessibility_required")
+  /// Corrida "apenas mulheres" (plano §7) — travado no pedido; dispatch.ts só oferece a motoristas
+  /// mulheres. Só pode ser true se a passageira declarou gender='female' no momento do pedido
+  /// (validado em rides.service.ts, nunca só no app — UX11) e a corrida não é pra outra pessoa.
+  womenOnly                 Boolean           @default(false) @map("women_only")
   updatedAt                 DateTime          @default(now()) @updatedAt @map("updated_at")
 
   offers     RideOffer[]

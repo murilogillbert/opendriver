@@ -7,6 +7,9 @@ export const rideInclude = {
   passenger: { select: { id: true, name: true, email: true, avatarUrl: true, phone: true, passengerProfile: { select: { ratingSum: true, ratingCount: true } } } },
   driver: { select: { id: true, name: true, avatarUrl: true, phone: true, driverProfile: { select: { ratingSum: true, ratingCount: true } } } },
   scheduledFavoriteDriver: { select: { name: true } },
+  // Corrida para terceiros: só o nome e a foto de quem embarca. Nunca o CPF nem o nascimento do
+  // dependente — esses dados existem para quem cadastrou, não para o motorista.
+  passengerFor: { select: { id: true, name: true, avatarUrl: true, passengerProfile: { select: { ratingSum: true, ratingCount: true } } } },
   vehicle: true,
   paymentMethod: true,
   ratings: { select: { raterId: true } },
@@ -36,6 +39,9 @@ export function toRideDto(r: RideRow, viewerId: string) {
   const ctx = { status: r.status, paymentStatus: r.paymentStatus, rated, withinRatingWindow, arrivalGraceElapsed };
   const lastPayment = r.payments[0];
   const amountDue = r.status === 'Completed' ? round2(r.fare) : round2(r.cancellationFee);
+  // Nome de quem embarca em corrida pedida pra outra pessoa: a conta vinculada, ou o instantâneo
+  // gravado no pedido (dependente sem perfil e caminho legado de nome digitado).
+  const rideForName = r.passengerFor?.name ?? r.guestPassengerName;
   return {
     id: r.id,
     role,
@@ -87,14 +93,24 @@ export function toRideDto(r: RideRow, viewerId: string) {
         ? {
             /// Plano §6: precisa do id pra bloquear o passageiro depois da corrida.
             id: r.passenger.id,
-            // Corrida pedida pra outra pessoa (embarque ≠ localização de quem pediu): o motorista
-            // vê o nome de quem vai embarcar, não de quem pagou.
+            // Corrida pedida pra outra pessoa: o motorista vê o nome de quem vai embarcar, não de
+            // quem pagou. `guestPassengerName` guarda esse nome nos dois casos (conta vinculada e
+            // dependente sem perfil), congelado no momento do pedido.
             name: firstName(r.guestPassengerName || r.passenger.name),
             avatarUrl: r.passenger.avatarUrl,
             rating: rating(r.passenger.passengerProfile?.ratingSum, r.passenger.passengerProfile?.ratingCount),
           }
         : null,
     guestPassengerName: r.guestPassengerName,
+    /**
+     * Corrida para terceiros: quem embarca, quando não é quem pediu. `kind` diz de onde vem o dado
+     * — `linked` é uma conta da plataforma (vínculo aceito), `guest` é um dependente cadastrado por
+     * quem pediu. O motorista vê só o primeiro nome; quem pediu vê o nome como cadastrou. CPF e
+     * data de nascimento do dependente nunca saem daqui.
+     */
+    rideFor: rideForName ? { kind: r.passengerForId ? ('linked' as const) : ('guest' as const), name: role === 'driver' ? firstName(rideForName) : rideForName, avatarUrl: r.passengerFor?.avatarUrl ?? null } : null,
+    /// Passageiro menor de idade com adulto responsável confirmado no embarque — o motorista precisa saber.
+    minorAccompanied: r.minorAccompanied,
     /// Plano §5 — só preenchido em corridas agendadas.
     scheduledAt: r.scheduledAt,
     scheduledFavoriteDriverName: r.scheduledFavoriteDriver?.name ?? null,
@@ -103,6 +119,9 @@ export function toRideDto(r: RideRow, viewerId: string) {
     canTip: role === 'passenger' && r.status === 'Completed' && !r.earnings[0] && r.paymentMethodType === 'Card',
     /// Plano §11.7 — travado no pedido; motorista recebeu a oferta porque o veículo é adaptado.
     accessibilityRequired: r.accessibilityRequired,
+    /// Plano §7 — travado no pedido. Só diz que a corrida é restrita a motoristas mulheres; o gênero
+    /// declarado de cada pessoa nunca sai daqui (nem a passageira vê o do motorista, nem o inverso).
+    womenOnly: r.womenOnly,
     /** Previsão de chegada ao embarque (instante estimado), enquanto o motorista está a caminho. */
     pickupEta:
       r.status === 'DriverAssigned' && r.acceptedAt && r.offers[0]

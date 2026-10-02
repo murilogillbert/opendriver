@@ -8,12 +8,12 @@ import { ApiError, errorCode } from '@/api/errors';
 import { qk } from '@/api/queryKeys';
 import type { Address, Category, LatLng, PaymentMethod, Quote } from '@/api/types';
 import { BottomPanel } from '@/components/ride/BottomPanel';
+import { PassengerPicker, SELF_RIDER, type RiderChoice } from '@/components/ride/PassengerPicker';
 import { methodIcon, PaymentPicker } from '@/components/ride/PaymentPicker';
 import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
-import { SwitchRow } from '@/components/ui/Controls';
+import { Checkbox, SwitchRow } from '@/components/ui/Controls';
 import { AppText, Card, Divider, Icon, KeyValue, Row } from '@/components/ui/primitives';
-import { TextField } from '@/components/ui/TextField';
 import { ErrorState } from '@/components/ui/States';
 import { useAuth } from '@/context/AuthContext';
 import { formatCurrency, formatDateTime, formatDistance, formatDuration } from '@/lib/format';
@@ -32,14 +32,14 @@ const LAST_CATEGORY = 'odh.lastCategory';
 export function QuotePanel({
   origin,
   destination,
-  needsGuestName = false,
+  pickupFarFromMe = false,
   onHeight,
   onQuote,
 }: {
   origin: Address | (LatLng & { address?: string });
   destination: Address;
-  /** Embarque diferente da localização atual — provavelmente é pra outra pessoa. */
-  needsGuestName?: boolean;
+  /** Embarque longe de onde quem pede está: só um lembrete de escolher quem embarca, nunca uma conclusão. */
+  pickupFarFromMe?: boolean;
   onHeight: (h: number) => void;
   onQuote: (q: Quote | null) => void;
 }) {
@@ -52,9 +52,12 @@ export function QuotePanel({
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [useCashback, setUseCashback] = useState<boolean | null>(null);
   const [accessibilityOverride, setAccessibilityOverride] = useState<boolean | null>(null);
+  const [womenOnlyOverride, setWomenOnlyOverride] = useState<boolean | null>(null);
   const [details, setDetails] = useState(false);
   const [picker, setPicker] = useState(false);
-  const [guestName, setGuestName] = useState('');
+  const [riderPicker, setRiderPicker] = useState(false);
+  const [rider, setRider] = useState<RiderChoice>(SELF_RIDER);
+  const [adultAccompanies, setAdultAccompanies] = useState(false);
 
   const quoteKey = ['quote', origin.lat, origin.lng, destination.lat, destination.lng, draft.scheduledAt] as const;
   const quote = useQuery({
@@ -84,8 +87,15 @@ export function QuotePanel({
   const cashbackUsed = selected && cashbackOn ? Math.min(balance, selected.fare) : 0;
   const toPay = selected ? Math.max(0, selected.fare - cashbackUsed) : 0;
   const needsCpf = !me?.cpf;
-  const guestNameMissing = needsGuestName && !guestName.trim();
   const accessibilityRequired = accessibilityOverride ?? !!me?.passenger?.wheelchairAccessible;
+  const forSelf = rider.passengerFor.kind === 'self';
+  // Menor de idade só viaja com adulto responsável — o servidor recusa o pedido sem a confirmação.
+  const escortMissing = rider.minor && !adultAccompanies;
+  // Plano §7: o alternador só aparece quando a opção pode valer pra quem embarca — quem pede, se
+  // declarou mulher; conta vinculada, se ela autorizou no aceite; dependente sem perfil, nunca.
+  const selfWomenOnlyAllowed = me?.passenger?.gender === 'female';
+  const canChooseWomenOnly = rider.womenOnlyAllowed && (forSelf ? selfWomenOnlyAllowed : true);
+  const womenOnly = canChooseWomenOnly && (womenOnlyOverride ?? (forSelf ? !!me?.passenger?.womenOnlyPref : false));
 
   const request = useMutation({
     mutationFn: () =>
@@ -94,10 +104,14 @@ export function QuotePanel({
         category: selected!.category,
         paymentMethodId: method?.id,
         useCashback: balance > 0 ? cashbackOn : undefined,
-        guestPassengerName: needsGuestName ? guestName.trim() : undefined,
         scheduledAt: scheduledAt ?? undefined,
         favoriteDriverId: scheduledAt ? (draft.favoriteDriverId ?? undefined) : undefined,
         accessibilityRequired,
+        womenOnly: canChooseWomenOnly ? womenOnly : undefined,
+        passengerFor:
+          rider.passengerFor.kind === 'guest'
+            ? { ...rider.passengerFor, adultAccompanies: rider.minor ? adultAccompanies : undefined }
+            : rider.passengerFor,
       }),
     onSuccess: (ride) => {
       AsyncStorage.setItem(LAST_CATEGORY, ride.category).catch(() => undefined);
@@ -152,7 +166,7 @@ export function QuotePanel({
           <Button
             title={selected ? `${scheduledAt ? 'Agendar corrida' : 'Pedir corrida'} · ${formatCurrency(toPay)}` : 'Calculando preço…'}
             size="lg"
-            disabled={!selected || needsCpf || guestNameMissing}
+            disabled={!selected || needsCpf || escortMissing}
             loading={request.isPending || quote.isPending}
             onPress={() => request.mutate()}
           />
@@ -194,6 +208,21 @@ export function QuotePanel({
           })}
         </Row>
       ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Passageiro: ${rider.label}. Tocar para trocar`}
+        onPress={() => setRiderPicker(true)}
+        style={styles.payRow}
+      >
+        <Icon name={forSelf ? 'person-outline' : 'people-outline'} size={20} color={colors.navy} />
+        <AppText variant="bodyStrong" style={{ flex: 1 }}>
+          {forSelf ? 'Eu vou embarcar' : rider.label}
+        </AppText>
+        <AppText variant="small" color={colors.blue}>
+          Trocar
+        </AppText>
+      </Pressable>
 
       <Pressable
         accessibilityRole="button"
@@ -241,12 +270,30 @@ export function QuotePanel({
         onValueChange={setAccessibilityOverride}
       />
 
-      {needsGuestName ? (
-        <Card style={{ gap: spacing.sm }}>
-          <AppText variant="bodyStrong">Essa corrida é pra outra pessoa?</AppText>
-          <AppText variant="small">O embarque escolhido é diferente de onde você está agora. Informe o nome de quem vai pegar a corrida — é isso que o motorista vai ver.</AppText>
-          <TextField label="Nome do passageiro" value={guestName} onChangeText={setGuestName} autoCapitalize="words" maxLength={100} />
+      {canChooseWomenOnly ? (
+        <SwitchRow
+          title="Apenas motoristas mulheres"
+          subtitle={womenOnly ? 'Só motoristas mulheres recebem esta corrida — a busca pode levar mais tempo' : 'Esta corrida pode ser atendida por qualquer motorista'}
+          value={womenOnly}
+          onValueChange={setWomenOnlyOverride}
+        />
+      ) : null}
+
+      {rider.minor ? (
+        <Card style={{ gap: spacing.sm, backgroundColor: colors.warningSoft, borderColor: colors.warningSoft }}>
+          <AppText variant="bodyStrong">{rider.label} é menor de idade</AppText>
+          <AppText variant="small">
+            Menor de idade não pode viajar sozinho. Confirme que um adulto responsável embarca junto — o motorista também será avisado.
+          </AppText>
+          <Checkbox label="Um adulto responsável vai embarcar junto" checked={adultAccompanies} onChange={setAdultAccompanies} />
         </Card>
+      ) : null}
+
+      {forSelf && pickupFarFromMe ? (
+        <AppText variant="small">
+          O embarque está longe de onde você está agora. Se a corrida é pra outra pessoa, toque em &quot;Trocar&quot; e escolha quem vai
+          embarcar.
+        </AppText>
       ) : null}
 
       {needsCpf ? (
@@ -277,6 +324,18 @@ export function QuotePanel({
       ) : null}
 
       <PaymentPicker visible={picker} selectedId={payWith?.id ?? null} onSelect={setMethod} onClose={() => setPicker(false)} />
+      <PassengerPicker
+        visible={riderPicker}
+        selected={rider}
+        selfWomenOnlyAllowed={selfWomenOnlyAllowed}
+        onSelect={(choice) => {
+          setRider(choice);
+          // Escolha nova = decisões da corrida anterior não valem mais.
+          setAdultAccompanies(false);
+          setWomenOnlyOverride(null);
+        }}
+        onClose={() => setRiderPicker(false)}
+      />
     </BottomPanel>
   );
 }

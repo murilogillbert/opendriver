@@ -112,8 +112,12 @@ export function DriverRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (h: 
     body = (
       <>
         {ride.passenger ? <PersonCard name={ride.passenger.name} avatarUrl={ride.passenger.avatarUrl} rating={ride.passenger.rating} /> : null}
-        {ride.guestPassengerName ? <Badge label="Corrida pedida por outra pessoa" icon="person-outline" tone="info" /> : null}
+        {ride.rideFor ? <Badge label="Corrida pedida por outra pessoa" icon="person-outline" tone="info" /> : null}
+        {/* O motorista precisa saber que embarca um menor com acompanhante — não vê CPF nem nascimento. */}
+        {ride.minorAccompanied ? <Badge label="Menor de idade com adulto responsável" icon="alert-circle-outline" tone="warning" /> : null}
         {ride.accessibilityRequired ? <Badge label="Passageiro precisa de veículo acessível" icon="accessibility-outline" tone="info" /> : null}
+        {/* Plano §7: só informa a restrição da corrida que a motorista está atendendo — nunca o gênero de ninguém. */}
+        {ride.womenOnly ? <Badge label="Corrida apenas com motoristas mulheres" icon="woman-outline" tone="info" /> : null}
         <Row gap={6} style={{ alignItems: 'flex-start' }}>
           <Icon name={toPickup ? 'radio-button-on' : 'square'} size={14} color={toPickup ? colors.navy : colors.limeDark} />
           <AppText variant="body" style={{ flex: 1 }} numberOfLines={2}>

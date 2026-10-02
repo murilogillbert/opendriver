@@ -57,10 +57,10 @@ export default function Trip() {
     panel = <PassengerRidePanel ride={ride} onHeight={setPanelHeight} />;
   } else if (draft.destination && origin) {
     map = { bottomInset: panelHeight, origin, destination: draft.destination, polyline: quote?.polyline };
-    // Embarque bem diferente de onde a pessoa está agora: provavelmente está pedindo pra outra
-    // pessoa — pede o nome de quem embarca (mostrado ao motorista) em vez do nome de quem paga.
-    const needsGuestName = !!draft.origin && (!here || haversineMeters(draft.origin, here) > GUEST_PICKUP_THRESHOLD_M);
-    panel = <QuotePanel origin={origin} destination={draft.destination} needsGuestName={needsGuestName} onHeight={setPanelHeight} onQuote={onQuote} />;
+    // Embarque bem diferente de onde a pessoa está agora: pode ser corrida pra outra pessoa. Vira
+    // só um lembrete pra escolher quem embarca — quem decide é quem pede, não a distância.
+    const pickupFarFromMe = !!draft.origin && (!here || haversineMeters(draft.origin, here) > GUEST_PICKUP_THRESHOLD_M);
+    panel = <QuotePanel origin={origin} destination={draft.destination} pickupFarFromMe={pickupFarFromMe} onHeight={setPanelHeight} onQuote={onQuote} />;
   } else {
     map = { center: origin, origin: draft.origin, bottomInset: panelHeight };
     panel = <WhereToPanel name={me?.name} onHeight={setPanelHeight} originLabel={draft.origin?.address ?? (here ? 'Minha localização' : 'Defina o embarque')} />;

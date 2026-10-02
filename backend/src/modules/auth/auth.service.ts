@@ -10,6 +10,7 @@ import { escapeHtml, sendEmail } from '../../infra/email.js';
 import { prisma } from '../../infra/prisma.js';
 import { deleteObject } from '../../infra/storage/storage.js';
 import { DELETED_EMAIL_SUFFIX, markUserRevoked } from '../../middleware/auth.js';
+import type { Gender } from '../../domain/genderPolicy.js';
 import { ratingAverage } from '../../domain/rating.js';
 import { round2 } from '../../lib/money.js';
 
@@ -176,6 +177,10 @@ export async function me(id: string) {
           rating: ratingAverage(user.passengerProfile.ratingSum, user.passengerProfile.ratingCount),
           recordingEnabled: user.passengerProfile.recordingEnabled,
           wheelchairAccessible: user.passengerProfile.wheelchairAccessible,
+          // Plano §7: o próprio usuário vê o que declarou (pra poder trocar/apagar). Nenhum DTO de
+          // corrida expõe gênero — nem o motorista nem o passageiro veem o do outro lado.
+          gender: user.passengerProfile.gender as Gender,
+          womenOnlyPref: user.passengerProfile.womenOnlyPref,
         }
       : null,
     driver: dp
@@ -186,6 +191,8 @@ export async function me(id: string) {
           hasPixKey: !!dp.pixKey,
           rating: ratingAverage(dp.ratingSum, dp.ratingCount),
           rejectionReason: dp.rejectionReason,
+          gender: dp.gender as Gender,
+          womenOnlyPref: dp.womenOnlyPref,
         }
       : null,
   };
@@ -265,7 +272,8 @@ export async function deleteAccount(id: string, password: string): Promise<void>
     throw new AppError('Contas de loja ou da equipe são encerradas pelo suporte.', 409, 'managed_account');
   const active = await prisma.ride.count({
     where: {
-      OR: [{ passengerId: id }, { driverId: id }],
+      // `passengerForId`: a pessoa pode estar embarcada numa corrida que outra conta pediu pra ela.
+      OR: [{ passengerId: id }, { driverId: id }, { passengerForId: id }],
       status: { in: ['Searching', 'DriverAssigned', 'DriverArrived', 'InProgress'] },
     },
   });
@@ -292,7 +300,17 @@ export async function deleteAccount(id: string, password: string): Promise<void>
     prisma.vehicle.updateMany({ where: { driverId: id }, data: { active: false, crlvKey: null } }),
     prisma.driverProfile.updateMany({
       where: { userId: id },
-      data: { status: 'Suspended', isOnline: false, pixKey: null, pixKeyType: null, cnhNumber: null, cnhPhotoKey: null, selfieKey: null },
+      // Gênero (plano §7) é dado sensível: sai junto com os documentos, não só o acesso — LGPD.
+      data: { status: 'Suspended', isOnline: false, pixKey: null, pixKeyType: null, cnhNumber: null, cnhPhotoKey: null, selfieKey: null, gender: null, womenOnlyPref: false },
+    }),
+    prisma.passengerProfile.updateMany({ where: { userId: id }, data: { gender: null, womenOnlyPref: false } }),
+    // Corrida para terceiros: o vínculo com outras contas cai, e os dados dos dependentes (CPF e
+    // telefone de TERCEIROS) são apagados. A linha fica, anonimizada, porque corridas antigas
+    // apontam pra ela — o nome que o motorista viu na época segue em Ride.guestPassengerName.
+    prisma.passengerLink.deleteMany({ where: { OR: [{ ownerId: id }, { linkedUserId: id }] } }),
+    prisma.guestPassenger.updateMany({
+      where: { ownerId: id },
+      data: { name: 'Passageiro removido', cpfEnc: null, cpfHash: null, phone: null, deletedAt: new Date() },
     }),
     prisma.paymentMethod.updateMany({ where: { userId: id, deletedAt: null }, data: { deletedAt: new Date(), tokenEnc: null } }),
     prisma.pushToken.deleteMany({ where: { userId: id } }),

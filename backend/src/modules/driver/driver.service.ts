@@ -1,6 +1,7 @@
 import type { DriverProfile, Vehicle } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { GENDERS, type Gender } from '../../domain/genderPolicy.js';
 import { isValidLatLng } from '../../domain/geo.js';
 import { isImplausibleJump } from '../../domain/mockLocation.js';
 import { ratingAverage } from '../../domain/rating.js';
@@ -50,6 +51,17 @@ export const vehicleSchema = z.object({
   chassi: z.string().trim().min(5).max(30).optional(),
   /// Autodeclarado pelo motorista (plano §11.7) — dispatch.ts só oferece corridas com esse requisito a quem marcou isto.
   wheelchairAccessible: z.boolean().optional().default(false),
+});
+
+/**
+ * Corrida "apenas mulheres" (plano §7) — opt-in do motorista, sempre opcional: dirigir no
+ * OpenDriver nunca exige declarar gênero. Campos omitidos ficam como estão; `gender: null` apaga a
+ * declaração ("prefiro não informar") e derruba a preferência junto, por não ter mais o que a
+ * sustente.
+ */
+export const driverPreferencesSchema = z.object({
+  gender: z.enum(GENDERS).nullable().optional(),
+  womenOnlyPref: z.boolean().optional(),
 });
 
 export const pixSchema = z.object({
@@ -134,9 +146,32 @@ export async function getProfile(userId: string) {
     isOnline: p.isOnline,
     currentVehicleId: p.currentVehicleId,
     rating: ratingAverage(p.ratingSum, p.ratingCount),
+    /// Plano §7 — só o próprio motorista vê o que declarou; nunca sai num DTO de corrida.
+    gender: p.gender as Gender,
+    womenOnlyPref: p.womenOnlyPref,
     checklist: checklist(p, vehicles),
     vehicles: vehicles.map(toVehicleDto),
   };
+}
+
+/**
+ * Preferências de atendimento do motorista (plano §7). Separado de `updateDriverData` de propósito:
+ * aqueles dados travam na aprovação (`assertEditable`), estes podem mudar a qualquer momento — são
+ * preferência de quem atende, não documento a ser conferido pelo admin.
+ */
+export async function setPreferences(userId: string, input: z.infer<typeof driverPreferencesSchema>) {
+  const p = await loadProfile(userId);
+  const gender = (input.gender !== undefined ? input.gender : (p.gender as Gender)) ?? null;
+  const womenOnlyPref = input.womenOnlyPref ?? p.womenOnlyPref;
+  // Ligar a preferência sem a declaração que a sustenta é recusado; trocar pra um gênero que não é
+  // 'female' derruba a preferência em silêncio (não é tentativa inválida, é consequência da troca).
+  if (input.womenOnlyPref && gender !== 'female')
+    throw new AppError('Informe seu gênero para atender somente passageiras mulheres.', 409, 'gender_required');
+  await prisma.driverProfile.update({
+    where: { userId },
+    data: { gender, womenOnlyPref: gender === 'female' ? womenOnlyPref : false },
+  });
+  return getProfile(userId);
 }
 
 /** Dados pessoais só podem mudar antes da aprovação (depois, via suporte). */

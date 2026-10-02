@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { config } from '../../config.js';
+import { driverMatchesRideGender, type Gender } from '../../domain/genderPolicy.js';
 import { boundingBox, haversineMeters } from '../../domain/geo.js';
 import { AppError } from '../../errors.js';
 import { etaMany } from '../../infra/geo/routing.js';
@@ -54,12 +55,25 @@ interface Candidate {
 async function candidates(ride: {
   id: string;
   passengerId: string;
+  /** Corrida para terceiros: conta de quem embarca, quando não é quem pediu. */
+  passengerForId: string | null;
+  /** Corrida para terceiros sem perfil: cadastro do dependente, ou só o nome no caminho legado. */
+  guestPassengerId: string | null;
+  guestPassengerName: string | null;
   originLat: number;
   originLng: number;
   category: 'Economy' | 'Comfort';
   accessibilityRequired: boolean;
+  womenOnly: boolean;
 }): Promise<Candidate[]> {
   const origin = { lat: ride.originLat, lng: ride.originLng };
+  // Quem embarca: em corrida pedida pra outra conta, é ela — e é o gênero DELA que a política §7
+  // considera. Dependente sem perfil não tem conta e, portanto, não tem gênero declarado por si
+  // mesmo: fica desconhecido, nunca herdado de quem pediu.
+  const riderId = ride.passengerForId ?? ride.passengerId;
+  const riderHasAccount = !ride.guestPassengerId && !ride.guestPassengerName;
+  /** Contas "do nosso lado" da corrida: quem pediu e, se for outra conta, quem embarca. */
+  const ourSide = [...new Set([ride.passengerId, riderId])];
   const box = boundingBox(origin, config.dispatch.searchRadiusKm);
   const fresh = new Date(Date.now() - config.dispatch.locationStaleSeconds * 1000);
   const locations = await prisma.driverLocation.findMany({
@@ -67,7 +81,8 @@ async function candidates(ride: {
       lat: { gte: box.minLat, lte: box.maxLat },
       lng: { gte: box.minLng, lte: box.maxLng },
       updatedAt: { gte: fresh },
-      driverId: { not: ride.passengerId },
+      // Ninguém dirige a própria corrida — nem quem pediu, nem quem embarca.
+      driverId: { notIn: ourSide },
     },
     take: 200,
   });
@@ -75,16 +90,20 @@ async function candidates(ride: {
   const ids = locations.map((l) => l.driverId);
   // Conforto aceita também chamadas Econômico (mais oferta); Econômico não atende Conforto.
   const categories = ride.category === 'Economy' ? ['Economy', 'Comfort'] : ['Comfort'];
-  const [profiles, busy, pendingOffers, alreadyOffered, blocked] = await Promise.all([
+  const [profiles, busy, pendingOffers, alreadyOffered, blocked, passenger] = await Promise.all([
     prisma.driverProfile.findMany({ where: { userId: { in: ids }, isOnline: true, status: 'Approved', currentVehicleId: { not: null } } }),
     prisma.ride.findMany({ where: { driverId: { in: ids }, status: { in: ['DriverAssigned', 'DriverArrived', 'InProgress'] } }, select: { driverId: true } }),
     prisma.rideOffer.findMany({ where: { driverId: { in: ids }, status: 'Pending', expiresAt: { gt: new Date() } }, select: { driverId: true } }),
     prisma.rideOffer.findMany({ where: { rideId: ride.id }, select: { driverId: true } }),
-    // Bloqueio é mútuo (plano §6, complemento): não importa quem bloqueou quem.
+    // Bloqueio é mútuo (plano §6, complemento): não importa quem bloqueou quem. Em corrida pedida
+    // pra outra conta, valem os bloqueios dos dois — de quem pediu e de quem embarca.
     prisma.blockedUser.findMany({
-      where: { OR: [{ userId: ride.passengerId, blockedId: { in: ids } }, { blockedId: ride.passengerId, userId: { in: ids } }] },
+      where: { OR: [{ userId: { in: ourSide }, blockedId: { in: ids } }, { blockedId: { in: ourSide }, userId: { in: ids } }] },
       select: { userId: true, blockedId: true },
     }),
+    // Apenas mulheres (plano §7): necessário para o sentido inverso do filtro — motorista que só
+    // atende passageiras. Nunca sai daqui: não entra em nenhum DTO nem em evento de corrida.
+    prisma.passengerProfile.findUnique({ where: { userId: riderId }, select: { gender: true } }),
   ]);
   const vehicles = await prisma.vehicle.findMany({
     where: {
@@ -98,14 +117,28 @@ async function candidates(ride: {
     select: { id: true },
   });
   const okVehicle = new Set(vehicles.map((v) => v.id));
-  const blockedSet = new Set(blocked.map((b) => (b.userId === ride.passengerId ? b.blockedId : b.userId)));
+  const ourSideSet = new Set(ourSide);
+  const blockedSet = new Set(blocked.map((b) => (ourSideSet.has(b.userId) ? b.blockedId : b.userId)));
   const excluded = new Set([
     ...busy.map((b) => b.driverId!),
     ...pendingOffers.map((o) => o.driverId),
     ...alreadyOffered.map((o) => o.driverId),
     ...blockedSet,
   ]);
-  const eligible = new Set(profiles.filter((p) => okVehicle.has(p.currentVehicleId!) && !excluded.has(p.userId)).map((p) => p.userId));
+  // Apenas mulheres (plano §7): diferente do acessível, a elegibilidade é do MOTORISTA, não do
+  // veículo — e vale nos dois sentidos (regra em domain/genderPolicy.ts). Gênero não declarado
+  // nunca é curinga: não atende corrida restrita nem é atendido por quem só atende passageiras.
+  const rideGender = { womenOnly: ride.womenOnly, riderGender: (riderHasAccount ? (passenger?.gender ?? null) : null) as Gender };
+  const eligible = new Set(
+    profiles
+      .filter(
+        (p) =>
+          okVehicle.has(p.currentVehicleId!) &&
+          !excluded.has(p.userId) &&
+          driverMatchesRideGender(rideGender, { gender: p.gender as Gender, womenOnlyPref: p.womenOnlyPref }),
+      )
+      .map((p) => p.userId),
+  );
   const radiusM = config.dispatch.searchRadiusKm * 1000;
   return locations
     .filter((l) => eligible.has(l.driverId) && haversineMeters(l, origin) <= radiusM)
@@ -126,7 +159,15 @@ async function markNoDrivers(rideId: string) {
   if (!updated) return;
   lastAttempt.delete(rideId);
   const ride = await publishRide(rideId);
-  if (ride) void sendPush(ride.passengerId, { title: 'Nenhum motorista disponível', body: 'Não encontramos motorista agora. Tente de novo em alguns minutos.', data: { rideId } });
+  if (ride)
+    void sendPush(ride.passengerId, {
+      title: 'Nenhum motorista disponível',
+      // UX11: dizer o que aconteceu. Na corrida restrita a mulheres, a busca foi menor de propósito.
+      body: ride.womenOnly
+        ? 'Nenhuma motorista mulher disponível por perto agora. Tente de novo em alguns minutos.'
+        : 'Não encontramos motorista agora. Tente de novo em alguns minutos.',
+      data: { rideId },
+    });
 }
 
 /** Oferece a corrida ao próximo motorista (se ainda estiver procurando). */

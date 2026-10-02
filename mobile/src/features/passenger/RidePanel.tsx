@@ -310,7 +310,18 @@ export function PassengerRidePanel({ ride, onHeight }: { ride: Ride; onHeight: (
     }
 
     case 'NoDrivers':
-      body = <AppText>Não encontramos motorista por perto agora. Tente de novo em alguns minutos.</AppText>;
+      // UX11: dizer o que aconteceu. Na corrida restrita a mulheres, a busca foi menor de propósito —
+      // explicar isso evita parecer que o app simplesmente não achou ninguém.
+      body = ride.womenOnly ? (
+        <>
+          <AppText>Nenhuma motorista mulher disponível por perto agora.</AppText>
+          <AppText variant="small">
+            A busca ficou restrita a motoristas mulheres, como você pediu. Tente de novo em alguns minutos ou peça sem a restrição.
+          </AppText>
+        </>
+      ) : (
+        <AppText>Não encontramos motorista por perto agora. Tente de novo em alguns minutos.</AppText>
+      );
       footer = (
         <>
           <Button title="Tentar de novo" size="lg" onPress={tryAgain} />

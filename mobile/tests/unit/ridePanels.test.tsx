@@ -53,6 +53,9 @@ const base: Ride = {
   tipAmount: null,
   canTip: false,
   accessibilityRequired: false,
+  womenOnly: false,
+  rideFor: null,
+  minorAccompanied: false,
 };
 
 const noop = () => undefined;
@@ -163,9 +166,25 @@ describe('corrida do motorista: uma ação dominante por estado (UX06)', () => {
   });
 
   it('corrida pedida pra outra pessoa: mostra o aviso pro motorista', async () => {
-    const ride = { ...driverRide('DriverAssigned', ['arrived', 'cancel', 'safety']), guestPassengerName: 'Michael Gillbert' };
+    const ride: Ride = {
+      ...driverRide('DriverAssigned', ['arrived', 'cancel', 'safety']),
+      guestPassengerName: 'Michael Gillbert',
+      rideFor: { kind: 'guest', name: 'Michael', avatarUrl: null },
+    };
     await render(wrap(<DriverRidePanel ride={ride} onHeight={noop} />));
     expect(screen.getByText('Corrida pedida por outra pessoa')).toBeTruthy();
+    expect(screen.queryByText('Menor de idade com adulto responsável')).toBeNull();
+  });
+
+  it('menor de idade acompanhado: avisa o motorista', async () => {
+    const ride: Ride = {
+      ...driverRide('DriverAssigned', ['arrived', 'cancel', 'safety']),
+      guestPassengerName: 'Michael Gillbert',
+      rideFor: { kind: 'guest', name: 'Michael', avatarUrl: null },
+      minorAccompanied: true,
+    };
+    await render(wrap(<DriverRidePanel ride={ride} onHeight={noop} />));
+    expect(screen.getByText('Menor de idade com adulto responsável')).toBeTruthy();
   });
 
   it('em viagem: Finalizar, sem Cancelar', async () => {

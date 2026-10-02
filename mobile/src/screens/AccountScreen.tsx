@@ -123,6 +123,12 @@ export function AccountScreen() {
               />
               <ListRow icon="car-sport-outline" title="Veículos" onPress={() => router.push('/driver/vehicles')} />
               <ListRow icon="key-outline" title="Chave Pix para receber" subtitle={me?.driver?.hasPixKey ? 'Cadastrada' : 'Não cadastrada'} onPress={() => router.push('/driver/pix')} />
+              <ListRow
+                icon="options-outline"
+                title="Preferências de atendimento"
+                subtitle={me?.driver?.womenOnlyPref ? 'Atendendo somente passageiras mulheres' : 'Quem você atende'}
+                onPress={() => router.push('/driver/preferences')}
+              />
               <ListRow icon="list-outline" title="Corridas realizadas" onPress={() => router.push({ pathname: '/rides', params: { role: 'driver' } })} />
             </Card>
           </>
@@ -139,6 +145,12 @@ export function AccountScreen() {
               />
               <ListRow icon="bookmark-outline" title="Locais salvos" onPress={() => router.push('/places')} />
               <ListRow icon="star-outline" title="Motoristas favoritos" onPress={() => router.push('/favorites')} />
+              <ListRow
+                icon="people-outline"
+                title="Quem viaja comigo"
+                subtitle="Pedir corrida para outra pessoa"
+                onPress={() => router.push('/passengers')}
+              />
             </Card>
 
             <SectionTitle title="Acessibilidade" />
@@ -161,6 +173,18 @@ export function AccountScreen() {
             title="Contatos e gravação"
             subtitle={me?.passenger?.recordingEnabled ? 'Gravação de áudio ativada' : 'Contatos de confiança e gravação de áudio'}
             onPress={() => router.push('/safety')}
+          />
+          <ListRow
+            icon="woman-outline"
+            title="Corridas apenas com mulheres"
+            subtitle={
+              me?.passenger?.gender === 'female'
+                ? me.passenger.womenOnlyPref
+                  ? 'Ativado por padrão nas suas corridas'
+                  : 'Disponível a cada corrida'
+                : 'Informe seu gênero para usar (opcional)'
+            }
+            onPress={() => router.push('/account/gender')}
           />
           <ListRow icon="flag-outline" title="Relatar um problema" onPress={() => router.push('/safety/report')} />
           <ListRow icon="chatbox-ellipses-outline" title="Minhas reclamações" onPress={() => router.push('/safety/complaints')} />
