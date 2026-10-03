@@ -280,6 +280,12 @@ enum EarningType {
   Adjustment
   /// Gorjeta pós-corrida (plano §11.5) — cobrada no cartão do passageiro, creditada só se a cobrança for aprovada.
   Tip
+  /// Repasse por veiculacao de anuncio na tela do veiculo, creditado pelo openad.
+  ///
+  /// Nao tem corrida associada (`rideId` nulo): o anuncio toca com o carro em movimento,
+  /// independente de haver passageiro. A idempotencia vem de `referenceId`, nao da chave
+  /// `(rideId, type, driverId)` — ver a nota naquele campo.
+  AdRevenue
 
   @@schema("opendriver")
 }
@@ -807,6 +813,16 @@ model DriverEarning {
   type        EarningType
   amount      Decimal     @db.Decimal(10, 2)
   description String      @db.VarChar(200)
+  /// Trava de idempotencia para lancamento sem corrida (hoje, so `AdRevenue`).
+  ///
+  /// A chave `(rideId, type, driverId)` nao cobre esse caso: com `rideId` nulo, duas linhas
+  /// nao colidem num indice unico do Postgres. E sem trava, o reprocessamento de um lote de
+  /// analytics do openad — que acontece, e a forma de o BullMQ se recuperar de falha —
+  /// pagaria de novo veiculacoes ja pagas.
+  ///
+  /// Formato: `<campaignId>:<uniqueEventId>`. Indice unico **parcial**, so onde nao e nulo,
+  /// para nao indexar os milhoes de lancamentos de corrida que nunca terao este campo.
+  referenceId String?     @unique(map: "driver_earnings_reference_id_key") @map("reference_id") @db.VarChar(160)
   createdAt   DateTime    @default(now()) @map("created_at")
 
   /// driverId entra na chave (não só rideId+type) porque motoristas diferentes podem
@@ -814,6 +830,7 @@ model DriverEarning {
   /// tardiamente, a corrida volta a Searching, motorista B também desiste tardiamente).
   @@unique([rideId, type, driverId])
   @@index([driverId, createdAt])
+  @@index([driverId, type, createdAt(sort: Desc)], map: "driver_earnings_driver_type_created_idx")
   @@map("driver_earnings")
   @@schema("opendriver")
 }
