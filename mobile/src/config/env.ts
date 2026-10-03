@@ -38,5 +38,12 @@ export const env = {
 export const links = {
   privacyPolicy: process.env.EXPO_PUBLIC_PRIVACY_URL || `${apiUrl}/legal/privacidade`,
   terms: process.env.EXPO_PUBLIC_TERMS_URL || `${apiUrl}/legal/termos`,
-  supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL || 'suporte@opendriver.com.br',
+  /**
+   * Caixa que **recebe de verdade**, conferido por DNS.
+   *
+   * `suporte@opendriver.com.br` não recebia nada: o domínio publica `MX .` (null MX, que
+   * declara "este domínio não recebe e-mail"), `SPF -all` e `DMARC p=reject`. As duas lojas
+   * exigem canal de suporte funcional, e caixa morta é reprovação.
+   */
+  supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL || 'murilogillbert@gmail.com',
 } as const;

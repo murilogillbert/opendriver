@@ -1,16 +1,37 @@
 import { Router, type Response } from 'express';
 import { escapeHtml } from '../../infra/email.js';
+import { CONTROLADOR } from './controlador.js';
 
 /**
- * Política de privacidade e termos de uso públicos (exigidos pela App Store e
- * pelo Google Play). O texto deve ser revisado pelo jurídico antes da
- * publicação; empresa e contato vêm de LEGAL_COMPANY / LEGAL_CONTACT_EMAIL.
+ * Política de privacidade e termos de uso públicos (exigidos pela App Store e pelo Google
+ * Play, e pela LGPD independentemente de loja).
+ *
+ * Servido pelo **backend**, não pelo SPA, e isso é deliberado: o revisor da Apple abre estes
+ * links, e página que depende de JavaScript para renderizar texto legal é página que pode
+ * aparecer vazia. O equivalente no hub não existia e o SPA redirecionava para a home — o
+ * revisor veria a página inicial da loja no lugar da política.
+ *
+ * O texto ainda deve passar por revisão jurídica antes da publicação. O que ele descreve,
+ * porém, é o que o código faz de fato: cada item foi conferido contra a implementação.
  */
 export const legalRouter = Router();
 
-const UPDATED_AT = '28/09/2026';
-const company = () => escapeHtml(process.env.LEGAL_COMPANY || 'OpenDriver');
-const contact = () => escapeHtml(process.env.LEGAL_CONTACT_EMAIL || 'privacidade@opendriver.com.br');
+const UPDATED_AT = '03/10/2026';
+const company = () => escapeHtml(CONTROLADOR.razaoSocial);
+const contact = () => escapeHtml(CONTROLADOR.contato);
+
+/** Bloco de identificação do controlador, igual nas duas páginas. */
+function identificacao(): string {
+  return `
+<h2>Quem trata os seus dados</h2>
+<p>
+  <b>${escapeHtml(CONTROLADOR.razaoSocial)}</b> (nome fantasia ${escapeHtml(CONTROLADOR.nomeFantasia)})<br>
+  CNPJ ${escapeHtml(CONTROLADOR.cnpj)}<br>
+  ${escapeHtml(CONTROLADOR.endereco)}<br>
+  Encarregado pelo tratamento de dados pessoais (DPO):
+  <a href="mailto:${contact()}">${contact()}</a>
+</p>`;
+}
 
 function page(res: Response, title: string, body: string) {
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
@@ -27,7 +48,8 @@ legalRouter.get('/legal/privacidade', (_req, res) => {
     res,
     'Política de Privacidade',
     `
-<p>Esta política explica como ${company()} ("nós") trata os dados pessoais de quem usa o app OpenDriver, como passageiro ou motorista, em conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018). A conta do OpenDriver é a mesma do OpenDriverHub.</p>
+<p>Esta política explica como ${company()} ("nós") trata os dados pessoais de quem usa o app OpenDriver, como passageiro ou motorista, em conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018). A conta do OpenDriver é a mesma do OpenDriverHub e do OpenDriver Ads.</p>
+${identificacao()}
 <h2>1. Dados que coletamos</h2>
 <ul>
 <li><b>Cadastro:</b> nome, e-mail, celular, CPF e senha (guardada apenas como hash).</li>
@@ -67,8 +89,11 @@ legalRouter.get('/legal/privacidade', (_req, res) => {
 <p>Você pode pedir confirmação, acesso, correção, portabilidade, informação sobre compartilhamento e revogar consentimentos. Você pode <b>excluir sua conta pelo próprio app</b> (Conta → Excluir minha conta): seus dados pessoais são anonimizados, documentos de motorista são apagados e as sessões são encerradas; registros de corridas e pagamentos são mantidos sem identificar você pelo prazo legal.</p>
 <h2>6. Segurança</h2>
 <p>Usamos conexão criptografada (HTTPS), senhas com hash, tokens de sessão guardados no armazenamento seguro do celular e criptografia dos documentos, gravações e tokens de cartão.</p>
-<h2>7. Contato</h2>
-<p>Encarregado de dados (DPO) e dúvidas: <a href="mailto:${contact()}">${contact()}</a>.</p>`,
+<h2>7. Publicidade nos veículos</h2>
+<p>Alguns veículos têm uma tela que exibe anúncios, operada pela plataforma OpenDriver Ads. <b>Essa exibição não usa os seus dados pessoais</b>: o anúncio é escolhido pela região e pelo horário em que o veículo está, não por quem está dentro dele. Não há identificação de passageiro, não há perfil de audiência e não há atribuição de anúncio a pessoa. A tela não tem câmera nem microfone.</p>
+<h2>8. Contato</h2>
+<p>Encarregado de dados (DPO) e dúvidas: <a href="mailto:${contact()}">${contact()}</a>.</p>
+<p>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>`,
   );
 });
 
@@ -77,7 +102,8 @@ legalRouter.get('/legal/termos', (_req, res) => {
     res,
     'Termos de Uso',
     `
-<p>Estes termos regem o uso do app OpenDriver, oferecido por ${company()}. Ao criar uma conta ou usar o app, você concorda com eles e com a <a href="/legal/privacidade">Política de Privacidade</a>. A conta é a mesma do OpenDriverHub.</p>
+<p>Estes termos regem o uso do app OpenDriver, oferecido por ${company()}. Ao criar uma conta ou usar o app, você concorda com eles e com a <a href="/legal/privacidade">Política de Privacidade</a>. A conta é a mesma do OpenDriverHub e do OpenDriver Ads.</p>
+${identificacao()}
 <h2>1. O serviço</h2>
 <p>O OpenDriver é uma plataforma de tecnologia que conecta passageiros a motoristas parceiros independentes. O transporte é prestado pelo motorista.</p>
 <h2>2. Conta</h2>
@@ -106,6 +132,6 @@ legalRouter.get('/legal/termos', (_req, res) => {
 <h2>7. Encerramento</h2>
 <p>Você pode excluir sua conta a qualquer momento pelo app. Podemos suspender contas que violem estes termos.</p>
 <h2>8. Contato e foro</h2>
-<p>Dúvidas: <a href="mailto:${contact()}">${contact()}</a>. Aplica-se a legislação brasileira.</p>`,
+<p>Dúvidas e suporte: <a href="mailto:${contact()}">${contact()}</a>. Aplica-se a legislação brasileira, e fica eleito o foro da comarca de Brasília/DF, sem prejuízo do direito do consumidor de demandar no foro do seu domicílio.</p>`,
   );
 });
