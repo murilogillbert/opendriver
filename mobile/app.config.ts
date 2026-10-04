@@ -72,6 +72,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: `${PACKAGE}${SUFFIX}`,
+    /**
+     * O Play recusa upload com `versionCode` já usado, e o template do prebuild grava `1`
+     * fixo em `android/app/build.gradle` quando este campo não existe — passar
+     * `-PversionCode` ao gradle não muda nada, porque o template não lê essa propriedade.
+     * Por isso o valor mora aqui.
+     *
+     * 1 = primeiro envio (faixa interna). 2 = correção das permissões de serviço em primeiro
+     * plano: `RECORD_AUDIO` estava sendo removida por conflito de plugin, e
+     * `FOREGROUND_SERVICE_MEDIA_PLAYBACK` era declarada sem o app nunca tocar áudio.
+     */
+    versionCode: Number(process.env.ANDROID_VERSION_CODE ?? 2),
     adaptiveIcon: {
       backgroundColor: NAVY,
       foregroundImage: './assets/android-icon-foreground.png',
@@ -112,8 +123,35 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         isAndroidForegroundServiceEnabled: true,
       },
     ],
-    ['expo-audio', { microphonePermission: MICROPHONE, recordAudioAndroid: true, enableBackgroundRecording: true }],
-    ['expo-image-picker', { photosPermission: PHOTOS, cameraPermission: CAMERA, microphonePermission: false }],
+    /**
+     * `enableBackgroundPlayback: false` é obrigatório aqui. O padrão do plugin é `true`, e
+     * com ele o manifesto ganha `FOREGROUND_SERVICE_MEDIA_PLAYBACK` mais o serviço
+     * `expo.modules.audio.service.AudioControlsService`. Este app **nunca toca áudio** — só
+     * grava, e só com opt-in, durante a viagem. O Play exige justificar cada permissão de
+     * serviço em primeiro plano com uma demonstração em vídeo, e declarar reprodução de mídia
+     * que não existe é declaração falsa. Com `false`, o plugin remove o serviço junto com a
+     * permissão.
+     */
+    [
+      'expo-audio',
+      {
+        microphonePermission: MICROPHONE,
+        recordAudioAndroid: true,
+        enableBackgroundRecording: true,
+        enableBackgroundPlayback: false,
+      },
+    ],
+    /**
+     * `microphonePermission` **não pode ser `false`** aqui, por mais que o seletor de imagem
+     * não use microfone nenhum. O plugin do expo-image-picker trata `false` como
+     * `blockedPermissions`, e `tools:node="remove"` vence a fusão de manifestos: o resultado
+     * era um APK/AAB com `FOREGROUND_SERVICE_MICROPHONE` e o serviço de gravação presentes,
+     * mas **sem `RECORD_AUDIO`** — a gravação de segurança (RF16) não tinha como funcionar no
+     * Android, e o app pedia ao Play uma permissão de serviço que ele não conseguiria usar.
+     * Passar a mesma descrição do expo-audio mantém o texto em pt-BR no iOS e deixa a
+     * permissão intacta no Android.
+     */
+    ['expo-image-picker', { photosPermission: PHOTOS, cameraPermission: CAMERA, microphonePermission: MICROPHONE }],
     ['expo-notifications', { icon: './assets/android-icon-monochrome.png', color: NAVY }],
     '@maplibre/maplibre-react-native',
   ],
