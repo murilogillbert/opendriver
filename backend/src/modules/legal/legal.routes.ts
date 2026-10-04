@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
 import { escapeHtml } from '../../infra/email.js';
 import { CONTROLADOR } from './controlador.js';
+import { paginaExclusao } from './exclusao.js';
 
 /**
  * Política de privacidade e termos de uso públicos (exigidos pela App Store e pelo Google
@@ -95,6 +96,50 @@ ${identificacao()}
 <p>Encarregado de dados (DPO) e dúvidas: <a href="mailto:${contact()}">${contact()}</a>.</p>
 <p>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>`,
   );
+});
+
+/**
+ * Exigencia do Google Play: link **na web**, sem login, para pedir exclusao de conta e dados.
+ * O app ja tinha a tela interna; o link web nao existia e e campo obrigatorio da ficha.
+ */
+legalRouter.get('/legal/exclusao-de-conta', (_req, res) => {
+  paginaExclusao(res, {
+    produto: 'OpenDriver',
+    caminhoNoApp: 'Conta → Excluir minha conta',
+    atualizadoEm: UPDATED_AT,
+    controlador: CONTROLADOR,
+    apagados: [
+      'Nome, e-mail, telefone, CPF e foto de perfil (anonimizados).',
+      'Senha e todas as sessões ativas.',
+      'Endereços e locais favoritos.',
+      'Contatos de confiança cadastrados para emergência.',
+      'Token de notificação do aparelho.',
+      'Gravações de áudio de segurança, se existirem.',
+      'Dados de motorista, quando aplicável: foto e dados da CNH, selfie, documento do veículo e chave Pix.',
+    ],
+    retidos: [
+      {
+        oque: 'Registros de corridas (origem, destino, horário, valor)',
+        prazo: '5 anos',
+        motivo: 'Código de Defesa do Consumidor e legislação fiscal',
+      },
+      {
+        oque: 'Lançamentos de pagamento e de ganhos de motorista',
+        prazo: '5 anos',
+        motivo: 'Obrigação fiscal e contábil',
+      },
+      {
+        oque: 'Ocorrências de segurança registradas em uma viagem',
+        prazo: 'pelo prazo da apuração e eventual processo',
+        motivo: 'Proteção da vida e exercício regular de direito',
+      },
+    ],
+    bloqueios: [
+      'Há corrida em andamento.',
+      'Há pagamento pendente de quitação.',
+      'Você é motorista com saldo a sacar — peça o saque antes.',
+    ],
+  });
 });
 
 legalRouter.get('/legal/termos', (_req, res) => {
