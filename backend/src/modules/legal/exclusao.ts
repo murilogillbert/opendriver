@@ -60,7 +60,7 @@ th{color:#6B7280;font-size:13px;text-transform:uppercase;letter-spacing:.5px}
 
 <div class="caixa">
 <h2 style="margin-top:0">Não tem mais o app instalado?</h2>
-<p>Envie um e-mail para <a href="mailto:${esc(c.contato)}?subject=Exclusao%20de%20conta%20-%20${encodeURIComponent(opcoes.produto)}">${esc(c.contato)}</a>
+<p>Envie um e-mail para <!--email_off--><a href="mailto:${esc(c.contato)}?subject=Exclusao%20de%20conta%20-%20${encodeURIComponent(opcoes.produto)}">${esc(c.contato)}</a><!--/email_off-->
 com o assunto <b>&ldquo;Exclusão de conta&rdquo;</b>, informando o <b>e-mail cadastrado</b> e o <b>CPF ou CNPJ</b> da conta.</p>
 <p>Confirmamos a identidade e concluímos a exclusão em <b>até 15 dias</b>, e respondemos avisando. Não cobramos nada por isso e não pedimos justificativa.</p>
 </div>
@@ -92,7 +92,7 @@ ${opcoes.retidos
   <b>${esc(c.razaoSocial)}</b><br>
   CNPJ ${esc(c.cnpj)}<br>
   ${esc(c.endereco)}<br>
-  Encarregado pelo tratamento de dados pessoais (DPO): <a href="mailto:${esc(c.contato)}">${esc(c.contato)}</a>
+  Encarregado pelo tratamento de dados pessoais (DPO): <!--email_off--><a href="mailto:${esc(c.contato)}">${esc(c.contato)}</a><!--/email_off-->
 </p>
 <p>Veja também a <a href="/legal/privacidade">Política de Privacidade</a> e os <a href="/legal/termos">Termos de Uso</a>.</p>
 <p><small>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</small></p>

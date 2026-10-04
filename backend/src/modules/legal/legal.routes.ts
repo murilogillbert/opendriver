@@ -30,7 +30,7 @@ function identificacao(): string {
   CNPJ ${escapeHtml(CONTROLADOR.cnpj)}<br>
   ${escapeHtml(CONTROLADOR.endereco)}<br>
   Encarregado pelo tratamento de dados pessoais (DPO):
-  <a href="mailto:${contact()}">${contact()}</a>
+  <!--email_off--><a href="mailto:${contact()}">${contact()}</a><!--/email_off-->
 </p>`;
 }
 
@@ -93,7 +93,7 @@ ${identificacao()}
 <h2>7. Publicidade nos veículos</h2>
 <p>Alguns veículos têm uma tela que exibe anúncios, operada pela plataforma OpenDriver Ads. <b>Essa exibição não usa os seus dados pessoais</b>: o anúncio é escolhido pela região e pelo horário em que o veículo está, não por quem está dentro dele. Não há identificação de passageiro, não há perfil de audiência e não há atribuição de anúncio a pessoa. A tela não tem câmera nem microfone.</p>
 <h2>8. Contato</h2>
-<p>Encarregado de dados (DPO) e dúvidas: <a href="mailto:${contact()}">${contact()}</a>.</p>
+<p>Encarregado de dados (DPO) e dúvidas: <!--email_off--><a href="mailto:${contact()}">${contact()}</a><!--/email_off-->.</p>
 <p>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>`,
   );
 });
@@ -177,6 +177,6 @@ ${identificacao()}
 <h2>7. Encerramento</h2>
 <p>Você pode excluir sua conta a qualquer momento pelo app. Podemos suspender contas que violem estes termos.</p>
 <h2>8. Contato e foro</h2>
-<p>Dúvidas e suporte: <a href="mailto:${contact()}">${contact()}</a>. Aplica-se a legislação brasileira, e fica eleito o foro da comarca de Brasília/DF, sem prejuízo do direito do consumidor de demandar no foro do seu domicílio.</p>`,
+<p>Dúvidas e suporte: <!--email_off--><a href="mailto:${contact()}">${contact()}</a><!--/email_off-->. Aplica-se a legislação brasileira, e fica eleito o foro da comarca de Brasília/DF, sem prejuízo do direito do consumidor de demandar no foro do seu domicílio.</p>`,
   );
 });
