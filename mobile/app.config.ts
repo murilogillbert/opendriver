@@ -27,6 +27,8 @@ if (VARIANT !== 'development') {
 }
 
 const NAVY = '#0A1726';
+/** Fundo do ícone do aplicativo, igual ao da logo enviada à ficha da Play. */
+const FUNDO_DO_ICONE = '#000000';
 const LOCATION_WHEN_IN_USE =
   'Usamos sua localização para definir o ponto de embarque e mostrar o motorista a caminho.';
 const LOCATION_ALWAYS =
@@ -82,9 +84,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
      * plano: `RECORD_AUDIO` estava sendo removida por conflito de plugin, e
      * `FOREGROUND_SERVICE_MEDIA_PLAYBACK` era declarada sem o app nunca tocar áudio.
      */
-    versionCode: Number(process.env.ANDROID_VERSION_CODE ?? 2),
+    versionCode: Number(process.env.ANDROID_VERSION_CODE ?? 3),
     adaptiveIcon: {
-      backgroundColor: NAVY,
+      /**
+       * Preto, e não o navy da marca: o ícone definido na ficha da Play é o avião branco
+       * sobre fundo preto, e o fundo do ícone adaptativo é o que o lançador do Android
+       * desenha atrás do avião. Com navy aqui, o ícone na gaveta de aplicativos sairia
+       * diferente do que aparece na loja.
+       *
+       * `NAVY` continua valendo para a tela de abertura e para a cor da notificação.
+       */
+      backgroundColor: FUNDO_DO_ICONE,
       foregroundImage: './assets/android-icon-foreground.png',
       backgroundImage: './assets/android-icon-background.png',
       monochromeImage: './assets/android-icon-monochrome.png',
