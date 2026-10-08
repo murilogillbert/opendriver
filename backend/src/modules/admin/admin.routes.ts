@@ -5,6 +5,8 @@ import { requireAuth, requireRole, userId } from '../../middleware/auth.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { readComplaintAttachmentForStaff } from '../complaints/complaints.service.js';
 import { readRecordingForStaff } from '../recording/recording.service.js';
+import * as categorias from '../vehicles/categories.admin.service.js';
+import * as validacao from '../vehicles/validation.service.js';
 import * as admin from './admin.service.js';
 
 /** Ferramentas administrativas (RF17) — papel Admin do hub. As telas ficam no painel web do hub. */
@@ -58,6 +60,73 @@ adminRouter.post('/admin/vehicles/:id/approve', async (req, res) => {
 });
 adminRouter.post('/admin/vehicles/:id/reject', validateBody(admin.reasonSchema), async (req, res) => {
   res.json(envelope(await admin.reviewVehicle(userId(req), uuid(req.params.id), 'reject', req.body.reason)));
+});
+
+// ------------------------------------------------------- categoria do veículo (Econômico × Conforto)
+// A categoria define a tarifa (`pricing` tem `category` como chave), e até aqui era escolha livre
+// do motorista — ou seja, ele decidia quanto o passageiro paga. Estas rotas dão ao operador a
+// tabela de classificação, a fila de divergência e o direito de última palavra.
+
+/** Fila de divergência vem antes das rotas com `:id` só por clareza de leitura — o formato do
+ * caminho já as distingue. */
+adminRouter.get('/admin/vehicles/divergences', validateQuery(categorias.divergenceQuerySchema), async (_req, res) => {
+  res.json(envelope(await categorias.listCategoryDivergences(res.locals.query)));
+});
+
+adminRouter.put(
+  '/admin/vehicles/:id/category',
+  validateBody(z.object({ category: z.enum(['Economy', 'Comfort']), reason: z.string().trim().min(3, 'Informe o motivo.').max(400) })),
+  async (req, res) => {
+    res.json(envelope(await validacao.reclassificarPorAdmin(userId(req), uuid(req.params.id), req.body.category, req.body.reason)));
+  },
+);
+
+/** Consulta o Detran de novo. **Consome crédito** — é ação deliberada de operador. */
+adminRouter.post('/admin/vehicles/:id/revalidate', async (req, res) => {
+  res.json(envelope(await validacao.revalidarPorAdmin(userId(req), uuid(req.params.id))));
+});
+
+/** Reaplica as regras sobre o retorno do Detran já guardado. Não consulta nada, não custa nada.
+ * `aplicar: false` (o padrão) é ensaio: devolve o que mudaria sem mudar. */
+adminRouter.post('/admin/vehicles/reclassify-batch', validateBody(z.object({ aplicar: z.boolean().default(false) })), async (req, res) => {
+  res.json(envelope(await validacao.reclassificarEmLote(userId(req), { aplicar: req.body.aplicar })));
+});
+
+adminRouter.get('/admin/vehicle-categories', validateQuery(categorias.categoryRuleQuerySchema), async (_req, res) => {
+  res.json(envelope(await categorias.listCategoryRules(res.locals.query)));
+});
+adminRouter.post('/admin/vehicle-categories', validateBody(categorias.categoryRuleSchema), async (req, res) => {
+  res.status(201).json(envelope(await categorias.createCategoryRule(userId(req), req.body)));
+});
+adminRouter.put('/admin/vehicle-categories/:id', validateBody(categorias.categoryRuleSchema), async (req, res) => {
+  res.json(envelope(await categorias.updateCategoryRule(userId(req), uuid(req.params.id), req.body)));
+});
+adminRouter.delete('/admin/vehicle-categories/:id', async (req, res) => {
+  res.json(envelope(await categorias.deleteCategoryRule(userId(req), uuid(req.params.id))));
+});
+adminRouter.post('/admin/vehicle-categories/import', validateBody(categorias.categoryCsvSchema), async (req, res) => {
+  res.json(envelope(await categorias.importCategoryRules(userId(req), req.body)));
+});
+
+// ------------------------------------------------------- provedores de consulta ao Detran, por UF
+// A lista de UFs saiu do código e virou dado: o caminho de cada serviço da Infosimples não é
+// verificável de graça (sondagem sem token devolve 601 antes de validar a rota), então corrigir um
+// endpoint tem de ser edição no admin, não deploy.
+
+const ufParam = (v: unknown) => z.string().trim().length(2).toUpperCase().parse(v);
+
+adminRouter.get('/admin/detran-providers', async (_req, res) => {
+  res.json(envelope(await categorias.listDetranProviders()));
+});
+adminRouter.put('/admin/detran-providers/:uf', validateBody(categorias.detranProviderSchema), async (req, res) => {
+  res.json(envelope(await categorias.upsertDetranProvider(userId(req), ufParam(req.params.uf), req.body)));
+});
+adminRouter.delete('/admin/detran-providers/:uf', async (req, res) => {
+  res.json(envelope(await categorias.removeDetranProvider(userId(req), ufParam(req.params.uf))));
+});
+/** Consulta real, com placa digitada pelo operador. **Consome crédito** da Infosimples. */
+adminRouter.post('/admin/detran-providers/:uf/test', validateBody(categorias.detranTestSchema), async (req, res) => {
+  res.json(envelope(await categorias.testDetranProvider(userId(req), ufParam(req.params.uf), req.body)));
 });
 
 adminRouter.get('/admin/users', validateQuery(admin.pageSchema.extend({ q: z.string().trim().max(80).optional() })), async (_req, res) => {

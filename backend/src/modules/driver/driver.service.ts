@@ -11,9 +11,9 @@ import { issueTokens } from '../../infra/auth/jwt.js';
 import { verifyPassword } from '../../infra/auth/password.js';
 import { prisma } from '../../infra/prisma.js';
 import { putEncrypted } from '../../infra/storage/storage.js';
-import { vehicleValidation } from '../../infra/vehicleValidation/index.js';
 import { d, round2 } from '../../lib/money.js';
 import { toUserDto } from '../auth/auth.service.js';
+import { validarEClassificar } from '../vehicles/validation.service.js';
 
 const MIN_DRIVER_AGE = 21;
 const MIN_VEHICLE_YEAR_OFFSET = 15; // veículo com até 15 anos de fabricação
@@ -101,6 +101,12 @@ function toVehicleDto(v: Vehicle) {
     color: v.color,
     year: v.year,
     category: v.category,
+    /**
+     * Campo novo e **aditivo**: os apps já publicados ignoram chave que não conhecem. Serve
+     * para a tela do motorista explicar por que a categoria é a que é — 'auto' veio do
+     * Detran, 'admin' foi o operador, 'driver' é o que ele mesmo declarou.
+     */
+    categorySource: v.categorySource,
     status: v.status,
     rejectionReason: v.rejectionReason,
     hasCrlv: !!v.crlvKey,
@@ -242,36 +248,15 @@ export async function addVehicle(userId: string, input: z.infer<typeof vehicleSc
   const v = await prisma.vehicle.create({ data: { ...input, driverId: userId } });
   // Primeiro veículo vira o atual automaticamente (opção única — UX09).
   await prisma.driverProfile.updateMany({ where: { userId, currentVehicleId: null }, data: { currentVehicleId: v.id } });
-  const validated = input.renavam && input.uf ? await validateVehicle(v) : v;
+  if (!input.renavam || !input.uf) return toVehicleDto(v);
+  /**
+   * Consulta o Detran e classifica em Econômico/Conforto no mesmo passo (`validation.service`).
+   * O CPF vai junto porque algumas UFs (TO, por exemplo) exigem o documento do proprietário —
+   * as que não exigem simplesmente ignoram o campo.
+   */
+  const owner = await prisma.user.findUnique({ where: { id: userId }, select: { cpf: true } });
+  const validated = await validarEClassificar(v, { ownerDocument: owner?.cpf ?? undefined });
   return toVehicleDto(validated);
-}
-
-/** Consulta o CRLV no provedor configurado (mock/Infosimples, plano §4) e decide
- * aprovação automática × revisão manual. Nunca lança — indisponibilidade cai em
- * revisão manual (RF17), que é o fluxo que já existe hoje. */
-async function validateVehicle(v: Vehicle): Promise<Vehicle> {
-  if (!v.renavam || !v.uf) return v;
-  let outcome: Awaited<ReturnType<typeof vehicleValidation.validate>>;
-  try {
-    outcome = await vehicleValidation.validate({
-      plate: v.plate,
-      renavam: v.renavam,
-      uf: v.uf,
-      chassi: v.chassi ?? undefined,
-      registered: { brand: v.brand, model: v.model, year: v.year },
-    });
-  } catch (err) {
-    outcome = { result: 'needs_review', matched: false, detail: { error: err instanceof Error ? err.message : String(err) } };
-  }
-  const validationStatus = outcome.result === 'approved' ? 'Auto' : outcome.result === 'rejected' ? 'Rejected' : 'Manual';
-  const vehicleStatus = outcome.result === 'approved' ? 'Approved' : outcome.result === 'rejected' ? 'Rejected' : v.status;
-  const [updated] = await prisma.$transaction([
-    prisma.vehicle.update({ where: { id: v.id }, data: { validationStatus, status: vehicleStatus } }),
-    prisma.vehicleValidation.create({
-      data: { vehicleId: v.id, provider: vehicleValidation.name, result: outcome.result, matched: outcome.matched, detailJson: outcome.detail as never },
-    }),
-  ]);
-  return updated;
 }
 
 async function ownVehicle(userId: string, vehicleId: string) {

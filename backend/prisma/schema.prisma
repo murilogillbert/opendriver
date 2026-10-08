@@ -410,6 +410,22 @@ model Vehicle {
   validationStatus VehicleValidationStatus @default(Pending) @map("validation_status")
   validations      VehicleValidation[]
 
+  /// Como a `category` vigente foi decidida: 'driver' (autodeclarada, nenhuma regra casou),
+  /// 'auto' (regra sobre o retorno do Detran) ou 'admin' (operador reclassificou à mão).
+  /// 'admin' tem precedência: revalidar não desfaz decisão humana.
+  categorySource     String           @default("driver") @map("category_source") @db.VarChar(10)
+  /// O que a regra calculou, guardado mesmo quando não é o que vigora. Permite medir o
+  /// acerto da tabela de classificação antes de confiar nela.
+  categoryAuto       VehicleCategory? @map("category_auto")
+  /// Motorista declarou uma categoria e a regra calculou outra. Vira fila do operador.
+  categoryDivergence Boolean          @default(false) @map("category_divergence")
+
+  /// Retorno do Detran, normalizado. Guardado para reclassificar em lote quando a tabela de
+  /// regras mudar, sem pagar a consulta de novo.
+  detranBrand String? @map("detran_brand") @db.VarChar(80)
+  detranModel String? @map("detran_model") @db.VarChar(120)
+  detranYear  Int?    @map("detran_year")
+
   @@index([driverId])
   @@map("vehicles")
   @@schema("opendriver")
@@ -440,6 +456,76 @@ model VehicleValidation {
 
   @@index([vehicleId, createdAt])
   @@map("vehicle_validations")
+  @@schema("opendriver")
+}
+
+/// Qual serviço da Infosimples atende cada UF, e o que ele exige.
+///
+/// Estava fixo em constante no código, com duas UFs (MT e MS); qualquer outra caía em revisão
+/// manual para sempre. Além disso o caminho de cada serviço não é verificável sem gastar
+/// consulta — uma sondagem sem token devolve erro de autenticação **antes** de validar a
+/// rota, então resposta 601 não prova que o endpoint existe. Com a configuração no banco,
+/// corrigir um caminho errado é edição no admin, não deploy.
+model DetranProvider {
+  uf       String @id @db.VarChar(2)
+  label    String @db.VarChar(80)
+  endpoint String @db.VarChar(300)
+
+  /// Os serviços divergem no que pedem: MT e MS aceitam placa + renavam; a consulta
+  /// unificada exige chassi; GO exige login do gov.br ou certificado A1; TO exige o
+  /// CPF/CNPJ do proprietário.
+  requiresChassi  Boolean @default(false) @map("requires_chassi")
+  requiresLogin   Boolean @default(false) @map("requires_login")
+  requiresCpfCnpj Boolean @default(false) @map("requires_cpf_cnpj")
+
+  /// Chave de `public.integration_settings` onde a credencial desta UF vive — o valor nunca
+  /// é guardado aqui, para segredo continuar num lugar só e já auditado.
+  loginSettingKey String? @map("login_setting_key") @db.VarChar(80)
+  senhaSettingKey String? @map("senha_setting_key") @db.VarChar(80)
+
+  active Boolean @default(true)
+  notes  String? @db.VarChar(400)
+
+  /// Resultado da última consulta real desta UF, para o operador saber se o caminho funciona
+  /// sem abrir log de servidor.
+  lastProbeAt     DateTime? @map("last_probe_at")
+  lastProbeResult String?   @map("last_probe_result") @db.VarChar(400)
+
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("detran_providers")
+  @@schema("opendriver")
+}
+
+/// Regra que decide a categoria a partir de marca, modelo e faixa de ano.
+///
+/// `modelPattern` casa por **prefixo** sobre o texto normalizado (maiúsculas, sem acento,
+/// sem pontuação), porque o Detran devolve o modelo com sufixo de versão: "ONIX 1.0 LT",
+/// "COROLLA XEI 2.0 FLEX". Uma regra "COROLLA" cobre todas as versões; "COROLLA CROSS" é
+/// mais específica e ganha pela `priority`.
+///
+/// `priority` menor ganha, para uma regra genérica de marca conviver com exceções de modelo
+/// sem precisar enumerar tudo.
+model VehicleModelCategory {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand        String  @db.VarChar(60)
+  modelPattern String  @map("model_pattern") @db.VarChar(80)
+  yearFrom     Int?    @map("year_from")
+  yearTo       Int?    @map("year_to")
+  category     VehicleCategory
+  priority     Int     @default(100)
+  /// 'semente' = carga inicial do repositório, 'manual' = criada no admin,
+  /// 'importado' = veio de CSV.
+  source       String  @default("manual") @db.VarChar(20)
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@index([brand, active, priority])
+  @@map("vehicle_model_categories")
   @@schema("opendriver")
 }
 
