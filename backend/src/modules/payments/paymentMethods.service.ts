@@ -2,7 +2,7 @@ import type { PaymentMethod } from '@prisma/client';
 import { z } from 'zod';
 import { AppError } from '../../errors.js';
 import { encryptString } from '../../infra/crypto.js';
-import { gateway } from '../../infra/payments/index.js';
+import { getGateway } from '../../infra/payments/index.js';
 import { prisma } from '../../infra/prisma.js';
 import { customerInfo } from './customer.js';
 
@@ -57,7 +57,7 @@ export function toMethodDto(m: PaymentMethod, defaultId: string | null) {
 async function activeMethods(userId: string): Promise<PaymentMethod[]> {
   let methods = await prisma.paymentMethod.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'asc' } });
   if (!methods.some((m) => m.type === 'Pix')) {
-    await prisma.paymentMethod.create({ data: { userId, type: 'Pix', provider: gateway.provider } });
+    await prisma.paymentMethod.create({ data: { userId, type: 'Pix', provider: (await getGateway()).provider } });
     methods = await prisma.paymentMethod.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'asc' } });
   }
   return methods;
@@ -90,6 +90,9 @@ export async function addCard(userId: string, input: z.infer<typeof cardSchema>,
   const count = await prisma.paymentMethod.count({ where: { userId, type: 'Card', deletedAt: null } });
   if (count >= MAX_CARDS) throw new AppError(`Você pode salvar até ${MAX_CARDS} cartões. Remova um para adicionar outro.`, 409, 'too_many_cards');
   const customer = await customerInfo(userId);
+  // Resolvido uma vez: tokenizar num provedor e gravar o nome de outro deixaria o token
+  // inutilizável, porque ele só vale no gateway que o emitiu.
+  const gateway = await getGateway();
   const tokenized = await gateway.tokenizeCard(customer, input, remoteIp);
   const [month, year] = input.expiry.split('/').map((s) => Number(s));
   const created = await prisma.paymentMethod.create({

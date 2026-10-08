@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import { decryptString } from '../../infra/crypto.js';
-import { gateway } from '../../infra/payments/index.js';
+import { getGateway } from '../../infra/payments/index.js';
 import { prisma } from '../../infra/prisma.js';
 import { sendPush } from '../../infra/push.js';
 import { d, round2 } from '../../lib/money.js';
@@ -72,6 +72,12 @@ export async function settleRide(rideId: string, opts: { method?: PaymentMethod;
     const description = ride.status === 'Completed' ? 'Corrida OpenDriver' : 'Taxa de cancelamento OpenDriver';
     const attempt = await prisma.ridePayment.count({ where: { rideId: ride.id } });
     const reference = `ride:${ride.id}:${attempt + 1}`;
+    /**
+     * Resolvido **fora** do `try`, e uma vez só: o `catch` abaixo grava o pagamento falho com
+     * `gateway.provider`, então ele precisa do mesmo provedor que tentou cobrar. Resolver de
+     * novo lá dentro poderia gravar a falha com o nome de outro gateway.
+     */
+    const gateway = await getGateway();
     try {
       const customer = await customerInfo(ride.passengerId);
       if (method?.type === 'Card' && method.tokenEnc) {
@@ -129,7 +135,7 @@ export async function syncRidePayment(paymentId: string): Promise<'paid' | 'pend
   if (!p || !p.externalId) return 'failed';
   if (p.status === 'Paid') return 'paid';
   if (p.status !== 'Pending') return 'failed';
-  const status = await gateway.status(p.externalId);
+  const status = await (await getGateway()).status(p.externalId);
   if (status === 'paid') {
     await prisma.$transaction([
       prisma.ridePayment.update({ where: { id: p.id }, data: { status: 'Paid' } }),

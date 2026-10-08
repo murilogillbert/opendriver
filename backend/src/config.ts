@@ -124,6 +124,19 @@ export function assertProductionConfig(): void {
   if (Buffer.from(config.dataEncryptionKey, 'base64').length !== 32)
     problems.push('DATA_ENCRYPTION_KEY deve ter 32 bytes em base64 (openssl rand -base64 32)');
   if (!config.publicBaseUrl.startsWith('https://')) problems.push('PUBLIC_BASE_URL deve ser https');
-  if (config.payments.provider === 'mock') problems.push('PAYMENT_PROVIDER=mock não é permitido em produção');
+  /**
+   * O provedor de pagamento **saiu daqui**.
+   *
+   * Esta função é sincrônica e roda antes de o banco ser consultado, e o provedor agora vem de
+   * `integration_settings` com precedência sobre a env (ver `infra/payments/index.ts`). Então
+   * `PAYMENT_PROVIDER=mock` deixou de ser evidência de que o sistema está simulando: o banco
+   * pode dizer `asaas`. Recusar o boot por causa da env seria recusar por um dado que não
+   * decide mais nada.
+   *
+   * O aviso passou para `avisarSePagamentoSimulado()`, que consulta o valor que de fato vale, e
+   * para o painel de Integrações do hub, que mostra na tela. Vale registrar por que o aviso de
+   * tela importa mais que a falha de boot: em produção `NODE_ENV` não é `production`, então
+   * esta função inteira não executa — a proteção que existia no papel nunca rodou.
+   */
   if (problems.length) throw new Error(`Configuração inválida para produção:\n- ${problems.join('\n- ')}`);
 }

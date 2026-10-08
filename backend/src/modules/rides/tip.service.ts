@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AppError } from '../../errors.js';
 import { decryptString } from '../../infra/crypto.js';
-import { gateway } from '../../infra/payments/index.js';
+import { getGateway } from '../../infra/payments/index.js';
 import { prisma } from '../../infra/prisma.js';
 import { round2 } from '../../lib/money.js';
 import { withLock } from '../../lib/mutex.js';
@@ -31,7 +31,7 @@ export async function tipRide(rideId: string, passengerId: string, amount: numbe
 
     const customer = await customerInfo(passengerId);
     const reference = `tip:${rideId}:${Date.now()}`;
-    const r = await gateway.chargeCard(customer, decryptString(method.tokenEnc), amt, 'Gorjeta OpenDriver', reference, '127.0.0.1');
+    const r = await (await getGateway()).chargeCard(customer, decryptString(method.tokenEnc), amt, 'Gorjeta OpenDriver', reference, '127.0.0.1');
     if (r.status !== 'paid') throw new AppError('Não foi possível cobrar a gorjeta no seu cartão. Tente de novo.', 402, 'tip_charge_failed');
 
     await prisma.driverEarning.create({

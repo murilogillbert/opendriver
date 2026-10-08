@@ -6,6 +6,7 @@ import { startComplaintAttachmentRetention } from './modules/complaints/complain
 import { startRecordingRetention } from './modules/recording/recording.service.js';
 import { startStaleDriverSweep, stopStaleDriverSweep } from './jobs/staleDrivers.js';
 import { prisma } from './infra/prisma.js';
+import { avisarSePagamentoSimulado } from './infra/payments/index.js';
 import { startDispatchSweeper, stopDispatchSweeper } from './modules/rides/dispatch.js';
 import { closeRealtime } from './realtime/io.js';
 
@@ -13,6 +14,8 @@ async function main(): Promise<void> {
   assertProductionConfig();
   const server = await createServer();
   server.listen(config.port, () => console.log(`OpenDriver API ouvindo na porta ${config.port}`));
+  // Depois do `listen` e sem `await`: é diagnóstico, não deve atrasar o serviço a atender.
+  void avisarSePagamentoSimulado();
   startDispatchSweeper();
   startPaymentReconciliation();
   startScheduledRidesSweeper();
