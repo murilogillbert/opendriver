@@ -6,6 +6,7 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
  *  APP_VARIANT                 development | preview | production
  *  EXPO_PUBLIC_API_URL         API do OpenDriver, ex.: https://api-app.opendriver.com.br
  *  EXPO_PUBLIC_HUB_URL         site do OpenDriverHub (aba Hub — RF11)
+ *  EXPO_PUBLIC_HUB_API_URL     API do hub — usada só para enviar a foto de perfil
  *  EXPO_PUBLIC_MAP_STYLE_URL   estilo MapLibre (tiles OSM próprios/provedor)
  *  EAS_PROJECT_ID              necessário para push (Expo)
  */
@@ -16,12 +17,19 @@ const BUNDLE_ID = process.env.IOS_BUNDLE_ID ?? 'br.com.opendriver.app';
 const PACKAGE = process.env.ANDROID_PACKAGE ?? 'br.com.opendriver.app';
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 const HUB_URL = (process.env.EXPO_PUBLIC_HUB_URL ?? 'https://opendriver.com.br').replace(/\/+$/, '');
+/**
+ * API do hub. O avatar e publico e ja e LIDO do hub, entao e para la que ele e enviado: o
+ * storage do opendriver e privado e cifrado, feito para documento de motorista.
+ */
+const HUB_API_URL = (process.env.EXPO_PUBLIC_HUB_API_URL ?? 'https://hubapi.opendriver.com.br').replace(/\/+$/, '');
 const MAP_STYLE_URL = process.env.EXPO_PUBLIC_MAP_STYLE_URL ?? '';
 
 if (VARIANT !== 'development') {
   const problems: string[] = [];
   if (!/^https:\/\//.test(API_URL)) problems.push(`EXPO_PUBLIC_API_URL deve ser https (recebido: "${API_URL}")`);
   if (!/^https:\/\//.test(HUB_URL)) problems.push('EXPO_PUBLIC_HUB_URL deve ser https');
+  // A foto sobe com o token da sessao no cabecalho; em http ele iria em texto claro.
+  if (!/^https:\/\//.test(HUB_API_URL)) problems.push('EXPO_PUBLIC_HUB_API_URL deve ser https');
   if (!/^https:\/\//.test(MAP_STYLE_URL)) problems.push('EXPO_PUBLIC_MAP_STYLE_URL deve apontar para um estilo MapLibre https (tiles próprios)');
   if (problems.length) throw new Error(`Configuração inválida para o build "${VARIANT}":\n- ${problems.join('\n- ')}`);
 }
@@ -170,6 +178,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     variant: VARIANT,
     apiUrl: API_URL,
     hubUrl: HUB_URL,
+    hubApiUrl: HUB_API_URL,
     mapStyleUrl: MAP_STYLE_URL,
     router: {},
     eas: process.env.EAS_PROJECT_ID ? { projectId: process.env.EAS_PROJECT_ID } : undefined,

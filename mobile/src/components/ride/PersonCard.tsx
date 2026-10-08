@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { RemoteImage } from '@/components/Media';
+import { Avatar } from '@/components/Avatar';
 import { AppText, Icon, Row } from '@/components/ui/primitives';
 import { colors, radius, spacing } from '@/theme/tokens';
 
@@ -17,7 +17,7 @@ export function PersonCard({
 }) {
   return (
     <Row gap={spacing.md}>
-      <RemoteImage uri={avatarUrl} style={styles.avatar} rounded={28} accessibilityLabel={`Foto de ${name}`} />
+      <Avatar nome={name} uri={avatarUrl} size={56} accessibilityLabel={`Foto de ${name}`} />
       <View style={{ flex: 1, gap: 2 }}>
         <Row gap={6}>
           <AppText variant="bodyStrong">{name}</AppText>

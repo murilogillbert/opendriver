@@ -71,7 +71,15 @@ export function createApi(http: HttpClient) {
     },
     me: {
       get: () => http.get<Me>('/me'),
-      updateProfile: (input: { name: string; phone: string; cpf?: string }) => http.put<User>('/me/profile', input),
+      /**
+       * `name` e `phone` são **obrigatórios** no servidor (`updateProfileSchema`), mesmo quando
+       * só a foto muda. Quem chama tem de reenviar os valores atuais — ver `AccountScreen`.
+       *
+       * `avatarUrl` precisa ser URL absoluta: o schema usa `z.string().url()`. O upload do hub
+       * devolve absoluta (`MINIO_PUBLIC_URL/bucket/arquivo`), então serve.
+       */
+      updateProfile: (input: { name: string; phone: string; cpf?: string; avatarUrl?: string }) =>
+        http.put<User>('/me/profile', input),
       changePassword: (currentPassword: string, newPassword: string) => http.put<void>('/me/password', { currentPassword, newPassword }),
       deleteAccount: (password: string) => http.post<void>('/me/delete', { password }),
       registerPush: (token: string, platform: 'ios' | 'android') => http.post<void>('/me/push-tokens', { token, platform }),

@@ -6,6 +6,7 @@ interface Extra {
   variant?: Variant;
   apiUrl?: string;
   hubUrl?: string;
+  hubApiUrl?: string;
   mapStyleUrl?: string;
 }
 
@@ -21,6 +22,23 @@ const originOf = (url: string) => /^(https?:\/\/[^/?#]+)/i.exec(url)?.[1]?.toLow
  */
 const apiUrl = strip(process.env.EXPO_PUBLIC_API_URL || extra.apiUrl || 'http://localhost:5100');
 const hubUrl = strip(process.env.EXPO_PUBLIC_HUB_URL || extra.hubUrl || 'https://opendriver.com.br');
+/**
+ * API do hub, usada para **enviar a foto de perfil**.
+ *
+ * Por que o hub e não a API própria: o storage do opendriver é privado e cifrado, feito para
+ * documento de motorista e gravação de corrida. Avatar é público — aparece no `PersonCard` do
+ * outro lado da corrida —, e o hub já tem a rota, o bucket público e a validação por magic
+ * bytes. Criar um segundo caminho de imagem pública aqui duplicaria tudo isso.
+ *
+ * E não acrescenta dependência: o avatar **já** é lido do hub (`resolveImageUrl` resolve
+ * `/uploads` contra `hubOrigin`). Enviar para onde ele é lido é o consistente.
+ *
+ * O token funciona nos dois: os dois serviços assinam HS256 com o mesmo `JWT_SECRET` e o mesmo
+ * par issuer/audience (`opendriverhub`).
+ */
+const hubApiUrl = strip(
+  process.env.EXPO_PUBLIC_HUB_API_URL || extra.hubApiUrl || 'https://hubapi.opendriver.com.br'
+);
 
 export const env = {
   variant: (extra.variant ?? 'development') as Variant,
@@ -30,6 +48,8 @@ export const env = {
   /** Site do OpenDriverHub aberto na aba Hub (RF11). */
   hubUrl,
   hubOrigin: originOf(hubUrl),
+  /** API do hub. Hoje só para enviar a foto de perfil. */
+  hubApiUrl,
   /** Estilo MapLibre (tiles OSM). Vazio em dev → estilo de demonstração. */
   mapStyleUrl: process.env.EXPO_PUBLIC_MAP_STYLE_URL || extra.mapStyleUrl || 'https://demotiles.maplibre.org/style.json',
 } as const;

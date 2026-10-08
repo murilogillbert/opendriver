@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
-import { RemoteImage } from '@/components/Media';
+import { uploadImage } from '@/api/uploadImage';
+import { Avatar } from '@/components/Avatar';
 import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/Button';
 import { ListRow, SwitchRow } from '@/components/ui/Controls';
@@ -34,7 +36,59 @@ export function AccountScreen() {
   const [sending, setSending] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [savingAccessibility, setSavingAccessibility] = useState(false);
+  const [fotoBusy, setFotoBusy] = useState(false);
   const inRide = isActive(ride);
+
+  /**
+   * Troca da foto de perfil.
+   *
+   * O arquivo vai para a API do **hub**: o storage daqui é privado e cifrado (documento de
+   * motorista, gravação de corrida), e avatar é público — aparece no `PersonCard` do outro lado
+   * da corrida. Ver `api/uploadImage.ts`.
+   */
+  const trocarFoto = async () => {
+    const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissao.granted) {
+      toast.error('Precisamos da galeria para escolher a foto.');
+      return;
+    }
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      // Quadrado: o avatar é exibido em círculo em toda tela.
+      aspect: [1, 1],
+      // `quality: 0.7` porque o limite do servidor é 10 MB e foto de celular moderno passa
+      // disso em PNG — comprimir aqui evita a viagem inteira para levar um 413.
+      quality: 0.7,
+    });
+    if (r.canceled || !r.assets[0]) return;
+
+    const asset = r.assets[0];
+    setFotoBusy(true);
+    try {
+      const url = await uploadImage({
+        uri: asset.uri,
+        name: asset.fileName ?? 'foto.jpg',
+        type: asset.mimeType ?? 'image/jpeg',
+      });
+      /**
+       * `name` e `phone` vão junto porque o servidor os exige mesmo quando só a foto muda.
+       * Reenviar os valores atuais de `me` é o que evita um 400 — e aqui não há formulário
+       * aberto, então não há risco de desfazer edição não salva.
+       */
+      await api.me.updateProfile({
+        name: me?.name ?? '',
+        phone: me?.phone ?? '',
+        avatarUrl: url,
+      });
+      await refreshMe();
+      toast.success('Foto atualizada.');
+    } catch (err) {
+      alertError(err, 'Não foi possível trocar a foto');
+    } finally {
+      setFotoBusy(false);
+    }
+  };
 
   const setAccessibility = async (v: boolean) => {
     setSavingAccessibility(true);
@@ -74,7 +128,7 @@ export function AccountScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <Screen edges={[]}>
         <Row gap={spacing.md}>
-          <RemoteImage uri={me?.avatarUrl} style={styles.avatar} rounded={32} accessibilityLabel="Sua foto" />
+          <Avatar nome={me?.name ?? ''} uri={me?.avatarUrl} size={64} accessibilityLabel="Sua foto" />
           <View style={{ flex: 1, gap: 2 }}>
             <AppText variant="subtitle">{me?.name ?? 'Sua conta'}</AppText>
             <AppText variant="small">{me?.email}</AppText>
@@ -84,6 +138,19 @@ export function AccountScreen() {
                 <AppText variant="small">{rating.toFixed(1).replace('.', ',')}</AppText>
               </Row>
             ) : null}
+            {/*
+              Botão discreto, ao lado do nome: trocar a foto é ação rara, e um botão grande aqui
+              competiria com o que a tela existe para fazer (ficar online, ver ganhos).
+            */}
+            <Button
+              title={me?.avatarUrl ? 'Trocar foto' : 'Adicionar foto'}
+              variant="ghost"
+              size="sm"
+              icon="camera-outline"
+              loading={fotoBusy}
+              onPress={() => void trocarFoto()}
+              style={{ alignSelf: 'flex-start' }}
+            />
           </View>
         </Row>
 

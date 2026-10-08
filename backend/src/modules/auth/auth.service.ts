@@ -88,8 +88,20 @@ export function toUserDto(u: User) {
   };
 }
 
-function dicebear(seed: string): string {
-  return `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+/**
+ * Avatar padrão: **nenhuma URL**.
+ *
+ * Antes isto devolvia `https://api.dicebear.com/9.x/avataaars/svg?seed=<nome>`, de modo que a
+ * foto de todo usuário que nunca trocou dependia de um serviço de terceiro estar no ar em tempo
+ * de execução — e cada tela que lista usuários fazia uma chamada externa por linha.
+ *
+ * Vazio significa "sem foto", e cada cliente desenha as iniciais num círculo com cor derivada do
+ * nome. A decisão e os porquês (inclusive por que não é um SVG nosso em data URI) estão em
+ * `hub/backend/src/domain/avatar.ts`; a conta é a mesma nos três serviços, então o
+ * comportamento tem de ser o mesmo.
+ */
+function avatarPadrao(): string {
+  return '';
 }
 
 function build(user: User) {
@@ -127,7 +139,7 @@ export async function register(input: z.infer<typeof registerSchema>) {
         role: input.role,
         phone: digits(input.phone),
         cpf: input.cpf ? digits(input.cpf) : null,
-        avatarUrl: dicebear(input.name),
+        avatarUrl: avatarPadrao(),
       },
     });
     // Todo usuário pode pedir corrida; motorista ganha também o perfil de motorista.
